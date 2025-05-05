@@ -10,7 +10,6 @@ export interface ISerializable {
    * Deserialize the class instance.
    *
    * @param serialData Serialized data.
-   * @param size Size of the serialized data.
    */
-  deserialize(serialData: Uint8Array, size: number): void;
+  deserialize(serialData: Uint8Array): void;
 }
