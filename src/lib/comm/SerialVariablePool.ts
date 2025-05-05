@@ -1,5 +1,5 @@
 import { ISerialVariable } from "./variables/ISerialVariable";
-import { CppBinarySerializer } from "./CppSerializer";
+import { CppBinarySerializer, CppType } from "./CppSerializer";
 import { PrimitiveSerialVariable } from "./variables/PrimitiveSerialVariable";
 import { CustomSerialVariable } from "./variables/CustomSerialVariable";
 import { ISerializable } from "./ISerializable";
@@ -59,13 +59,14 @@ export class SerialVariablePool {
    */
   registerPrimitiveFactories() {
     for (const type in CppBinarySerializer.cppTypeToTsType) {
-      const defaultValue = CppBinarySerializer.cppTypeToTsType[type];
+      const cppType: CppType = type as CppType;
+      const defaultValue = CppBinarySerializer.cppTypeToTsType[cppType];
       this.factories[type] = (name: string, readOnly: boolean) =>
         new PrimitiveSerialVariable(
           name,
           { value: defaultValue },
           readOnly,
-          type
+          cppType
         );
     }
   }

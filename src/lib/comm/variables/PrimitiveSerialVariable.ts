@@ -1,5 +1,5 @@
 import { ISerialVariable, Fundamental } from "./ISerialVariable";
-import { CppBinarySerializer } from "../CppSerializer";
+import { CppBinarySerializer, CppType } from "../CppSerializer";
 
 /**
  * Class for serializing and deserializing primitive variables.
@@ -11,7 +11,7 @@ export class PrimitiveSerialVariable<T extends Fundamental>
 {
   private valueRef: { value: T };
   private name: string;
-  private type: string;
+  private type: CppType;
   private readOnly: boolean;
 
   /**
@@ -25,7 +25,7 @@ export class PrimitiveSerialVariable<T extends Fundamental>
     name: string,
     valueRef: { value: T },
     readOnly: boolean,
-    type: string
+    type: CppType
   ) {
     this.valueRef = valueRef;
     this.name = name;
