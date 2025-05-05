@@ -18,11 +18,26 @@ export type CppType =
  * CppBinarySerializer provides static methods for serializing and deserializing C++-style primitive types.
  */
 export class CppBinarySerializer {
+  static readonly CPP_TYPE_VALUES: CppType[] = [
+    "bool",
+    "char",
+    "unsigned char",
+    "signed char",
+    "short unsigned int",
+    "short int",
+    "unsigned int",
+    "int",
+    "long unsigned int",
+    "long int",
+    "float",
+    "double",
+  ];
+
   /**
    * Map of C++ types to TypeScript types
    * Used to convert C++ types to TypeScript types.
    */
-  static readonly cppTypeToTsType: Record<CppType, Fundamental> = {
+  private static readonly cppTypeToTsType: Record<CppType, Fundamental> = {
     bool: false,
     char: "",
     "unsigned char": 0,
@@ -37,7 +52,7 @@ export class CppBinarySerializer {
     double: 0.0,
   };
 
-  static readonly cppSizes: Record<CppType, number> = {
+  private static readonly cppSizes: Record<CppType, number> = {
     bool: 1,
     char: 1,
     "unsigned char": 1,
@@ -52,11 +67,34 @@ export class CppBinarySerializer {
     double: 8,
   };
 
+  private static readonly ranges: Record<string, { min: number; max: number }> =
+    {
+      bool: { min: 0, max: 1 },
+      char: { min: 0, max: 255 },
+      "unsigned char": { min: 0, max: 255 },
+      "signed char": { min: -128, max: 127 },
+      "short unsigned int": { min: 0, max: 65535 },
+      "short int": { min: -32768, max: 32767 },
+      "unsigned int": { min: 0, max: 4294967295 },
+      int: { min: -2147483648, max: 2147483647 },
+      "long unsigned int": { min: 0, max: Number.MAX_SAFE_INTEGER },
+      "long int": {
+        min: Number.MIN_SAFE_INTEGER,
+        max: Number.MAX_SAFE_INTEGER,
+      },
+      float: { min: -3.4e38, max: 3.4e38 },
+      double: { min: -1.7e308, max: 1.7e308 },
+    };
+
   /**
    * Get the size in bytes of a C++ type
    */
   static getCppTypeSize(type: CppType): number {
     return this.cppSizes[type];
+  }
+
+  static getTsType(type: CppType): Fundamental {
+    return this.cppTypeToTsType[type];
   }
 
   /**
@@ -151,6 +189,39 @@ export class CppBinarySerializer {
       default:
         console.warn("Unknown type:", type);
         return null;
+    }
+  }
+
+  /**
+   * Validates that the given value can be properly serialized to the specified C++ type
+   *
+   * @param value The JavaScript value to validate
+   * @param type The target C++ type
+   * @throws CppSerializationError if the value is incompatible with the type
+   */
+  static validateValueForType(value: Fundamental, type: CppType): void {
+    const tsType = this.cppTypeToTsType[type];
+    const cppRange = this.ranges[type];
+
+    if (typeof value !== typeof tsType) {
+      throw new Error(
+        `Type mismatch: expected ${typeof tsType}, got ${typeof value}`
+      );
+    }
+
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new Error(`Invalid number: ${value}`);
+    }
+    if (typeof value === "bigint" && !Number.isSafeInteger(Number(value))) {
+      throw new Error(`Invalid bigint: ${value}`);
+    }
+
+    if (typeof value === "number" && cppRange) {
+      if (value < cppRange.min || value > cppRange.max) {
+        throw new Error(
+          `Value out of range for type ${type}: expected between ${cppRange.min} and ${cppRange.max}, got ${value}`
+        );
+      }
     }
   }
 }
