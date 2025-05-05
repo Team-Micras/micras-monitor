@@ -58,9 +58,9 @@ export class SerialVariablePool {
    * It allows the pool to create instances of these types when deserializing data.
    */
   registerPrimitiveFactories() {
-    for (const type in CppBinarySerializer.cppTypeToTsType) {
+    for (const type in CppBinarySerializer.CPP_TYPE_VALUES) {
       const cppType: CppType = type as CppType;
-      const defaultValue = CppBinarySerializer.cppTypeToTsType[cppType];
+      const defaultValue = CppBinarySerializer.getTsType(cppType);
       this.factories[type] = (name: string, readOnly: boolean) =>
         new PrimitiveSerialVariable(
           name,
