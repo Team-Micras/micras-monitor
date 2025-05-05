@@ -22,7 +22,7 @@ export class CppBinarySerializer {
    * Map of C++ types to TypeScript types
    * Used to convert C++ types to TypeScript types.
    */
-  static readonly cppTypeToTsType: Record<string, Fundamental> = {
+  static readonly cppTypeToTsType: Record<CppType, Fundamental> = {
     bool: false,
     char: "",
     "unsigned char": 0,
@@ -37,7 +37,7 @@ export class CppBinarySerializer {
     double: 0.0,
   };
 
-  static readonly cppSizes: Record<string, number> = {
+  static readonly cppSizes: Record<CppType, number> = {
     bool: 1,
     char: 1,
     "unsigned char": 1,
@@ -55,14 +55,14 @@ export class CppBinarySerializer {
   /**
    * Get the size in bytes of a C++ type
    */
-  static getCppTypeSize(type: string): number {
+  static getCppTypeSize(type: CppType): number {
     return this.cppSizes[type];
   }
 
   /**
    * Serialize a value of a given type to a Uint8Array
    */
-  static serializeValue(value: any, type: string): Uint8Array {
+  static serializeValue(value: any, type: CppType): Uint8Array {
     const size = this.getCppTypeSize(type);
     const buffer = new ArrayBuffer(size);
     const dataView = new DataView(buffer);
@@ -116,7 +116,7 @@ export class CppBinarySerializer {
   /**
    * Deserialize a value from a Uint8Array based on its C++ type
    */
-  static deserializeValue(serialData: Uint8Array, type: string): any {
+  static deserializeValue(serialData: Uint8Array, type: CppType): any {
     const dataView = new DataView(
       serialData.buffer,
       serialData.byteOffset,
