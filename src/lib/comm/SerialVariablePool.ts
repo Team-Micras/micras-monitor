@@ -1,0 +1,201 @@
+import { ISerialVariable } from "./variables/ISerialVariable";
+import { CppBinarySerializer } from "./CppSerializer";
+import { PrimitiveSerialVariable } from "./variables/PrimitiveSerialVariable";
+import { CustomSerialVariable } from "./variables/CustomSerialVariable";
+import { ISerializable } from "./ISerializable";
+
+export type SerializableClasses = {
+  [key: string]: new (...args: any[]) => ISerializable;
+};
+
+type SerialVariableFactory = (
+  name: string,
+  readOnly: boolean
+) => ISerialVariable;
+
+export class SerialVariablePool {
+  private variables: Map<number, ISerialVariable> = new Map();
+  private factories: Record<string, SerialVariableFactory> = {};
+
+  /**
+   * Constructor for the SerialVariablePool class.
+   *
+   * @param customSerializableClasses Optional list of custom serializable classes that implement ISerializable
+   *
+   * @description This constructor initializes the variable pool with a map of custom serializable classes.
+   * It allows the pool to create instances of these classes when deserializing data.
+   *
+   * @example
+   * ```typescript
+   * // If your typescript serializable classes does not have the same name as in the C++
+   * // firmware, you can create a map of the C++ class names to the typescript class:
+   * const mySerializableClasses = {
+   *   "CppMyFirstClass": MyFirstClass,
+   *   "CppMySecondClass": MySecondClass,
+   * };
+   *
+   * // If your typescript serializable classes have the same name as in the C++ firmware:
+   * const mySerializableClasses = {
+   *   MyFirstClass,
+   *   MySecondClass,
+   * };
+   *
+   * const pool = new SerialVariablePool(mySerializableClasses);
+   * ```
+   */
+  constructor(customSerializableClasses?: SerializableClasses) {
+    this.registerPrimitiveFactories();
+
+    if (customSerializableClasses) {
+      this.registerCustomFactories(customSerializableClasses);
+    }
+  }
+
+  /**
+   * Register primitive types with their default values
+   *
+   * @description This method registers the primitive types with their default values.
+   * It allows the pool to create instances of these types when deserializing data.
+   */
+  registerPrimitiveFactories() {
+    for (const type in CppBinarySerializer.cppTypeToTsType) {
+      const defaultValue = CppBinarySerializer.cppTypeToTsType[type];
+      this.factories[type] = (name: string, readOnly: boolean) =>
+        new PrimitiveSerialVariable(
+          name,
+          { value: defaultValue },
+          readOnly,
+          type
+        );
+    }
+  }
+
+  /**
+   * Register custom serializable classes
+   * @param classes Object containing class constructors
+   *
+   * @description This method registers custom serializable classes with the pool.
+   * It allows the pool to create instances of these classes when deserializing data.
+   */
+  registerCustomFactories(classes: SerializableClasses): void {
+    for (const className in classes) {
+      const ClassConstructor = classes[className];
+      this.factories[className] = (name: string, readOnly: boolean) =>
+        new CustomSerialVariable(
+          name,
+          { value: new ClassConstructor() },
+          readOnly
+        );
+    }
+  }
+
+  /**
+   * Deserialize the variable map from a byte array
+   * @param data Serialized variable map
+   *
+   * @description This method deserializes the variable map from a byte array.
+   * It populates the variables map with instances of the appropriate types.
+   */
+  deserializeVarMap(data: Uint8Array): void {
+    this.variables.clear();
+
+    try {
+      const count = data[0] | (data[1] << 8);
+      let offset = 2;
+
+      for (let i = 0; i < count; i++) {
+        const id = data[offset] | (data[offset + 1] << 8);
+        offset += 2;
+
+        const nameLength = data[offset++];
+        const nameBytes = data.slice(offset, offset + nameLength);
+        const decoder = new TextDecoder();
+        const name = decoder.decode(nameBytes);
+        offset += nameLength;
+
+        const typeLength = data[offset++];
+        const typeBytes = data.slice(offset, offset + typeLength);
+        const type = decoder.decode(typeBytes);
+        offset += typeLength;
+
+        const readOnly = data[offset++] !== 0;
+
+        if (this.factories[type]) {
+          const variable = this.factories[type](name, readOnly);
+          this.variables.set(id, variable);
+        } else {
+          console.warn(`No factory registered for type: ${type}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error deserializing variable map:", error);
+    }
+  }
+
+  /**
+   * Deserialize a variable by ID
+   * @param id Variable ID
+   * @param data Serialized variable data
+   *
+   * @description This method deserializes a variable by its ID.
+   * It populates the variable with the deserialized data.
+   */
+  deserializeVariable(id: number, data: Uint8Array): void {
+    const variable = this.variables.get(id);
+    if (variable) {
+      variable.deserialize(data);
+    } else {
+      console.warn(`No variable found with ID: ${id}`);
+    }
+  }
+
+  /**
+   * Get the variable by ID
+   * @param id Variable ID
+   *
+   * @description This method retrieves a variable by its ID.
+   * It returns the variable if found, or undefined if not.
+   */
+  getVariable(id: number): ISerialVariable | undefined {
+    return this.variables.get(id);
+  }
+
+  /**
+   * Get the variable by name
+   * @param name Variable name
+   *
+   * @description This method retrieves a variable by its name.
+   * It returns the variable if found, or undefined if not.
+   */
+  getVariableByName(name: string): ISerialVariable | undefined {
+    for (const variable of this.variables.values()) {
+      if (variable.getName() === name) {
+        return variable;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Get the number of variables in the pool
+   *
+   * @description This method returns the number of variables in the pool.
+   * It is useful for iterating over the variables.
+   */
+  getVariableCount(): number {
+    return this.variables.size;
+  }
+
+  /**
+   * Iterate over the variables in the pool
+   * @param callback Callback function to be called for each variable
+   *
+   * @description This method iterates over the variables in the pool.
+   * It calls the provided callback function for each variable.
+   */
+  forEach(callback: (variable: ISerialVariable, id: number) => void): void {
+    this.variables.forEach((variable, id) => {
+      callback(variable, id);
+    });
+  }
+}
