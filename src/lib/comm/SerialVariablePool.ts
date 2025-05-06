@@ -57,18 +57,17 @@ export class SerialVariablePool {
    * @description This method registers the primitive types with their default values.
    * It allows the pool to create instances of these types when deserializing data.
    */
-  registerPrimitiveFactories() {
-    for (const type in CppBinarySerializer.CPP_TYPE_VALUES) {
-      const cppType: CppType = type as CppType;
+  private registerPrimitiveFactories() {
+    CppBinarySerializer.CPP_TYPE_VALUES.forEach((cppType) => {
       const defaultValue = CppBinarySerializer.getTsType(cppType);
-      this.factories[type] = (name: string, readOnly: boolean) =>
+      this.factories[cppType] = (name: string, readOnly: boolean) =>
         new PrimitiveSerialVariable(
           name,
           { value: defaultValue },
           readOnly,
           cppType
         );
-    }
+    });
   }
 
   /**
@@ -78,7 +77,7 @@ export class SerialVariablePool {
    * @description This method registers custom serializable classes with the pool.
    * It allows the pool to create instances of these classes when deserializing data.
    */
-  registerCustomFactories(classes: SerializableClasses): void {
+  private registerCustomFactories(classes: SerializableClasses): void {
     for (const className in classes) {
       const ClassConstructor = classes[className];
       this.factories[className] = (name: string, readOnly: boolean) =>
