@@ -58,63 +58,12 @@ export class SerialVariablePool {
   }
 
   /**
-   * Register primitive types with their default values
-   *
-   * @description This method registers the primitive types with their default values.
-   * It allows the pool to create instances of these types when deserializing data.
-   */
-  private registerPrimitiveFactories() {
-    CppBinarySerializer.CPP_TYPE_VALUES.forEach((cppType) => {
-      const defaultValue = CppBinarySerializer.getTsType(cppType);
-      this.factories[cppType] = (name: string, readOnly: boolean) =>
-        new PrimitiveSerialVariable(
-          name,
-          { value: defaultValue },
-          readOnly,
-          cppType
-        );
-    });
-  }
-
-  /**
-   * Register custom serializable classes
-   *
-   * @param classes Object containing class constructors
-   *
-   * @description This method registers custom serializable classes with the pool.
-   * It allows the pool to create instances of these classes when deserializing data.
-   */
-  private registerCustomFactories(classes: SerializableClasses): void {
-    for (const className in classes) {
-      const ClassConstructor = classes[className];
-      this.factories[className] = (name: string, readOnly: boolean) =>
-        new CustomSerialVariable(
-          name,
-          { value: new ClassConstructor() },
-          readOnly
-        );
-    }
-  }
-
-  /**
    * Add a variable change listener
    *
    * @param callback Callback function to be called when a variable changes
    */
   addVariableChangeListener(callback: VariableChangeCallback): void {
     this.variableChangeCallbacks.push(callback);
-  }
-
-  /**
-   * Notify all listeners of a variable change
-   *
-   * @param id Variable ID
-   * @param variable Variable instance
-   */
-  private notifyVariableChange(id: number, variable: ISerialVariable): void {
-    for (const callback of this.variableChangeCallbacks) {
-      callback(id, variable);
-    }
   }
 
   /**
@@ -272,5 +221,56 @@ export class SerialVariablePool {
     this.variables.forEach((variable, id) => {
       callback(variable, id);
     });
+  }
+
+  /**
+   * Register primitive types with their default values
+   *
+   * @description This method registers the primitive types with their default values.
+   * It allows the pool to create instances of these types when deserializing data.
+   */
+  private registerPrimitiveFactories() {
+    CppBinarySerializer.CPP_TYPE_VALUES.forEach((cppType) => {
+      const defaultValue = CppBinarySerializer.getTsType(cppType);
+      this.factories[cppType] = (name: string, readOnly: boolean) =>
+        new PrimitiveSerialVariable(
+          name,
+          { value: defaultValue },
+          readOnly,
+          cppType
+        );
+    });
+  }
+
+  /**
+   * Register custom serializable classes
+   *
+   * @param classes Object containing class constructors
+   *
+   * @description This method registers custom serializable classes with the pool.
+   * It allows the pool to create instances of these classes when deserializing data.
+   */
+  private registerCustomFactories(classes: SerializableClasses): void {
+    for (const className in classes) {
+      const ClassConstructor = classes[className];
+      this.factories[className] = (name: string, readOnly: boolean) =>
+        new CustomSerialVariable(
+          name,
+          { value: new ClassConstructor() },
+          readOnly
+        );
+    }
+  }
+
+  /**
+   * Notify all listeners of a variable change
+   *
+   * @param id Variable ID
+   * @param variable Variable instance
+   */
+  private notifyVariableChange(id: number, variable: ISerialVariable): void {
+    for (const callback of this.variableChangeCallbacks) {
+      callback(id, variable);
+    }
   }
 }
