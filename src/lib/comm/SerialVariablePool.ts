@@ -1,5 +1,5 @@
-import { ISerialVariable } from "./variables/ISerialVariable";
-import { CppBinarySerializer, CppType } from "./CppSerializer";
+import { ISerialVariable, Fundamental } from "./variables/ISerialVariable";
+import { CppBinarySerializer } from "./CppSerializer";
 import { PrimitiveSerialVariable } from "./variables/PrimitiveSerialVariable";
 import { CustomSerialVariable } from "./variables/CustomSerialVariable";
 import { ISerializable } from "./ISerializable";
@@ -13,9 +13,15 @@ type SerialVariableFactory = (
   readOnly: boolean
 ) => ISerialVariable;
 
+export type VariableChangeCallback = (
+  id: number,
+  variable: ISerialVariable
+) => void;
+
 export class SerialVariablePool {
   private variables: Map<number, ISerialVariable> = new Map();
   private factories: Record<string, SerialVariableFactory> = {};
+  private variableChangeCallbacks: VariableChangeCallback[] = [];
 
   /**
    * Constructor for the SerialVariablePool class.
@@ -72,6 +78,7 @@ export class SerialVariablePool {
 
   /**
    * Register custom serializable classes
+   *
    * @param classes Object containing class constructors
    *
    * @description This method registers custom serializable classes with the pool.
@@ -90,7 +97,71 @@ export class SerialVariablePool {
   }
 
   /**
+   * Add a variable change listener
+   *
+   * @param callback Callback function to be called when a variable changes
+   */
+  addVariableChangeListener(callback: VariableChangeCallback): void {
+    this.variableChangeCallbacks.push(callback);
+  }
+
+  /**
+   * Notify all listeners of a variable change
+   *
+   * @param id Variable ID
+   * @param variable Variable instance
+   */
+  private notifyVariableChange(id: number, variable: ISerialVariable): void {
+    for (const callback of this.variableChangeCallbacks) {
+      callback(id, variable);
+    }
+  }
+
+  /**
+   * Update a variable by ID
+   *
+   * @param id Variable ID
+   * @param setter Function to set the variable value
+   *
+   * @description This method updates a variable by its ID.
+   * It calls the provided setter function to set the variable value.
+   * The setter function receives a reference to the variable's value.
+   * It is important to note that the setter function should not directly
+   * modify the variable's value, but rather use the reference to update it.
+   * This ensures that the variable's change is properly tracked and notified.
+   *
+   * @example
+   * ```typescript
+   * pool.updateVariable<number>(variableId, (valueRef) => {
+   *   valueRef.value = 42; // Update the variable value
+   * });
+   * ```
+   */
+  updateVariable<T extends Fundamental | ISerializable>(
+    id: number,
+    setter: (valueRef: { value: T }) => void
+  ): void {
+    const variable = this.variables.get(id);
+    if (!variable) {
+      console.warn(`No variable found with ID: ${id}`);
+      return;
+    }
+
+    if (variable.isReadOnly()) {
+      console.warn(
+        `Variable ${variable.getName()} is read-only and cannot be updated.`
+      );
+      return;
+    }
+
+    const valueRef = variable.getReference();
+    setter(valueRef as { value: T });
+    this.notifyVariableChange(id, variable);
+  }
+
+  /**
    * Deserialize the variable map from a byte array
+   *
    * @param data Serialized variable map
    *
    * @description This method deserializes the variable map from a byte array.
@@ -134,6 +205,7 @@ export class SerialVariablePool {
 
   /**
    * Deserialize a variable by ID
+   *
    * @param id Variable ID
    * @param data Serialized variable data
    *
@@ -151,6 +223,7 @@ export class SerialVariablePool {
 
   /**
    * Get the variable by ID
+   *
    * @param id Variable ID
    *
    * @description This method retrieves a variable by its ID.
@@ -162,6 +235,7 @@ export class SerialVariablePool {
 
   /**
    * Get the variable by name
+   *
    * @param name Variable name
    *
    * @description This method retrieves a variable by its name.
@@ -188,6 +262,7 @@ export class SerialVariablePool {
 
   /**
    * Iterate over the variables in the pool
+   *
    * @param callback Callback function to be called for each variable
    *
    * @description This method iterates over the variables in the pool.
