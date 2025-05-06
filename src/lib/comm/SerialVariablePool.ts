@@ -22,6 +22,7 @@ export class SerialVariablePool {
   private variables: Map<number, ISerialVariable> = new Map();
   private factories: Record<string, SerialVariableFactory> = {};
   private variableChangeCallbacks: VariableChangeCallback[] = [];
+  private nameToIdMap: Map<string, number> = new Map();
 
   /**
    * Constructor for the SerialVariablePool class.
@@ -109,6 +110,27 @@ export class SerialVariablePool {
   }
 
   /**
+   * Update a variable by name
+   *
+   * @param name Variable name
+   * @param setter Function to set the variable value
+   *
+   * @description This method updates a variable by its name.
+   * It calls the provided setter function to set the variable value.
+   */
+  updateVariableByName<T extends Fundamental | ISerializable>(
+    name: string,
+    setter: (valueRef: { value: T }) => void
+  ): void {
+    const id = this.nameToIdMap.get(name);
+    if (id === undefined) {
+      console.warn(`No variable found with name: ${name}`);
+      return;
+    }
+    this.updateVariable(id, setter);
+  }
+
+  /**
    * Deserialize the variable map from a byte array
    *
    * @param data Serialized variable map
@@ -118,6 +140,7 @@ export class SerialVariablePool {
    */
   deserializeVarMap(data: Uint8Array): void {
     this.variables.clear();
+    this.nameToIdMap.clear();
 
     try {
       const count = data[0] | (data[1] << 8);
@@ -143,6 +166,7 @@ export class SerialVariablePool {
         if (this.factories[type]) {
           const variable = this.factories[type](name, readOnly);
           this.variables.set(id, variable);
+          this.nameToIdMap.set(name, id);
         } else {
           console.warn(`No factory registered for type: ${type}`);
         }
@@ -191,12 +215,7 @@ export class SerialVariablePool {
    * It returns the variable if found, or undefined if not.
    */
   getVariableByName(name: string): ISerialVariable | undefined {
-    for (const variable of this.variables.values()) {
-      if (variable.getName() === name) {
-        return variable;
-      }
-    }
-    return undefined;
+    return this.variables.get(this.nameToIdMap.get(name) ?? -1);
   }
 
   /**
