@@ -35,6 +35,14 @@ export class CustomSerialVariable<T extends ISerializable>
     return this.name;
   }
 
+  getType(): string {
+    return this.valueRef.value.constructor.name;
+  }
+
+  getReference(): { value: T } {
+    return this.valueRef;
+  }
+
   /**
    * Check if the variable is read-only.
    *

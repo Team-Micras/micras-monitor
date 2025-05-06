@@ -14,6 +14,15 @@ export interface ISerialVariable extends ISerializable {
    * @returns True if the variable is read-only, false otherwise.
    */
   isReadOnly(): boolean;
+
+  /**
+   * Get the type of the variable.
+   *
+   * @returns Type of the variable as a string.
+   */
+  getType(): string;
+
+  getReference(): { value: Fundamental | ISerializable };
 }
 
 /**

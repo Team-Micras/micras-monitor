@@ -42,6 +42,14 @@ export class PrimitiveSerialVariable<T extends Fundamental>
     return this.name;
   }
 
+  getType(): string {
+    return this.type;
+  }
+
+  getReference(): { value: T } {
+    return this.valueRef;
+  }
+
   /**
    * Check if the variable is read-only.
    *
