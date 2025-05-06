@@ -20,6 +20,7 @@ export class Packet {
 
   static fromSerialized(serializedPacket: Uint8Array): Packet {
     if (!Packet.isValid(serializedPacket)) {
+      console.error("Trying to deserialize an invalid packet");
       return new Packet(Packet.MessageType.ERROR);
     }
 
