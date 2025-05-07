@@ -5,8 +5,8 @@ import { ISerialVariable } from "./variables/ISerialVariable";
 /**
  * Type definitions for communication functions
  */
-type SendDataFunction = (data: Uint8Array) => Promise<void>;
-type GetDataFunction = () => Promise<Uint8Array>;
+export type SendDataFunction = (data: Uint8Array) => Promise<void>;
+export type GetDataFunction = () => Promise<Uint8Array>;
 
 /**
  * Class for controlling the communication service
@@ -56,20 +56,6 @@ export class CommunicationService {
     this.sendDataFunc = sendFunc;
     this.getDataFunc = getFunc;
     this.functionsRegistered = true;
-
-    this.startUpdates();
-  }
-
-  /**
-   * Updates the communication service by processing incoming packets
-   */
-  async update(): Promise<void> {
-    if (!this.functionsRegistered) {
-      return;
-    }
-
-    await this.updateIncomingPackets();
-    this.processIncomingPackets();
   }
 
   /**
@@ -77,8 +63,8 @@ export class CommunicationService {
    *
    * @param interval - The update interval in milliseconds
    */
-  private startUpdates(interval: number = 10): void {
-    this.stopUpdates();
+  startCommunication(interval: number = 10): void {
+    this.stopCommunication();
 
     this.receiveDataTask = window.setInterval(() => {
       this.update();
@@ -90,13 +76,30 @@ export class CommunicationService {
   /**
    * Stops all periodic tasks
    */
-  private stopUpdates(): void {
+  stopCommunication(): void {
+    this.setConnectionStatus(false);
+    this.incomingDataQueue = [];
+    this.incomingPackets = [];
+
     if (this.receiveDataTask !== undefined) {
       clearInterval(this.receiveDataTask);
       this.receiveDataTask = undefined;
     }
 
     this.stopConnectionVerification();
+  }
+
+  /**
+   * Updates the communication service by processing incoming packets
+   */
+  private async update(): Promise<void> {
+    if (!this.functionsRegistered) {
+      console.warn("Communication functions not registered");
+      return;
+    }
+
+    await this.updateIncomingPackets();
+    this.processIncomingPackets();
   }
 
   /**

@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { CommunicationService } from '../lib/comm/CommunicationService';
+import { CommunicationService, SendDataFunction, GetDataFunction } from '../lib/comm/CommunicationService';
 import { SerialVariablePool, SerializableClasses } from '../lib/comm/SerialVariablePool';
 
 interface CommunicationContextType {
   commService: CommunicationService | null;
   isConnected: boolean;
-  startCommunication: (
-    sendDataFunc: (data: Uint8Array) => Promise<void>,
-    getDataFunc: () => Promise<Uint8Array>
+  registerCommunicationFunctions: (
+    sendDataFunc: SendDataFunction,
+    getDataFunc: GetDataFunction
   ) => void;
+  startCommunication: () => void;
   stopCommunication: () => void;
   pool: SerialVariablePool | null;
 }
@@ -39,12 +40,16 @@ export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
     setPool(pool);
   }, []);
 
-  const startCommunication = (
-    sendDataFunc: (data: Uint8Array) => Promise<void>,
-    getDataFunc: () => Promise<Uint8Array>
+  const registerCommunicationFunctions = (
+    sendDataFunc: SendDataFunction,
+    getDataFunc: GetDataFunction
   ) => {
     if (!commService) return;
     commService.registerCommunicationFunctions(sendDataFunc, getDataFunc);
+  };
+
+  const startCommunication = () => {
+    if (!commService) return;
     commService.startCommunication();
   };
 
@@ -56,6 +61,7 @@ export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
   const contextValue = {
     commService,
     isConnected,
+    registerCommunicationFunctions,
     startCommunication,
     stopCommunication,
     pool,
