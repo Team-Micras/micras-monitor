@@ -7,15 +7,19 @@ export class BluetoothService {
   private receiveBuffer: Uint8Array[] = [];
   private sendBuffer: Uint8Array[] = [];
   private device: BluetoothDevice | null = null;
-  private characteristic?: BluetoothRemoteGATTCharacteristic | null = null;
+  private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private onConnectionChanged?: (connected: boolean) => void;
   private isConnected = false;
   private sendBufferTask: number | null = null;
   private sendBufferInterval: number = 50;
-
+  private readonly CONNECTION_TIMEOUT = 10000;
+  private readonly MAX_RETRY_ATTEMPTS = 3;
+  private retryCount = 0;
   /**
    * Creates a new BluetoothService instance
    *
+   * @param serviceUuid - Optional custom service UUID
+   * @param characteristicUuid - Optional custom characteristic UUID
    * @param onConnectionChanged - Optional callback for connection status changes
    */
   constructor(
@@ -52,27 +56,15 @@ export class BluetoothService {
         this.handleDisconnection.bind(this)
       );
 
-      const server = await this.device.gatt?.connect();
-      if (!server) {
-        throw new Error("Failed to connect to GATT server");
-      }
-      console.log("Connected to GATT server");
+      const connectionPromise = this.connectToDevice();
+      const timeoutPromise = new Promise<void>((_, reject) => {
+        setTimeout(
+          () => reject(new Error("Connection timeout exceeded")),
+          this.CONNECTION_TIMEOUT
+        );
+      });
 
-      const service = await server.getPrimaryService(this.serviceUuid);
-
-      this.characteristic = await service.getCharacteristic(
-        this.characteristicUuid
-      );
-
-      this.characteristic.addEventListener(
-        "characteristicvaluechanged",
-        this.handleValueChanged.bind(this)
-      );
-      await this.characteristic.startNotifications();
-
-      this.setConnectionStatus(true);
-      this.startSendBufferTask();
-      console.log("Bluetooth device connected successfully");
+      await Promise.race([connectionPromise, timeoutPromise]);
     } catch (error) {
       this.setConnectionStatus(false);
       this.device = null;
@@ -80,6 +72,45 @@ export class BluetoothService {
       console.error("Error connecting to Bluetooth device:", error);
       throw error;
     }
+  }
+
+  /**
+   * Internal method to handle the device connection process
+   */
+  private async connectToDevice(): Promise<void> {
+    await this.setupConnection();
+    console.log("Bluetooth device connected successfully");
+  }
+
+  /**
+   * Common logic for connecting to a device and setting up the characteristic
+   * @returns Promise that resolves when the connection process completes
+   */
+  private async setupConnection(): Promise<void> {
+    if (!this.device || !this.device.gatt) {
+      throw new Error("No Bluetooth device available");
+    }
+
+    const server = await this.device.gatt.connect();
+    if (!server) {
+      throw new Error("Failed to connect to GATT server");
+    }
+    console.log("Connected to GATT server");
+
+    const service = await server.getPrimaryService(this.serviceUuid);
+
+    this.characteristic = await service.getCharacteristic(
+      this.characteristicUuid
+    );
+
+    this.characteristic.addEventListener(
+      "characteristicvaluechanged",
+      this.handleValueChanged.bind(this)
+    );
+    await this.characteristic.startNotifications();
+
+    this.setConnectionStatus(true);
+    this.startSendBufferTask();
   }
 
   /**
@@ -110,6 +141,11 @@ export class BluetoothService {
     this.device = null;
   }
 
+  /**
+   * Send data to the connected Bluetooth device
+   *
+   * @param data - The data to send
+   */
   sendData(data: Uint8Array): void {
     if (!this.isConnected) {
       console.warn("Bluetooth device not connected");
@@ -119,6 +155,11 @@ export class BluetoothService {
     this.sendBuffer.push(data);
   }
 
+  /**
+   * Get and clear all received data from the buffer
+   *
+   * @returns Concatenated array of all received data
+   */
   getData(): Uint8Array {
     if (!this.isConnected) {
       console.warn("Bluetooth device not connected");
@@ -139,6 +180,11 @@ export class BluetoothService {
     return this.isConnected;
   }
 
+  /**
+   * Get the name of the currently connected device
+   *
+   * @returns Name of the connected device or default message if no device
+   */
   getDeviceName(): string {
     return this.device ? this.device.name || "Unknown Device" : "No Device";
   }
@@ -153,10 +199,47 @@ export class BluetoothService {
     );
     this.setConnectionStatus(false);
     this.stopSendBufferTask();
-    this.device = null;
-    this.characteristic = null;
 
-    // @todo attempt reconnection logic here
+    this.attemptReconnection();
+  }
+
+  /**
+   * Attempt to reconnect to the device with exponential backoff
+   */
+  private attemptReconnection(): void {
+    if (this.retryCount < this.MAX_RETRY_ATTEMPTS) {
+      this.retryCount++;
+      console.log(
+        `Reconnection attempt ${this.retryCount}/${this.MAX_RETRY_ATTEMPTS}`
+      );
+
+      const delay = Math.pow(2, this.retryCount) * 1000;
+
+      setTimeout(async () => {
+        if (this.device && this.device.gatt) {
+          try {
+            await this.setupConnection();
+            this.retryCount = 0;
+            console.log("Bluetooth device reconnected successfully");
+          } catch (error) {
+            console.error(
+              `Reconnection attempt ${this.retryCount} failed:`,
+              error
+            );
+            this.attemptReconnection();
+          }
+        } else {
+          this.device = null;
+          this.characteristic = null;
+          console.error("Device is no longer available for reconnection");
+        }
+      }, delay);
+    } else {
+      console.error("Maximum reconnection attempts reached");
+      this.device = null;
+      this.characteristic = null;
+      this.retryCount = 0;
+    }
   }
 
   /**
@@ -170,6 +253,11 @@ export class BluetoothService {
     this.receiveBuffer.push(new Uint8Array(value.buffer));
   }
 
+  /**
+   * Process the send buffer by sending data to the Bluetooth device
+   *
+   * @returns Promise that resolves when buffer processing is complete
+   */
   private async processSendBuffer(): Promise<void> {
     if (!this.characteristic || !this.isConnected) {
       return Promise.resolve();
@@ -221,6 +309,9 @@ export class BluetoothService {
     }
   }
 
+  /**
+   * Start the task that periodically processes the send buffer
+   */
   private startSendBufferTask(): void {
     if (this.sendBufferTask === null) {
       this.sendBufferTask = window.setInterval(
@@ -230,6 +321,9 @@ export class BluetoothService {
     }
   }
 
+  /**
+   * Stop the send buffer processing task
+   */
   private stopSendBufferTask(): void {
     if (this.sendBufferTask !== null) {
       clearInterval(this.sendBufferTask);
@@ -237,6 +331,12 @@ export class BluetoothService {
     }
   }
 
+  /**
+   * Utility method to combine multiple Uint8Arrays into a single array
+   *
+   * @param arrays - Array of Uint8Arrays to flatten
+   * @returns Single Uint8Array containing all input data
+   */
   private static flattenUint8Arrays(arrays: Uint8Array[]): Uint8Array {
     const totalLength = arrays.reduce((acc, arr) => acc + arr.byteLength, 0);
     const result = new Uint8Array(totalLength);
