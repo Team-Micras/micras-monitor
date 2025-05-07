@@ -139,6 +139,10 @@ export class BluetoothService {
     return this.isConnected;
   }
 
+  getDeviceName(): string {
+    return this.device ? this.device.name || "Unknown Device" : "No Device";
+  }
+
   /**
    * Handle disconnection event
    */
