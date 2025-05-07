@@ -12,9 +12,11 @@ export class BluetoothService {
   private isConnected = false;
   private sendBufferTask: number | null = null;
   private sendBufferInterval: number = 50;
-  private readonly CONNECTION_TIMEOUT = 10000;
+  private readonly CONNECTION_TIMEOUT = 10000000;
   private readonly MAX_RETRY_ATTEMPTS = 3;
   private retryCount = 0;
+  private isProcessingSendBuffer = false;
+
   /**
    * Creates a new BluetoothService instance
    *
@@ -147,6 +149,7 @@ export class BluetoothService {
    * @param data - The data to send
    */
   sendData(data: Uint8Array): void {
+    console.debug("Adding data to send buffer:", data);
     if (!this.isConnected) {
       console.warn("Bluetooth device not connected");
       return;
@@ -259,33 +262,55 @@ export class BluetoothService {
    * @returns Promise that resolves when buffer processing is complete
    */
   private async processSendBuffer(): Promise<void> {
-    if (!this.characteristic || !this.isConnected) {
+    if (
+      !this.characteristic ||
+      !this.isConnected ||
+      this.isProcessingSendBuffer ||
+      this.sendBuffer.length === 0
+    ) {
       return Promise.resolve();
     }
 
-    if (this.sendBuffer.length === 0) {
-      return Promise.resolve();
-    }
-
-    const dataToSend = BluetoothService.flattenUint8Arrays(this.sendBuffer);
-    const chunkSize = 20; // Maximum size for a single write operation
+    this.isProcessingSendBuffer = true;
 
     try {
-      for (let i = 0; i < dataToSend.length; i += chunkSize) {
-        const chunk = dataToSend.slice(i, i + chunkSize);
-        await this.characteristic?.writeValue(chunk);
-      }
+      const dataToSend = BluetoothService.flattenUint8Arrays(this.sendBuffer);
+      const chunkSize = 20;
+      this.sendBuffer = [];
 
       if (dataToSend.length > 0) {
+        const chunks: Uint8Array[] = [];
+        for (let i = 0; i < dataToSend.length; i += chunkSize) {
+          chunks.push(dataToSend.slice(i, i + chunkSize));
+        }
+
+        let writePromise = this.writeChunk(chunks[0]);
+        for (let i = 1; i < chunks.length; i++) {
+          writePromise = writePromise.then(() => this.writeChunk(chunks[i]));
+        }
+
+        await writePromise;
         console.debug(`Sent ${dataToSend.length} bytes via Bluetooth`);
       }
-
-      this.sendBuffer = [];
     } catch (error) {
       console.error("Error sending data via Bluetooth:", error);
+    } finally {
+      this.isProcessingSendBuffer = false;
     }
 
     return Promise.resolve();
+  }
+
+  /**
+   * Write a single chunk to the characteristic
+   * @param chunk - Data chunk to write
+   * @returns Promise that resolves when writing is complete
+   */
+  private async writeChunk(chunk: Uint8Array): Promise<void> {
+    if (!this.characteristic) {
+      throw new Error("No characteristic available");
+    }
+    return this.characteristic.writeValue(chunk);
   }
 
   /**
