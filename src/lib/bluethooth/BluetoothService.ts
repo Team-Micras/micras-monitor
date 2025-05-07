@@ -10,6 +10,8 @@ export class BluetoothService {
   private characteristic?: BluetoothRemoteGATTCharacteristic | null = null;
   private onConnectionChanged?: (connected: boolean) => void;
   private isConnected = false;
+  private sendBufferTask: number | null = null;
+  private sendBufferInterval: number = 50;
 
   /**
    * Creates a new BluetoothService instance
@@ -69,6 +71,7 @@ export class BluetoothService {
       await this.characteristic.startNotifications();
 
       this.setConnectionStatus(true);
+      this.startSendBufferTask();
       console.log("Bluetooth device connected successfully");
     } catch (error) {
       this.setConnectionStatus(false);
@@ -102,6 +105,7 @@ export class BluetoothService {
     }
 
     this.setConnectionStatus(false);
+    this.stopSendBufferTask();
     this.characteristic = null;
     this.device = null;
   }
@@ -126,10 +130,6 @@ export class BluetoothService {
     return data;
   }
 
-  update(): void {
-    this.processSendBuffer();
-  }
-
   /**
    * Check if a Bluetooth device is currently connected
    *
@@ -152,6 +152,7 @@ export class BluetoothService {
       `Bluetooth device "${device.name}" disconnected, attempting to reconnect...`
     );
     this.setConnectionStatus(false);
+    this.stopSendBufferTask();
     this.device = null;
     this.characteristic = null;
 
@@ -171,24 +172,31 @@ export class BluetoothService {
 
   private async processSendBuffer(): Promise<void> {
     if (!this.characteristic || !this.isConnected) {
-      console.warn("Bluetooth device not connected");
       return Promise.resolve();
     }
 
     if (this.sendBuffer.length === 0) {
-      console.warn("No data to send");
       return Promise.resolve();
     }
 
     const dataToSend = BluetoothService.flattenUint8Arrays(this.sendBuffer);
     const chunkSize = 20; // Maximum size for a single write operation
 
-    for (let i = 0; i < dataToSend.length; i += chunkSize) {
-      const chunk = dataToSend.slice(i, i + chunkSize);
-      await this.characteristic?.writeValue(chunk);
+    try {
+      for (let i = 0; i < dataToSend.length; i += chunkSize) {
+        const chunk = dataToSend.slice(i, i + chunkSize);
+        await this.characteristic?.writeValue(chunk);
+      }
+
+      if (dataToSend.length > 0) {
+        console.debug(`Sent ${dataToSend.length} bytes via Bluetooth`);
+      }
+
+      this.sendBuffer = [];
+    } catch (error) {
+      console.error("Error sending data via Bluetooth:", error);
     }
 
-    this.sendBuffer = [];
     return Promise.resolve();
   }
 
@@ -210,6 +218,22 @@ export class BluetoothService {
       if (this.onConnectionChanged) {
         this.onConnectionChanged(status);
       }
+    }
+  }
+
+  private startSendBufferTask(): void {
+    if (this.sendBufferTask === null) {
+      this.sendBufferTask = window.setInterval(
+        this.processSendBuffer.bind(this),
+        this.sendBufferInterval
+      );
+    }
+  }
+
+  private stopSendBufferTask(): void {
+    if (this.sendBufferTask !== null) {
+      clearInterval(this.sendBufferTask);
+      this.sendBufferTask = null;
     }
   }
 

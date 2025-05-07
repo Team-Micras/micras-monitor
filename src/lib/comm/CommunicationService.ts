@@ -63,7 +63,7 @@ export class CommunicationService {
    *
    * @param interval - The update interval in milliseconds
    */
-  startCommunication(interval: number = 10): void {
+  startCommunication(interval: number = 50): void {
     this.stopCommunication();
 
     this.receiveDataTask = window.setInterval(() => {
