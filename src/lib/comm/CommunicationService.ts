@@ -90,6 +90,13 @@ export class CommunicationService {
   }
 
   /**
+   * Returns whether the service is currently connected to a remote device
+   */
+  isServiceConnected(): boolean {
+    return this.isConnected;
+  }
+
+  /**
    * Updates the communication service by processing incoming packets
    */
   private async update(): Promise<void> {
@@ -318,12 +325,5 @@ export class CommunicationService {
         console.warn("Unknown packet type:", packet.getType());
         break;
     }
-  }
-
-  /**
-   * Returns whether the service is currently connected to a remote device
-   */
-  public isServiceConnected(): boolean {
-    return this.isConnected;
   }
 }
