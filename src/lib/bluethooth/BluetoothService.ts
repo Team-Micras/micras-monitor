@@ -149,7 +149,6 @@ export class BluetoothService {
    * @param data - The data to send
    */
   sendData(data: Uint8Array): void {
-    console.debug("Adding data to send buffer:", data);
     if (!this.isConnected) {
       console.warn("Bluetooth device not connected");
       return;
