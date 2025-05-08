@@ -64,7 +64,14 @@ export class CommunicationService {
    * @param interval - The update interval in milliseconds
    */
   startCommunication(interval: number = 50): void {
-    this.stopCommunication();
+    console.debug("Starting communication");
+
+    if (this.receiveDataTask !== undefined) {
+      clearInterval(this.receiveDataTask);
+      this.receiveDataTask = undefined;
+    }
+
+    this.stopConnectionVerification();
 
     this.receiveDataTask = window.setInterval(() => {
       this.update();
@@ -77,6 +84,8 @@ export class CommunicationService {
    * Stops all periodic tasks
    */
   stopCommunication(): void {
+    console.debug("Stopping communication");
+
     this.setConnectionStatus(false);
     this.incomingDataQueue = [];
     this.incomingPackets = [];
@@ -164,7 +173,6 @@ export class CommunicationService {
       this.verifyConnectionTask = undefined;
     }
 
-    // Clear any pending connection check timeouts
     this.connectionCheckTimeouts.forEach((timeoutId) => {
       clearTimeout(timeoutId);
     });
@@ -175,6 +183,7 @@ export class CommunicationService {
    * Sends a ping packet to the remote device
    */
   private ping(): void {
+    console.debug("Sending PING");
     this.sendPacket(new Packet(Packet.MessageType.PING));
   }
 
@@ -182,6 +191,7 @@ export class CommunicationService {
    * Requests the variable map from the remote device
    */
   private requestVariableMap(): void {
+    console.debug("Sending SERIAL_VARIABLE_MAP_REQUEST");
     this.sendPacket(new Packet(Packet.MessageType.SERIAL_VARIABLE_MAP_REQUEST));
   }
 
@@ -203,6 +213,9 @@ export class CommunicationService {
    * @param status - The new connection status
    */
   private setConnectionStatus(status: boolean): void {
+    console.debug(
+      ` Connection status changed: ${status ? "Connected" : "Disconnected"}`
+    );
     if (this.isConnected !== status) {
       this.isConnected = status;
 
@@ -298,22 +311,26 @@ export class CommunicationService {
   private consumePacket(packet: Packet): void {
     switch (packet.getType()) {
       case Packet.MessageType.PONG:
+        console.debug("Received PONG");
         this.pongReceived = true;
         break;
 
       case Packet.MessageType.SERIAL_VARIABLE_MAP_RESPONSE:
-        console.debug("Received variable map response");
+        console.debug("Received SERIAL_VARIABLE_MAP_RESPONSE");
         this.pool.deserializeVarMap(packet.getPayload());
         break;
 
       case Packet.MessageType.SERIAL_VARIABLE:
-        console.debug(`Received variable with ID: ${packet.getId()}`);
+        if (!this.isConnected) {
+          break; //@todo nao faz sentido so pra testar
+        }
+        console.debug(`Received SERIAL_VARIABLE with ID: ${packet.getId()}`);
         this.pool.deserializeVariable(packet.getId(), packet.getPayload());
         break;
 
       case Packet.MessageType.DEBUG_LOG:
         const log = new TextDecoder().decode(packet.getPayload());
-        console.debug("Received log:", log);
+        console.log("Received log:", log);
         break;
 
       case Packet.MessageType.ERROR:
