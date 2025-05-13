@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useCommunication } from '../contexts/CommunicationContext';
+import React, { useState, useCallback } from 'react';
 import { useWebSocketCommunication } from '../hooks/useWebSocketCommunication';
 
 interface WebSocketCommunicationProps {
