@@ -8,6 +8,13 @@ export class Packet {
   private id: number;
   private payload: Uint8Array;
 
+  /**
+   * Creates a new Packet instance.
+   *
+   * @param type The type of the packet.
+   * @param id The ID of the packet, default is 0.
+   * @param payload The payload of the packet, default is an empty Uint8Array.
+   */
   constructor(
     type: Packet.MessageType,
     id: number = 0,
@@ -18,6 +25,12 @@ export class Packet {
     this.payload = payload;
   }
 
+  /**
+   * Creates a Packet instance from a serialized packet.
+   *
+   * @param serializedPacket The serialized packet as a Uint8Array.
+   * @returns A new Packet instance.
+   */
   static fromSerialized(serializedPacket: Uint8Array): Packet {
     if (!Packet.isValid(serializedPacket)) {
       console.error("Trying to deserialize an invalid packet");
@@ -34,6 +47,11 @@ export class Packet {
     return new Packet(type, id, payload);
   }
 
+  /**
+   * Serializes the Packet instance to a Uint8Array.
+   *
+   * @returns The serialized packet as a Uint8Array.
+   */
   serialize(): Uint8Array {
     const data: number[] = [];
 
@@ -62,6 +80,12 @@ export class Packet {
     return new Uint8Array(data);
   }
 
+  /**
+   * Escapes the payload by adding escape bytes before special characters.
+   *
+   * @param payload The payload to escape.
+   * @returns The escaped payload as a Uint8Array.
+   */
   private static escapePayload(payload: Uint8Array): Uint8Array {
     const escaped: number[] = [];
 
@@ -79,6 +103,12 @@ export class Packet {
     return new Uint8Array(escaped);
   }
 
+  /**
+   * Unescapes the payload by removing escape bytes before special characters.
+   *
+   * @param escapedPayload The escaped payload to unescape.
+   * @returns The unescaped payload as a Uint8Array.
+   */
   private static unescapePayload(escapedPayload: Uint8Array): Uint8Array {
     const payload: number[] = [];
 
@@ -95,6 +125,12 @@ export class Packet {
     return new Uint8Array(payload);
   }
 
+  /**
+   * Validates the serialized packet.
+   *
+   * @param serializedPacket The serialized packet as a Uint8Array.
+   * @returns True if the packet is valid, false otherwise.
+   */
   static isValid(serializedPacket: Uint8Array): boolean {
     if (serializedPacket.length < Packet.MINIMUM_SIZE) {
       return false;
@@ -116,14 +152,29 @@ export class Packet {
     return checksum === serializedPacket[serializedPacket.length - 2];
   }
 
+  /**
+   * Gets the type of the packet.
+   *
+   * @returns The type of the packet as a Packet.MessageType.
+   */
   getType(): Packet.MessageType {
     return this.type;
   }
 
+  /**
+   * Gets the ID of the packet.
+   *
+   * @returns The ID of the packet as a number.
+   */
   getId(): number {
     return this.id;
   }
 
+  /**
+   * Gets the payload of the packet.
+   *
+   * @returns The payload of the packet as a Uint8Array.
+   */
   getPayload(): Uint8Array {
     return this.payload;
   }
