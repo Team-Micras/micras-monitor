@@ -250,6 +250,11 @@ export class CommunicationService {
     }
   }
 
+  /**
+   * Checks if the incoming data queue has a valid packet tail
+   *
+   * @returns true if the queue has a valid packet tail, false otherwise
+   */
   private hasValidPacketTail(): boolean {
     const queue = this.incomingDataQueue;
 
@@ -263,6 +268,11 @@ export class CommunicationService {
     );
   }
 
+  /**
+   * Extracts a valid packet from the incoming data queue
+   *
+   * @returns A Uint8Array containing the valid packet data
+   */
   private extractValidPacket(): Uint8Array {
     const queue = this.incomingDataQueue;
     let startIndex = 0;
@@ -281,6 +291,9 @@ export class CommunicationService {
     return new Uint8Array(queue.slice(startIndex));
   }
 
+  /**
+   * Processes all incoming packets and consumes them
+   */
   private processIncomingPackets(): void {
     while (this.incomingPackets.length > 0) {
       const packet = this.incomingPackets.shift()!;
@@ -308,39 +321,50 @@ export class CommunicationService {
     }
   }
 
+  /**
+   * Consumes a packet by processing its type and payload
+   *
+   * @param packet - The packet to consume
+   */
   private consumePacket(packet: Packet): void {
     switch (packet.getType()) {
-      case Packet.MessageType.PONG:
+      case Packet.MessageType.PONG: {
         console.debug("Received PONG");
         this.pongReceived = true;
         break;
+      }
 
-      case Packet.MessageType.SERIAL_VARIABLE_MAP_RESPONSE:
+      case Packet.MessageType.SERIAL_VARIABLE_MAP_RESPONSE: {
         console.debug("Received SERIAL_VARIABLE_MAP_RESPONSE");
         this.pool.deserializeVarMap(packet.getPayload());
         break;
+      }
 
-      case Packet.MessageType.SERIAL_VARIABLE:
+      case Packet.MessageType.SERIAL_VARIABLE: {
         if (!this.isConnected) {
           break; //@todo nao faz sentido so pra testar
         }
         console.debug(`Received SERIAL_VARIABLE with ID: ${packet.getId()}`);
         this.pool.deserializeVariable(packet.getId(), packet.getPayload());
         break;
+      }
 
-      case Packet.MessageType.DEBUG_LOG:
+      case Packet.MessageType.DEBUG_LOG: {
         const log = new TextDecoder().decode(packet.getPayload());
         console.log("Received log:", log);
         break;
+      }
 
-      case Packet.MessageType.ERROR:
+      case Packet.MessageType.ERROR: {
         const errorMessage = new TextDecoder().decode(packet.getPayload());
         console.error("Received error:", errorMessage);
         break;
+      }
 
-      default:
+      default: {
         console.warn("Unknown packet type:", packet.getType());
         break;
+      }
     }
   }
 }

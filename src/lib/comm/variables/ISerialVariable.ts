@@ -22,11 +22,16 @@ export interface ISerialVariable extends ISerializable {
    */
   getType(): string;
 
+  /**
+   * Get a reference to the variable's value.
+   *
+   * @returns Reference object containing the value.
+   */
   getReference(): { value: Fundamental | ISerializable };
 }
 
 /**
- * TypeScript equivalent of C++ concepts
+ * TypeScript equivalent of C++ primitive types.
  */
 export type Fundamental = number | boolean | bigint | string;
 
@@ -36,7 +41,7 @@ export type Fundamental = number | boolean | bigint | string;
  * @param value The value to check.
  * @returns True if the value is a primitive type, false otherwise.
  */
-export function isFundamental(value: any): value is Fundamental {
+export function isFundamental(value: unknown): value is Fundamental {
   return (
     typeof value === "number" ||
     typeof value === "boolean" ||
@@ -47,10 +52,13 @@ export function isFundamental(value: any): value is Fundamental {
 /**
  * Check if a value is serializable
  */
-export function isSerializable(value: any): value is ISerializable {
+export function isSerializable(value: unknown): value is ISerializable {
   return (
-    value &&
-    typeof value.serialize === "function" &&
-    typeof value.deserialize === "function"
+    value !== null &&
+    typeof value === "object" &&
+    "serialize" in value &&
+    "deserialize" in value &&
+    typeof (value as Record<string, unknown>).serialize === "function" &&
+    typeof (value as Record<string, unknown>).deserialize === "function"
   );
 }

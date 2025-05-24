@@ -100,7 +100,7 @@ export class CppBinarySerializer {
   /**
    * Serialize a value of a given type to a Uint8Array
    */
-  static serializeValue(value: any, type: CppType): Uint8Array {
+  static serializeValue(value: Fundamental, type: CppType): Uint8Array {
     const size = this.getCppTypeSize(type);
     const buffer = new ArrayBuffer(size);
     const dataView = new DataView(buffer);
@@ -111,8 +111,7 @@ export class CppBinarySerializer {
         dataView.setUint8(0, value ? 1 : 0);
         break;
       case "char":
-        const charValue = value as string;
-        dataView.setUint8(0, charValue.charCodeAt(0));
+        dataView.setUint8(0, (value as string).charCodeAt(0));
         break;
       case "unsigned char":
         dataView.setUint8(0, value as number);
@@ -154,7 +153,10 @@ export class CppBinarySerializer {
   /**
    * Deserialize a value from a Uint8Array based on its C++ type
    */
-  static deserializeValue(serialData: Uint8Array, type: CppType): any {
+  static deserializeValue(
+    serialData: Uint8Array,
+    type: CppType
+  ): Fundamental | null {
     const dataView = new DataView(
       serialData.buffer,
       serialData.byteOffset,
