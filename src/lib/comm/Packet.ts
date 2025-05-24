@@ -24,8 +24,8 @@ export class Packet {
       return new Packet(Packet.MessageType.ERROR);
     }
 
-    const id = (serializedPacket[1] << 8) | serializedPacket[2];
-    const type = serializedPacket[3] as Packet.MessageType;
+    const type = serializedPacket[1] as Packet.MessageType;
+    const id = (serializedPacket[2] << 8) | serializedPacket[3];
     const escapedPayload = serializedPacket.slice(
       6,
       serializedPacket.length - 2
