@@ -169,24 +169,12 @@ export class SerialVariablePool {
 
         const readOnly = data[offset++] !== 0;
 
-        if (this.factories[type]) {
-          const variable = this.factories[type](name, readOnly);
+        const factoryType = this.getFactoryType(type);
+        if (factoryType) {
+          const variable = this.factories[factoryType](name, readOnly);
           this.variables.set(id, variable);
           this.nameToIdMap.set(name, id);
         } else {
-          const templateRegex = /^(\w+)<(.+)>$/;
-          const match = type.match(templateRegex);
-
-          if (match) {
-            const [, baseTypeName] = match;
-            if (this.factories[baseTypeName]) {
-              const variable = this.factories[baseTypeName](name, readOnly);
-              this.variables.set(id, variable);
-              this.nameToIdMap.set(name, id);
-              return;
-            }
-          }
-
           console.warn(`No factory registered for type: ${type}`);
         }
       }
@@ -298,6 +286,30 @@ export class SerialVariablePool {
           readOnly
         );
     }
+  }
+
+  /**
+   * Get the factory type for a given type string
+   *
+   * @param type The type string to resolve
+   * @returns The factory type if found, null otherwise
+   */
+  private getFactoryType(type: string): string | null {
+    if (this.factories[type]) {
+      return type;
+    }
+
+    const templateRegex = /^(\w+)<(.+)>$/;
+    const match = type.match(templateRegex);
+
+    if (match) {
+      const [, templateTypeName] = match;
+      if (this.factories[templateTypeName]) {
+        return templateTypeName;
+      }
+    }
+
+    return null;
   }
 
   /**
