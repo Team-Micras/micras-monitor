@@ -5,7 +5,7 @@ import { CustomSerialVariable } from "./variables/CustomSerialVariable";
 import { ISerializable } from "./ISerializable";
 
 export type SerializableClasses = {
-  [key: string]: new (...args: any[]) => ISerializable;
+  [key: string]: new () => ISerializable;
 };
 
 type SerialVariableFactory = (
@@ -45,6 +45,12 @@ export class SerialVariablePool {
    * const mySerializableClasses = {
    *   MyFirstClass,
    *   MySecondClass,
+   * };
+   *
+   * // If you have a template class in C++ like MyClass<T>, you can register it like this:
+   * const mySerializableClasses = {
+   *   MyClass, // This will match MyClass<int>, MyClass<string>, etc.
+   *   "MyClass<int>": MyClassInt, // If you have a specific instantiation you can map accordingly
    * };
    *
    * const pool = new SerialVariablePool(mySerializableClasses);
@@ -168,6 +174,19 @@ export class SerialVariablePool {
           this.variables.set(id, variable);
           this.nameToIdMap.set(name, id);
         } else {
+          const templateRegex = /^(\w+)<(.+)>$/;
+          const match = type.match(templateRegex);
+
+          if (match) {
+            const [, baseTypeName] = match;
+            if (this.factories[baseTypeName]) {
+              const variable = this.factories[baseTypeName](name, readOnly);
+              this.variables.set(id, variable);
+              this.nameToIdMap.set(name, id);
+              return;
+            }
+          }
+
           console.warn(`No factory registered for type: ${type}`);
         }
       }
