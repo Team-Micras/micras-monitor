@@ -1,10 +1,20 @@
+export enum MessageType {
+  PING = 0x00,
+  PONG = 0x01,
+  SERIAL_VARIABLE_MAP_REQUEST = 0x02,
+  SERIAL_VARIABLE_MAP_RESPONSE = 0x03,
+  SERIAL_VARIABLE = 0x04,
+  DEBUG_LOG = 0x05,
+  ERROR = 0x06,
+}
+
 export class Packet {
   static readonly HEADER_BYTE = 0x42;
   static readonly TAIL_BYTE = 0x7f;
   static readonly ESCAPE_BYTE = 0x7d;
   static readonly MINIMUM_SIZE = 7;
 
-  private type: Packet.MessageType;
+  private type: MessageType;
   private id: number;
   private payload: Uint8Array;
 
@@ -16,7 +26,7 @@ export class Packet {
    * @param payload The payload of the packet, default is an empty Uint8Array.
    */
   constructor(
-    type: Packet.MessageType,
+    type: MessageType,
     id: number = 0,
     payload: Uint8Array = new Uint8Array([0])
   ) {
@@ -34,10 +44,10 @@ export class Packet {
   static fromSerialized(serializedPacket: Uint8Array): Packet {
     if (!Packet.isValid(serializedPacket)) {
       console.error("Trying to deserialize an invalid packet");
-      return new Packet(Packet.MessageType.ERROR);
+      return new Packet(MessageType.ERROR);
     }
 
-    const type = serializedPacket[1] as Packet.MessageType;
+    const type = serializedPacket[1] as MessageType;
     const id = (serializedPacket[2] << 8) | serializedPacket[3];
     const escapedPayload = serializedPacket.slice(
       6,
@@ -155,9 +165,9 @@ export class Packet {
   /**
    * Gets the type of the packet.
    *
-   * @returns The type of the packet as a Packet.MessageType.
+   * @returns The type of the packet as a MessageType.
    */
-  getType(): Packet.MessageType {
+  getType(): MessageType {
     return this.type;
   }
 
@@ -177,17 +187,5 @@ export class Packet {
    */
   getPayload(): Uint8Array {
     return this.payload;
-  }
-}
-
-export namespace Packet {
-  export enum MessageType {
-    PING = 0x00,
-    PONG = 0x01,
-    SERIAL_VARIABLE_MAP_REQUEST = 0x02,
-    SERIAL_VARIABLE_MAP_RESPONSE = 0x03,
-    SERIAL_VARIABLE = 0x04,
-    DEBUG_LOG = 0x05,
-    ERROR = 0x06,
   }
 }

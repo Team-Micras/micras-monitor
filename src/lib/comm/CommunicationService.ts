@@ -1,4 +1,4 @@
-import { Packet } from "./Packet";
+import { Packet, MessageType } from "./Packet";
 import { SerialVariablePool } from "./SerialVariablePool";
 import { ISerialVariable } from "./variables/ISerialVariable";
 
@@ -184,7 +184,7 @@ export class CommunicationService {
    */
   private ping(): void {
     console.debug("Sending PING");
-    this.sendPacket(new Packet(Packet.MessageType.PING));
+    this.sendPacket(new Packet(MessageType.PING));
   }
 
   /**
@@ -192,7 +192,7 @@ export class CommunicationService {
    */
   private requestVariableMap(): void {
     console.debug("Sending SERIAL_VARIABLE_MAP_REQUEST");
-    this.sendPacket(new Packet(Packet.MessageType.SERIAL_VARIABLE_MAP_REQUEST));
+    this.sendPacket(new Packet(MessageType.SERIAL_VARIABLE_MAP_REQUEST));
   }
 
   /**
@@ -203,7 +203,7 @@ export class CommunicationService {
    */
   private sendVariable(id: number, variable: ISerialVariable): void {
     this.sendPacket(
-      new Packet(Packet.MessageType.SERIAL_VARIABLE, id, variable.serialize())
+      new Packet(MessageType.SERIAL_VARIABLE, id, variable.serialize())
     );
   }
 
@@ -328,19 +328,19 @@ export class CommunicationService {
    */
   private consumePacket(packet: Packet): void {
     switch (packet.getType()) {
-      case Packet.MessageType.PONG: {
+      case MessageType.PONG: {
         console.debug("Received PONG");
         this.pongReceived = true;
         break;
       }
 
-      case Packet.MessageType.SERIAL_VARIABLE_MAP_RESPONSE: {
+      case MessageType.SERIAL_VARIABLE_MAP_RESPONSE: {
         console.debug("Received SERIAL_VARIABLE_MAP_RESPONSE");
         this.pool.deserializeVarMap(packet.getPayload());
         break;
       }
 
-      case Packet.MessageType.SERIAL_VARIABLE: {
+      case MessageType.SERIAL_VARIABLE: {
         if (!this.isConnected) {
           break; //@todo nao faz sentido so pra testar
         }
@@ -349,13 +349,13 @@ export class CommunicationService {
         break;
       }
 
-      case Packet.MessageType.DEBUG_LOG: {
+      case MessageType.DEBUG_LOG: {
         const log = new TextDecoder().decode(packet.getPayload());
         console.log("Received log:", log);
         break;
       }
 
-      case Packet.MessageType.ERROR: {
+      case MessageType.ERROR: {
         const errorMessage = new TextDecoder().decode(packet.getPayload());
         console.error("Received error:", errorMessage);
         break;
