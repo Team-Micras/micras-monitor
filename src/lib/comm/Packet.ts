@@ -43,7 +43,10 @@ export class Packet {
    */
   static fromSerialized(serializedPacket: Uint8Array): Packet {
     if (!Packet.isValid(serializedPacket)) {
-      console.error("Trying to deserialize an invalid packet");
+      console.error(
+        "Trying to deserialize an invalid packet:",
+        serializedPacket
+      );
       return new Packet(MessageType.ERROR);
     }
 
@@ -83,6 +86,14 @@ export class Packet {
       checksum += data[i];
     }
     checksum %= 256;
+    if (
+      checksum === Packet.HEADER_BYTE ||
+      checksum === Packet.TAIL_BYTE ||
+      checksum === Packet.ESCAPE_BYTE
+    ) {
+      checksum += 1;
+    }
+
     data.push(checksum);
 
     data.push(Packet.TAIL_BYTE);
@@ -158,6 +169,14 @@ export class Packet {
       checksum += serializedPacket[i];
     }
     checksum %= 256;
+
+    if (
+      checksum === Packet.HEADER_BYTE ||
+      checksum === Packet.TAIL_BYTE ||
+      checksum === Packet.ESCAPE_BYTE
+    ) {
+      checksum += 1;
+    }
 
     return checksum === serializedPacket[serializedPacket.length - 2];
   }
