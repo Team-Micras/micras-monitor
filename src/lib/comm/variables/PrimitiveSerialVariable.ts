@@ -1,14 +1,12 @@
-import { ISerialVariable, Fundamental } from "./ISerialVariable";
-import { CppBinarySerializer, CppType } from "../CppSerializer";
+import { ISerialVariable, Fundamental } from './ISerialVariable';
+import { CppBinarySerializer, CppType } from '../CppSerializer';
 
 /**
  * Class for serializing and deserializing primitive variables.
  *
  * @template T Type of the primitive variable.
  */
-export class PrimitiveSerialVariable<T extends Fundamental>
-  implements ISerialVariable
-{
+export class PrimitiveSerialVariable<T extends Fundamental> implements ISerialVariable {
   private valueRef: { value: T };
   private name: string;
   private type: CppType;
@@ -21,12 +19,7 @@ export class PrimitiveSerialVariable<T extends Fundamental>
    * @param valueRef Reference object containing the value.
    * @param readOnly True if the variable is read-only, false otherwise.
    */
-  constructor(
-    name: string,
-    valueRef: { value: T },
-    readOnly: boolean,
-    type: CppType
-  ) {
+  constructor(name: string, valueRef: { value: T }, readOnly: boolean, type: CppType) {
     this.valueRef = valueRef;
     this.name = name;
     this.readOnly = readOnly;

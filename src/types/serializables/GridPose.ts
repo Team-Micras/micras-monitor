@@ -1,4 +1,4 @@
-import { ISerializable } from "@/lib/comm/ISerializable";
+import { ISerializable } from '@/lib/comm/ISerializable';
 
 /**
  * Side enum representing cardinal directions
@@ -27,10 +27,7 @@ export class GridPose implements ISerializable {
   public position: GridPosition;
   public orientation: Side;
 
-  constructor(
-    position: GridPosition = { x: 0, y: 0 },
-    orientation: Side = Side.RIGHT
-  ) {
+  constructor(position: GridPosition = { x: 0, y: 0 }, orientation: Side = Side.RIGHT) {
     this.position = position;
     this.orientation = orientation;
   }
@@ -80,10 +77,7 @@ export class GridPose implements ISerializable {
    * @returns A new GridPose instance with the same values
    */
   clone(): GridPose {
-    return new GridPose(
-      { x: this.position.x, y: this.position.y },
-      this.orientation
-    );
+    return new GridPose({ x: this.position.x, y: this.position.y }, this.orientation);
   }
 
   /**
@@ -94,15 +88,15 @@ export class GridPose implements ISerializable {
   getOrientationString(): string {
     switch (this.orientation) {
       case Side.RIGHT:
-        return "RIGHT";
+        return 'RIGHT';
       case Side.UP:
-        return "UP";
+        return 'UP';
       case Side.LEFT:
-        return "LEFT";
+        return 'LEFT';
       case Side.DOWN:
-        return "DOWN";
+        return 'DOWN';
       default:
-        return "UNKNOWN";
+        return 'UNKNOWN';
     }
   }
 

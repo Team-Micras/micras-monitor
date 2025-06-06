@@ -1,6 +1,6 @@
-import { Packet, MessageType } from "./Packet";
-import { SerialVariablePool } from "./SerialVariablePool";
-import { ISerialVariable } from "./variables/ISerialVariable";
+import { Packet, MessageType } from './Packet';
+import { SerialVariablePool } from './SerialVariablePool';
+import { ISerialVariable } from './variables/ISerialVariable';
 
 /**
  * Type definitions for communication functions.
@@ -64,7 +64,7 @@ export class CommunicationService {
    * @param interval - The update interval in milliseconds.
    */
   startCommunication(interval: number = 50): void {
-    console.debug("Starting communication");
+    console.log('Starting communication');
 
     if (this.receiveDataTask !== undefined) {
       clearInterval(this.receiveDataTask);
@@ -84,7 +84,7 @@ export class CommunicationService {
    * Stops all periodic tasks.
    */
   stopCommunication(): void {
-    console.debug("Stopping communication");
+    console.log('Stopping communication');
 
     this.setConnectionStatus(false);
     this.incomingDataQueue = [];
@@ -115,15 +115,11 @@ export class CommunicationService {
     const control = enabled ? 1 : 0;
     console.debug(
       `Sending SERIAL_VARIABLE_CONTROL: ${
-        enabled ? "enabling" : "disabling"
+        enabled ? 'enabling' : 'disabling'
       } variable ${id}`
     );
     this.sendPacket(
-      new Packet(
-        MessageType.SERIAL_VARIABLE_CONTROL,
-        id,
-        new Uint8Array([control])
-      )
+      new Packet(MessageType.SERIAL_VARIABLE_CONTROL, id, new Uint8Array([control]))
     );
   }
 
@@ -132,7 +128,7 @@ export class CommunicationService {
    */
   private async update(): Promise<void> {
     if (!this.functionsRegistered) {
-      console.warn("Communication functions not registered");
+      console.warn('Communication functions not registered');
       return;
     }
 
@@ -205,7 +201,7 @@ export class CommunicationService {
    * Sends a ping packet to the remote device.
    */
   private ping(): void {
-    console.debug("Sending PING");
+    console.log('Sending PING');
     this.sendPacket(new Packet(MessageType.PING));
   }
 
@@ -213,7 +209,7 @@ export class CommunicationService {
    * Requests the variable map from the remote device.
    */
   private requestVariableMap(): void {
-    console.debug("Sending SERIAL_VARIABLE_MAP_REQUEST");
+    console.log('Sending SERIAL_VARIABLE_MAP_REQUEST');
     this.sendPacket(new Packet(MessageType.SERIAL_VARIABLE_MAP_REQUEST));
   }
 
@@ -224,9 +220,7 @@ export class CommunicationService {
    * @param variable - The variable to send.
    */
   private sendVariable(id: number, variable: ISerialVariable): void {
-    this.sendPacket(
-      new Packet(MessageType.SERIAL_VARIABLE, id, variable.serialize())
-    );
+    this.sendPacket(new Packet(MessageType.SERIAL_VARIABLE, id, variable.serialize()));
   }
 
   /**
@@ -235,9 +229,7 @@ export class CommunicationService {
    * @param status - The new connection status.
    */
   private setConnectionStatus(status: boolean): void {
-    console.debug(
-      ` Connection status changed: ${status ? "Connected" : "Disconnected"}`
-    );
+    console.log(`Connection status changed: ${status ? 'Connected' : 'Disconnected'}`);
     if (this.isConnected !== status) {
       this.isConnected = status;
 
@@ -268,7 +260,7 @@ export class CommunicationService {
         }
       }
     } catch (error) {
-      console.error("Error updating incoming packets:", error);
+      console.error('Error updating incoming packets:', error);
     }
   }
 
@@ -299,10 +291,7 @@ export class CommunicationService {
     const queue = this.incomingDataQueue;
     let startIndex = 0;
 
-    while (
-      startIndex < queue.length &&
-      queue[startIndex] !== Packet.HEADER_BYTE
-    ) {
+    while (startIndex < queue.length && queue[startIndex] !== Packet.HEADER_BYTE) {
       if (queue[startIndex] === Packet.ESCAPE_BYTE) {
         startIndex++;
       }
@@ -338,7 +327,7 @@ export class CommunicationService {
       await this.sendDataFunc(packet.serialize());
       return true;
     } catch (error) {
-      console.error("Error sending packet:", error);
+      console.error('Error sending packet:', error);
       return false;
     }
   }
@@ -351,13 +340,13 @@ export class CommunicationService {
   private consumePacket(packet: Packet): void {
     switch (packet.getType()) {
       case MessageType.PONG: {
-        console.debug("Received PONG");
+        console.debug('Received PONG');
         this.pongReceived = true;
         break;
       }
 
       case MessageType.SERIAL_VARIABLE_MAP_RESPONSE: {
-        console.debug("Received SERIAL_VARIABLE_MAP_RESPONSE");
+        console.debug('Received SERIAL_VARIABLE_MAP_RESPONSE');
         this.pool.deserializeVarMap(packet.getPayload());
         break;
       }
@@ -373,18 +362,18 @@ export class CommunicationService {
 
       case MessageType.DEBUG_LOG: {
         const log = new TextDecoder().decode(packet.getPayload());
-        console.log("Received log:", log);
+        console.log('Received log:', log);
         break;
       }
 
       case MessageType.ERROR: {
         const errorMessage = new TextDecoder().decode(packet.getPayload());
-        console.error("Received error:", errorMessage);
+        console.error('Received error:', errorMessage);
         break;
       }
 
       default: {
-        console.warn("Unknown packet type:", packet.getType());
+        console.warn('Unknown packet type:', packet.getType());
         break;
       }
     }

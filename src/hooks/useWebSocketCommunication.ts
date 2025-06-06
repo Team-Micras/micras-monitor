@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
-import { useCommunication } from "../contexts/CommunicationContext";
-import { WebSocketService } from "../lib/websocket/WebSocketService";
+import { useState, useEffect, useCallback } from 'react';
+import { useCommunication } from '../contexts/CommunicationContext';
+import { WebSocketService } from '../lib/websocket/WebSocketService';
 
 interface UseWebSocketCommunicationConfig {
   url?: string;
@@ -19,14 +19,12 @@ interface UseWebSocketCommunicationResult {
 }
 
 export const useWebSocketCommunication = ({
-  url = "ws://localhost:8080",
+  url = 'ws://localhost:8080',
   autoStart = false,
 }: UseWebSocketCommunicationConfig = {}): UseWebSocketCommunicationResult => {
-  const [webSocketService, setWebSocketService] =
-    useState<WebSocketService | null>(null);
+  const [webSocketService, setWebSocketService] = useState<WebSocketService | null>(null);
   const [serverUrl, setServerUrl] = useState<string>(url);
-  const [isWebSocketConnected, setIsWebSocketConnected] =
-    useState<boolean>(false);
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,12 +76,7 @@ export const useWebSocketCommunication = ({
   }, [isWebSocketConnected, startCommunication, stopCommunication]);
 
   useEffect(() => {
-    if (
-      autoStart &&
-      webSocketService &&
-      !isWebSocketConnected &&
-      !isConnecting
-    ) {
+    if (autoStart && webSocketService && !isWebSocketConnected && !isConnecting) {
       connect();
     }
   }, [autoStart, webSocketService]);
@@ -110,9 +103,9 @@ export const useWebSocketCommunication = ({
         await serviceToUse.connect();
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message : "Unknown error occurred";
+          err instanceof Error ? err.message : 'Unknown error occurred';
         setError(errorMessage);
-        console.error("Failed to connect to WebSocket server:", err);
+        console.error('Failed to connect to WebSocket server:', err);
       } finally {
         setIsConnecting(false);
       }
@@ -126,7 +119,7 @@ export const useWebSocketCommunication = ({
     try {
       await webSocketService.disconnect();
     } catch (err) {
-      console.error("Error disconnecting from WebSocket server:", err);
+      console.error('Error disconnecting from WebSocket server:', err);
     }
   }, [webSocketService]);
 

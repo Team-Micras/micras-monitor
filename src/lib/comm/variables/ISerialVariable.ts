@@ -1,4 +1,4 @@
-import { ISerializable } from "../ISerializable";
+import { ISerializable } from '../ISerializable';
 
 export interface ISerialVariable extends ISerializable {
   /**
@@ -43,9 +43,10 @@ export type Fundamental = number | boolean | bigint | string;
  */
 export function isFundamental(value: unknown): value is Fundamental {
   return (
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "string"
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'string' ||
+    typeof value === 'bigint'
   );
 }
 
@@ -55,10 +56,10 @@ export function isFundamental(value: unknown): value is Fundamental {
 export function isSerializable(value: unknown): value is ISerializable {
   return (
     value !== null &&
-    typeof value === "object" &&
-    "serialize" in value &&
-    "deserialize" in value &&
-    typeof (value as Record<string, unknown>).serialize === "function" &&
-    typeof (value as Record<string, unknown>).deserialize === "function"
+    typeof value === 'object' &&
+    'serialize' in value &&
+    'deserialize' in value &&
+    typeof (value as Record<string, unknown>).serialize === 'function' &&
+    typeof (value as Record<string, unknown>).deserialize === 'function'
   );
 }

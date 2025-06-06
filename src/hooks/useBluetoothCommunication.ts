@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
-import { useCommunication } from "../contexts/CommunicationContext";
-import { BluetoothService } from "../lib/bluethooth/BluetoothService";
+import { useState, useEffect, useCallback } from 'react';
+import { useCommunication } from '../contexts/CommunicationContext';
+import { BluetoothService } from '../lib/bluethooth/BluetoothService';
 
 interface UseBluetoothCommunicationConfig {
   serviceUuid?: string;
@@ -24,11 +24,9 @@ export const useBluetoothCommunication = ({
   characteristicUuid,
   autoStart = false,
 }: UseBluetoothCommunicationConfig = {}): UseBluetoothCommunicationResult => {
-  const [bluetoothService, setBluetoothService] =
-    useState<BluetoothService | null>(null);
-  const [deviceName, setDeviceName] = useState<string>("No Device");
-  const [isBluetoothConnected, setIsBluetoothConnected] =
-    useState<boolean>(false);
+  const [bluetoothService, setBluetoothService] = useState<BluetoothService | null>(null);
+  const [deviceName, setDeviceName] = useState<string>('No Device');
+  const [isBluetoothConnected, setIsBluetoothConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,18 +38,14 @@ export const useBluetoothCommunication = ({
   } = useCommunication();
 
   useEffect(() => {
-    const service = new BluetoothService(
-      serviceUuid,
-      characteristicUuid,
-      (connected) => {
-        setIsBluetoothConnected(connected);
-        if (connected) {
-          setDeviceName(service.getDeviceName());
-        } else {
-          setDeviceName("No Device");
-        }
+    const service = new BluetoothService(serviceUuid, characteristicUuid, (connected) => {
+      setIsBluetoothConnected(connected);
+      if (connected) {
+        setDeviceName(service.getDeviceName());
+      } else {
+        setDeviceName('No Device');
       }
-    );
+    });
 
     setBluetoothService(service);
 
@@ -86,12 +80,7 @@ export const useBluetoothCommunication = ({
   }, [isBluetoothConnected, startCommunication, stopCommunication]);
 
   useEffect(() => {
-    if (
-      autoStart &&
-      bluetoothService &&
-      !isBluetoothConnected &&
-      !isConnecting
-    ) {
+    if (autoStart && bluetoothService && !isBluetoothConnected && !isConnecting) {
       connect();
     }
   }, [autoStart, bluetoothService]);
@@ -105,10 +94,9 @@ export const useBluetoothCommunication = ({
     try {
       await bluetoothService.connect();
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Unknown error occurred";
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
-      console.error("Failed to connect to Bluetooth device:", err);
+      console.error('Failed to connect to Bluetooth device:', err);
     } finally {
       setIsConnecting(false);
     }
@@ -120,7 +108,7 @@ export const useBluetoothCommunication = ({
     try {
       await bluetoothService.disconnect();
     } catch (err) {
-      console.error("Error disconnecting from Bluetooth device:", err);
+      console.error('Error disconnecting from Bluetooth device:', err);
     }
   }, [bluetoothService]);
 

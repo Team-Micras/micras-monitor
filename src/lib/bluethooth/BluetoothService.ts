@@ -2,8 +2,8 @@
  * Service for managing Bluetooth communication
  */
 export class BluetoothService {
-  private serviceUuid: string = "0000ffe0-0000-1000-8000-00805f9b34fb";
-  private characteristicUuid: string = "0000ffe1-0000-1000-8000-00805f9b34fb";
+  private serviceUuid: string = '0000ffe0-0000-1000-8000-00805f9b34fb';
+  private characteristicUuid: string = '0000ffe1-0000-1000-8000-00805f9b34fb';
   private receiveBuffer: Uint8Array[] = [];
   private sendBuffer: Uint8Array[] = [];
   private device: BluetoothDevice | null = null;
@@ -46,7 +46,7 @@ export class BluetoothService {
   async connect(): Promise<void> {
     try {
       if (!navigator.bluetooth) {
-        throw new Error("Web Bluetooth API is not available on this browser");
+        throw new Error('Web Bluetooth API is not available on this browser');
       }
 
       this.device = await navigator.bluetooth.requestDevice({
@@ -54,14 +54,14 @@ export class BluetoothService {
       });
 
       this.device.addEventListener(
-        "gattserverdisconnected",
+        'gattserverdisconnected',
         this.handleDisconnection.bind(this)
       );
 
       const connectionPromise = this.connectToDevice();
       const timeoutPromise = new Promise<void>((_, reject) => {
         setTimeout(
-          () => reject(new Error("Connection timeout exceeded")),
+          () => reject(new Error('Connection timeout exceeded')),
           this.CONNECTION_TIMEOUT
         );
       });
@@ -71,7 +71,7 @@ export class BluetoothService {
       this.setConnectionStatus(false);
       this.device = null;
       this.characteristic = null;
-      console.error("Error connecting to Bluetooth device:", error);
+      console.error('Error connecting to Bluetooth device:', error);
       throw error;
     }
   }
@@ -81,7 +81,7 @@ export class BluetoothService {
    */
   private async connectToDevice(): Promise<void> {
     await this.setupConnection();
-    console.log("Bluetooth device connected successfully");
+    console.log('Bluetooth device connected successfully');
   }
 
   /**
@@ -90,23 +90,21 @@ export class BluetoothService {
    */
   private async setupConnection(): Promise<void> {
     if (!this.device || !this.device.gatt) {
-      throw new Error("No Bluetooth device available");
+      throw new Error('No Bluetooth device available');
     }
 
     const server = await this.device.gatt.connect();
     if (!server) {
-      throw new Error("Failed to connect to GATT server");
+      throw new Error('Failed to connect to GATT server');
     }
-    console.log("Connected to GATT server");
+    console.log('Connected to GATT server');
 
     const service = await server.getPrimaryService(this.serviceUuid);
 
-    this.characteristic = await service.getCharacteristic(
-      this.characteristicUuid
-    );
+    this.characteristic = await service.getCharacteristic(this.characteristicUuid);
 
     this.characteristic.addEventListener(
-      "characteristicvaluechanged",
+      'characteristicvaluechanged',
       this.handleValueChanged.bind(this)
     );
     await this.characteristic.startNotifications();
@@ -120,7 +118,7 @@ export class BluetoothService {
    */
   async disconnect(): Promise<void> {
     if (!this.device) {
-      console.warn("No Bluetooth device to disconnect from");
+      console.warn('No Bluetooth device to disconnect from');
       return;
     }
 
@@ -128,13 +126,13 @@ export class BluetoothService {
       if (this.characteristic) {
         await this.characteristic.stopNotifications();
         this.characteristic.removeEventListener(
-          "characteristicvaluechanged",
+          'characteristicvaluechanged',
           this.handleValueChanged.bind(this)
         );
       }
 
       this.device.gatt.disconnect();
-      console.log("Bluetooth device disconnected");
+      console.log('Bluetooth device disconnected');
     }
 
     this.setConnectionStatus(false);
@@ -150,7 +148,7 @@ export class BluetoothService {
    */
   sendData(data: Uint8Array): void {
     if (!this.isConnected) {
-      console.warn("Bluetooth device not connected");
+      console.warn('Bluetooth device not connected');
       return;
     }
 
@@ -164,7 +162,7 @@ export class BluetoothService {
    */
   getData(): Uint8Array {
     if (!this.isConnected) {
-      console.warn("Bluetooth device not connected");
+      console.warn('Bluetooth device not connected');
       return new Uint8Array(0);
     }
 
@@ -188,7 +186,7 @@ export class BluetoothService {
    * @returns Name of the connected device or default message if no device
    */
   getDeviceName(): string {
-    return this.device ? this.device.name || "Unknown Device" : "No Device";
+    return this.device ? this.device.name || 'Unknown Device' : 'No Device';
   }
 
   /**
@@ -211,9 +209,7 @@ export class BluetoothService {
   private attemptReconnection(): void {
     if (this.retryCount < this.MAX_RETRY_ATTEMPTS) {
       this.retryCount++;
-      console.log(
-        `Reconnection attempt ${this.retryCount}/${this.MAX_RETRY_ATTEMPTS}`
-      );
+      console.log(`Reconnection attempt ${this.retryCount}/${this.MAX_RETRY_ATTEMPTS}`);
 
       const delay = Math.pow(2, this.retryCount) * 1000;
 
@@ -222,22 +218,19 @@ export class BluetoothService {
           try {
             await this.setupConnection();
             this.retryCount = 0;
-            console.log("Bluetooth device reconnected successfully");
+            console.log('Bluetooth device reconnected successfully');
           } catch (error) {
-            console.error(
-              `Reconnection attempt ${this.retryCount} failed:`,
-              error
-            );
+            console.error(`Reconnection attempt ${this.retryCount} failed:`, error);
             this.attemptReconnection();
           }
         } else {
           this.device = null;
           this.characteristic = null;
-          console.error("Device is no longer available for reconnection");
+          console.error('Device is no longer available for reconnection');
         }
       }, delay);
     } else {
-      console.error("Maximum reconnection attempts reached");
+      console.error('Maximum reconnection attempts reached');
       this.device = null;
       this.characteristic = null;
       this.retryCount = 0;
@@ -292,7 +285,7 @@ export class BluetoothService {
         console.debug(`Sent ${dataToSend.length} bytes via Bluetooth`);
       }
     } catch (error) {
-      console.error("Error sending data via Bluetooth:", error);
+      console.error('Error sending data via Bluetooth:', error);
     } finally {
       this.isProcessingSendBuffer = false;
     }
@@ -307,7 +300,7 @@ export class BluetoothService {
    */
   private async writeChunk(chunk: Uint8Array): Promise<void> {
     if (!this.characteristic) {
-      throw new Error("No characteristic available");
+      throw new Error('No characteristic available');
     }
     return this.characteristic.writeValue(chunk);
   }
@@ -322,9 +315,7 @@ export class BluetoothService {
       this.isConnected = status;
 
       console.log(
-        `Bluetooth connection status changed: ${
-          status ? "Connected" : "Disconnected"
-        }`
+        `Bluetooth connection status changed: ${status ? 'Connected' : 'Disconnected'}`
       );
 
       if (this.onConnectionChanged) {

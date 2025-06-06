@@ -41,10 +41,10 @@ export class WebSocketService {
       return new Promise<void>((resolve, reject) => {
         this.socket = new WebSocket(this.url);
 
-        this.socket.binaryType = "arraybuffer";
+        this.socket.binaryType = 'arraybuffer';
 
         this.socket.onopen = () => {
-          console.log("WebSocket connection established");
+          console.log('WebSocket connection established');
           this.setConnectionStatus(true);
           this.reconnectAttempts = 0;
           this.startSendBufferTask();
@@ -52,27 +52,27 @@ export class WebSocketService {
         };
 
         this.socket.onclose = () => {
-          console.log("WebSocket connection closed");
+          console.log('WebSocket connection closed');
           this.handleDisconnection();
         };
 
         this.socket.onerror = (error) => {
-          console.error("WebSocket error:", error);
-          reject(new Error("Failed to connect to WebSocket server"));
+          console.error('WebSocket error:', error);
+          reject(new Error('Failed to connect to WebSocket server'));
         };
 
         this.socket.onmessage = (event) => {
           if (event.data instanceof ArrayBuffer) {
             this.receiveBuffer.push(new Uint8Array(event.data));
           } else {
-            console.warn("Received non-binary data:", event.data);
+            console.warn('Received non-binary data:', event.data);
           }
         };
       });
     } catch (error) {
       this.setConnectionStatus(false);
       this.socket = null;
-      console.error("Error connecting to WebSocket server:", error);
+      console.error('Error connecting to WebSocket server:', error);
       throw error;
     }
   }
@@ -82,7 +82,7 @@ export class WebSocketService {
    */
   async disconnect(): Promise<void> {
     if (!this.socket) {
-      console.warn("No WebSocket connection to disconnect from");
+      console.warn('No WebSocket connection to disconnect from');
       return;
     }
 
@@ -111,7 +111,7 @@ export class WebSocketService {
    */
   sendData(data: Uint8Array): void {
     if (!this.isConnected) {
-      console.warn("WebSocket not connected");
+      console.warn('WebSocket not connected');
       return;
     }
 
@@ -125,7 +125,7 @@ export class WebSocketService {
    */
   getData(): Uint8Array {
     if (!this.isConnected) {
-      console.warn("WebSocket not connected");
+      console.warn('WebSocket not connected');
       return new Uint8Array(0);
     }
 
@@ -156,7 +156,7 @@ export class WebSocketService {
    * Handle disconnection event
    */
   private handleDisconnection(): void {
-    console.log("WebSocket disconnected, attempting to reconnect...");
+    console.log('WebSocket disconnected, attempting to reconnect...');
     this.setConnectionStatus(false);
     this.stopSendBufferTask();
 
@@ -180,17 +180,14 @@ export class WebSocketService {
       this.reconnectTimeout = window.setTimeout(async () => {
         try {
           await this.connect();
-          console.log("WebSocket reconnected successfully");
+          console.log('WebSocket reconnected successfully');
         } catch (error) {
-          console.error(
-            `Reconnection attempt ${this.reconnectAttempts} failed:`,
-            error
-          );
+          console.error(`Reconnection attempt ${this.reconnectAttempts} failed:`, error);
           this.attemptReconnection();
         }
       }, delay);
     } else {
-      console.error("Maximum WebSocket reconnection attempts reached");
+      console.error('Maximum WebSocket reconnection attempts reached');
       this.reconnectAttempts = 0;
     }
   }
@@ -219,10 +216,9 @@ export class WebSocketService {
 
       if (dataToSend.length > 0) {
         this.socket.send(dataToSend.buffer);
-        // console.debug(`Sent ${dataToSend.length} bytes via WebSocket`);
       }
     } catch (error) {
-      console.error("Error sending data via WebSocket:", error);
+      console.error('Error sending data via WebSocket:', error);
     } finally {
       this.isProcessingSendBuffer = false;
     }
@@ -240,9 +236,7 @@ export class WebSocketService {
       this.isConnected = status;
 
       console.log(
-        `WebSocket connection status changed: ${
-          status ? "Connected" : "Disconnected"
-        }`
+        `WebSocket connection status changed: ${status ? 'Connected' : 'Disconnected'}`
       );
 
       if (this.onConnectionChanged) {

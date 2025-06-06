@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { CommunicationService, SendDataFunction, GetDataFunction } from '../lib/comm/CommunicationService';
+import {
+  CommunicationService,
+  SendDataFunction,
+  GetDataFunction,
+} from '../lib/comm/CommunicationService';
 import { SerialVariablePool, SerializableClasses } from '../lib/comm/SerialVariablePool';
 
 interface CommunicationContextType {
@@ -14,7 +18,9 @@ interface CommunicationContextType {
   pool: SerialVariablePool | null;
 }
 
-const CommunicationContext = createContext<CommunicationContextType | undefined>(undefined);
+const CommunicationContext = createContext<CommunicationContextType | undefined>(
+  undefined
+);
 
 interface CommunicationProviderProps {
   children: ReactNode;
@@ -23,7 +29,7 @@ interface CommunicationProviderProps {
 
 export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
   children,
-  customSerializableClasses = { },
+  customSerializableClasses = {},
 }) => {
   const [commService, setCommService] = useState<CommunicationService | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -33,7 +39,11 @@ export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
     const pool = new SerialVariablePool(customSerializableClasses);
     const commService = new CommunicationService(pool, (status: boolean) => {
       setIsConnected(status);
-      console.log(`Connection status changed: ${status ? 'Connected' : 'Disconnected'}`);
+      console.log(
+        `CommunicationContext: Connection status changed: ${
+          status ? 'Connected' : 'Disconnected'
+        }`
+      );
     });
 
     setCommService(commService);
@@ -75,9 +85,9 @@ export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
 };
 
 export const useCommunication = () => {
-    const context = useContext(CommunicationContext);
-    if (!context) {
-        throw new Error('useCommunication must be used within a CommunicationProvider');
-    }
-    return context;
-}
+  const context = useContext(CommunicationContext);
+  if (!context) {
+    throw new Error('useCommunication must be used within a CommunicationProvider');
+  }
+  return context;
+};

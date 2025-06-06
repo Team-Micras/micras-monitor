@@ -1,14 +1,12 @@
-import { ISerialVariable } from "./ISerialVariable";
-import { ISerializable } from "../ISerializable";
+import { ISerialVariable } from './ISerialVariable';
+import { ISerializable } from '../ISerializable';
 
 /**
  * Class for serializing and deserializing custom variables.
  *
  * @template T Type of the custom variable.
  */
-export class CustomSerialVariable<T extends ISerializable>
-  implements ISerialVariable
-{
+export class CustomSerialVariable<T extends ISerializable> implements ISerialVariable {
   private valueRef: { value: T };
   private name: string;
   private readOnly: boolean;

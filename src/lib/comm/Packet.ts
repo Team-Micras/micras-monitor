@@ -44,19 +44,13 @@ export class Packet {
    */
   static fromSerialized(serializedPacket: Uint8Array): Packet {
     if (!Packet.isValid(serializedPacket)) {
-      console.error(
-        "Trying to deserialize an invalid packet:",
-        serializedPacket
-      );
+      console.error('Trying to deserialize an invalid packet:', serializedPacket);
       return new Packet(MessageType.ERROR);
     }
 
     const type = serializedPacket[1] as MessageType;
     const id = (serializedPacket[2] << 8) | serializedPacket[3];
-    const escapedPayload = serializedPacket.slice(
-      6,
-      serializedPacket.length - 2
-    );
+    const escapedPayload = serializedPacket.slice(6, serializedPacket.length - 2);
     const payload = Packet.unescapePayload(escapedPayload);
     return new Packet(type, id, payload);
   }

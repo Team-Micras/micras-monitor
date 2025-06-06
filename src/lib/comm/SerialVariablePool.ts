@@ -1,22 +1,16 @@
-import { ISerialVariable, Fundamental } from "./variables/ISerialVariable";
-import { CppBinarySerializer } from "./CppSerializer";
-import { PrimitiveSerialVariable } from "./variables/PrimitiveSerialVariable";
-import { CustomSerialVariable } from "./variables/CustomSerialVariable";
-import { ISerializable } from "./ISerializable";
+import { ISerialVariable, Fundamental } from './variables/ISerialVariable';
+import { CppBinarySerializer } from './CppSerializer';
+import { PrimitiveSerialVariable } from './variables/PrimitiveSerialVariable';
+import { CustomSerialVariable } from './variables/CustomSerialVariable';
+import { ISerializable } from './ISerializable';
 
 export type SerializableClasses = {
   [key: string]: new () => ISerializable;
 };
 
-type SerialVariableFactory = (
-  name: string,
-  readOnly: boolean
-) => ISerialVariable;
+type SerialVariableFactory = (name: string, readOnly: boolean) => ISerialVariable;
 
-export type VariableChangeCallback = (
-  id: number,
-  variable: ISerialVariable
-) => void;
+export type VariableChangeCallback = (id: number, variable: ISerialVariable) => void;
 
 export class SerialVariablePool {
   private variables: Map<number, ISerialVariable> = new Map();
@@ -104,9 +98,7 @@ export class SerialVariablePool {
     }
 
     if (variable.isReadOnly()) {
-      console.warn(
-        `Variable ${variable.getName()} is read-only and cannot be updated.`
-      );
+      console.warn(`Variable ${variable.getName()} is read-only and cannot be updated.`);
       return;
     }
 
@@ -179,7 +171,7 @@ export class SerialVariablePool {
         }
       }
     } catch (error) {
-      console.error("Error deserializing variable map:", error);
+      console.error('Error deserializing variable map:', error);
     }
   }
 
@@ -259,12 +251,7 @@ export class SerialVariablePool {
     CppBinarySerializer.CPP_TYPE_VALUES.forEach((cppType) => {
       const defaultValue = CppBinarySerializer.getTsType(cppType);
       this.factories[cppType] = (name: string, readOnly: boolean) =>
-        new PrimitiveSerialVariable(
-          name,
-          { value: defaultValue },
-          readOnly,
-          cppType
-        );
+        new PrimitiveSerialVariable(name, { value: defaultValue }, readOnly, cppType);
     });
   }
 
@@ -280,11 +267,7 @@ export class SerialVariablePool {
     for (const className in classes) {
       const ClassConstructor = classes[className];
       this.factories[className] = (name: string, readOnly: boolean) =>
-        new CustomSerialVariable(
-          name,
-          { value: new ClassConstructor() },
-          readOnly
-        );
+        new CustomSerialVariable(name, { value: new ClassConstructor() }, readOnly);
     }
   }
 
