@@ -1,10 +1,11 @@
 import { CommunicationProvider } from './contexts/CommunicationContext'
 import { CommunicationSelector } from './components/CommunicationSelector'
 import { VariablesMonitor } from './components/VariablesMonitor'
+import { customSerializableClasses } from './types'
 
 function App() {
   return (
-    <CommunicationProvider>
+    <CommunicationProvider customSerializableClasses={customSerializableClasses}>
       <div>
         <header>
           <h1>Micras Monitor</h1>

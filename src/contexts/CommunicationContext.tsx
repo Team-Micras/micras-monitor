@@ -38,7 +38,7 @@ export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
 
     setCommService(commService);
     setPool(pool);
-  }, []);
+  }, [customSerializableClasses]);
 
   const registerCommunicationFunctions = (
     sendDataFunc: SendDataFunction,
