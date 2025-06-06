@@ -1,4 +1,4 @@
-import { ISerializable } from "../lib/comm/ISerializable";
+import { ISerializable } from "@/lib/comm/ISerializable";
 
 /**
  * Side enum representing cardinal directions

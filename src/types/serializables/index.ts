@@ -1,4 +1,4 @@
-import { SerializableClasses } from "../lib/comm/SerialVariablePool";
+import { SerializableClasses } from "@/lib/comm/SerialVariablePool";
 import { State } from "./State";
 import { GridPose } from "./GridPose";
 
