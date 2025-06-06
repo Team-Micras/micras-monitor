@@ -3,13 +3,13 @@ import { SerialVariablePool } from "./SerialVariablePool";
 import { ISerialVariable } from "./variables/ISerialVariable";
 
 /**
- * Type definitions for communication functions
+ * Type definitions for communication functions.
  */
 export type SendDataFunction = (data: Uint8Array) => Promise<void>;
 export type GetDataFunction = () => Promise<Uint8Array>;
 
 /**
- * Class for controlling the communication service
+ * Class for controlling the communication service.
  */
 export class CommunicationService {
   private pool: SerialVariablePool;
@@ -26,10 +26,10 @@ export class CommunicationService {
   private connectionCheckTimeouts: number[] = [];
 
   /**
-   * Creates a new CommunicationService instance
+   * Creates a new CommunicationService instance.
    *
-   * @param pool - The serial variable pool to manage variables
-   * @param onConnectionStatusChange - Optional callback for connection status changes
+   * @param pool - The serial variable pool to manage variables.
+   * @param onConnectionStatusChange - Optional callback for connection status changes.
    */
   constructor(
     pool: SerialVariablePool,
@@ -44,10 +44,10 @@ export class CommunicationService {
   }
 
   /**
-   * Registers the communication functions for sending and receiving data
+   * Registers the communication functions for sending and receiving data.
    *
-   * @param sendFunc - Function for sending data
-   * @param getFunc - Function for receiving data
+   * @param sendFunc - Function for sending data.
+   * @param getFunc - Function for receiving data.
    */
   registerCommunicationFunctions(
     sendFunc: SendDataFunction,
@@ -59,9 +59,9 @@ export class CommunicationService {
   }
 
   /**
-   * Starts the periodic update and connection verification tasks
+   * Starts the periodic update and connection verification tasks.
    *
-   * @param interval - The update interval in milliseconds
+   * @param interval - The update interval in milliseconds.
    */
   startCommunication(interval: number = 50): void {
     console.debug("Starting communication");
@@ -81,7 +81,7 @@ export class CommunicationService {
   }
 
   /**
-   * Stops all periodic tasks
+   * Stops all periodic tasks.
    */
   stopCommunication(): void {
     console.debug("Stopping communication");
@@ -99,14 +99,36 @@ export class CommunicationService {
   }
 
   /**
-   * Returns whether the service is currently connected to a remote device
+   * Returns whether the service is currently connected to a remote device.
    */
   isServiceConnected(): boolean {
     return this.isConnected;
   }
 
   /**
-   * Updates the communication service by processing incoming packets
+   * Enable or disable the transmition of the varible from the remote device.
+   *
+   * @param id - Id of the fariable to be enabled/disabled.
+   * @param enabled - The status to set the variable.
+   */
+  setVariableEnabled(id: number, enabled: boolean): void {
+    const control = enabled ? 1 : 0;
+    console.debug(
+      `Sending SERIAL_VARIABLE_CONTROL: ${
+        enabled ? "enabling" : "disabling"
+      } variable ${id}`
+    );
+    this.sendPacket(
+      new Packet(
+        MessageType.SERIAL_VARIABLE_CONTROL,
+        id,
+        new Uint8Array([control])
+      )
+    );
+  }
+
+  /**
+   * Updates the communication service by processing incoming packets.
    */
   private async update(): Promise<void> {
     if (!this.functionsRegistered) {
@@ -120,9 +142,9 @@ export class CommunicationService {
 
   /**
    * Starts the connection verification task that sends pings periodically
-   * to check if the connection is still active
+   * to check if the connection is still active.
    *
-   * @param interval - The verification interval in milliseconds
+   * @param interval - The verification interval in milliseconds.
    */
   private startConnectionVerification(interval: number = 2000): void {
     this.stopConnectionVerification();
@@ -153,9 +175,9 @@ export class CommunicationService {
   }
 
   /**
-   * Clears a connection check timeout and removes it from the list
+   * Clears a connection check timeout and removes it from the list.
    *
-   * @param timeoutId - The ID of the timeout to clear
+   * @param timeoutId - The ID of the timeout to clear.
    */
   private clearConnectionCheckTimeout(timeoutId: number): void {
     const index = this.connectionCheckTimeouts.indexOf(timeoutId);
@@ -165,7 +187,7 @@ export class CommunicationService {
   }
 
   /**
-   * Stops the connection verification task and clears any pending timeouts
+   * Stops the connection verification task and clears any pending timeouts.
    */
   private stopConnectionVerification(): void {
     if (this.verifyConnectionTask !== undefined) {
@@ -180,7 +202,7 @@ export class CommunicationService {
   }
 
   /**
-   * Sends a ping packet to the remote device
+   * Sends a ping packet to the remote device.
    */
   private ping(): void {
     console.debug("Sending PING");
@@ -188,7 +210,7 @@ export class CommunicationService {
   }
 
   /**
-   * Requests the variable map from the remote device
+   * Requests the variable map from the remote device.
    */
   private requestVariableMap(): void {
     console.debug("Sending SERIAL_VARIABLE_MAP_REQUEST");
@@ -196,10 +218,10 @@ export class CommunicationService {
   }
 
   /**
-   * Sends a variable update to the remote device
+   * Sends a variable update to the remote device.
    *
-   * @param id - The ID of the variable
-   * @param variable - The variable to send
+   * @param id - The ID of the variable.
+   * @param variable - The variable to send.
    */
   private sendVariable(id: number, variable: ISerialVariable): void {
     this.sendPacket(
@@ -208,9 +230,9 @@ export class CommunicationService {
   }
 
   /**
-   * Updates the connection status and notifies listeners if it has changed
+   * Updates the connection status and notifies listeners if it has changed.
    *
-   * @param status - The new connection status
+   * @param status - The new connection status.
    */
   private setConnectionStatus(status: boolean): void {
     console.debug(
@@ -226,7 +248,7 @@ export class CommunicationService {
   }
 
   /**
-   * Updates the incoming packets queue by fetching data from the source
+   * Updates the incoming packets queue by fetching data from the source.
    */
   private async updateIncomingPackets(): Promise<void> {
     if (!this.getDataFunc) {
@@ -251,9 +273,9 @@ export class CommunicationService {
   }
 
   /**
-   * Checks if the incoming data queue has a valid packet tail
+   * Checks if the incoming data queue has a valid packet tail.
    *
-   * @returns true if the queue has a valid packet tail, false otherwise
+   * @returns true if the queue has a valid packet tail, false otherwise.
    */
   private hasValidPacketTail(): boolean {
     const queue = this.incomingDataQueue;
@@ -269,9 +291,9 @@ export class CommunicationService {
   }
 
   /**
-   * Extracts a valid packet from the incoming data queue
+   * Extracts a valid packet from the incoming data queue.
    *
-   * @returns A Uint8Array containing the valid packet data
+   * @returns A Uint8Array containing the valid packet data.
    */
   private extractValidPacket(): Uint8Array {
     const queue = this.incomingDataQueue;
@@ -292,7 +314,7 @@ export class CommunicationService {
   }
 
   /**
-   * Processes all incoming packets and consumes them
+   * Processes all incoming packets and consumes them.
    */
   private processIncomingPackets(): void {
     while (this.incomingPackets.length > 0) {
@@ -302,10 +324,10 @@ export class CommunicationService {
   }
 
   /**
-   * Sends a packet to the remote device
+   * Sends a packet to the remote device.
    *
-   * @param packet - The packet to send
-   * @returns Promise that resolves to true if the packet was sent successfully
+   * @param packet - The packet to send.
+   * @returns Promise that resolves to true if the packet was sent successfully.
    */
   private async sendPacket(packet: Packet): Promise<boolean> {
     if (!this.sendDataFunc) {
@@ -322,9 +344,9 @@ export class CommunicationService {
   }
 
   /**
-   * Consumes a packet by processing its type and payload
+   * Consumes a packet by processing its type and payload.
    *
-   * @param packet - The packet to consume
+   * @param packet - The packet to consume.
    */
   private consumePacket(packet: Packet): void {
     switch (packet.getType()) {
@@ -342,7 +364,7 @@ export class CommunicationService {
 
       case MessageType.SERIAL_VARIABLE: {
         if (!this.isConnected) {
-          break; //@todo nao faz sentido so pra testar
+          break; //@todo nao faz sentido so pra testar.
         }
         console.debug(`Received SERIAL_VARIABLE with ID: ${packet.getId()}`);
         this.pool.deserializeVariable(packet.getId(), packet.getPayload());
