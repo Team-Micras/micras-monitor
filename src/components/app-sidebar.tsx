@@ -5,6 +5,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarInput,
 } from '@/components/ui/sidebar';
 import { Variable } from '@/types/variable';
 import { VariableCard } from './variable-card';
@@ -19,6 +20,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 function AppSidebarContent() {
   const { pool, isConnected } = useCommunication();
   const [variables, setVariables] = useState<Variable[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const { notifyChange } = useVariableChangeContext();
 
   const updateVariablesList = useCallback(() => {
@@ -37,13 +39,22 @@ function AppSidebarContent() {
   }, [pool]);
 
   const memoizedVariables = useMemo(() => {
-    return variables.map((variable) => ({
+    const variablesList = variables.map((variable) => ({
       ...variable,
       serialVariable: {
         value: variable.serialVariable.value,
       },
     }));
-  }, [variables]);
+
+    if (!searchQuery.trim()) {
+      return variablesList;
+    }
+
+    return variablesList.filter((variable) => {
+      const variableName = variable.serialVariable.value.getName();
+      return variableName.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  }, [variables, searchQuery]);
 
   /**
    * Add a listener to the variable pool and poll for updates.
@@ -83,16 +94,41 @@ function AppSidebarContent() {
   return (
     <Sidebar collapsible="offcanvas">
       <SidebarHeader className="border-b">
-        <h2 className="text-lg font-semibold px-2">Variables</h2>
+        <h2 className="text-lg font-semibold px-2">Micras Monitor</h2>
+        <div className="px-2">
+          <SidebarInput
+            placeholder="Search variables..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="mt-2"
+          />
+        </div>
       </SidebarHeader>
       <SidebarContent>
-        <ScrollArea className="h-full w-full rounded-md border">
+        <ScrollArea className="h-full w-full">
           <SidebarGroup className="px-4">
-            <SidebarGroupLabel>Micras Monitor</SidebarGroupLabel>
+            <SidebarGroupLabel>
+              Variables
+              {searchQuery.trim() && (
+                <span className="ml-2 text-xs text-muted-foreground">
+                  ({memoizedVariables.length} of {variables.length})
+                </span>
+              )}
+            </SidebarGroupLabel>
             <SidebarGroupContent className="space-y-2">
-              {memoizedVariables.map((variable) => (
-                <VariableCard key={variable.id} variable={variable} />
-              ))}
+              {memoizedVariables.length > 0 ? (
+                memoizedVariables.map((variable) => (
+                  <VariableCard key={variable.id} variable={variable} />
+                ))
+              ) : searchQuery.trim() ? (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  No variables found matching "{searchQuery}"
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  No variables available
+                </div>
+              )}
             </SidebarGroupContent>
           </SidebarGroup>
         </ScrollArea>
