@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useState, useMemo, useCallback, ReactNode } from 'react';
+import { SerialVariablePool, SerializableClasses } from '@/lib/comm/SerialVariablePool';
 import {
   CommunicationService,
   SendDataFunction,
   GetDataFunction,
-} from '../lib/comm/CommunicationService';
-import { SerialVariablePool, SerializableClasses } from '../lib/comm/SerialVariablePool';
+} from '@/lib/comm/CommunicationService';
 
 interface CommunicationContextType {
   commService: CommunicationService | null;
@@ -15,12 +15,14 @@ interface CommunicationContextType {
   ) => void;
   startCommunication: () => void;
   stopCommunication: () => void;
-  pool: SerialVariablePool | null;
+  pool: SerialVariablePool;
 }
 
 const CommunicationContext = createContext<CommunicationContextType | undefined>(
   undefined
 );
+
+export { CommunicationContext };
 
 interface CommunicationProviderProps {
   children: ReactNode;
@@ -31,13 +33,19 @@ export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
   children,
   customSerializableClasses = {},
 }) => {
-  const [commService, setCommService] = useState<CommunicationService | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [pool, setPool] = useState<SerialVariablePool | null>(null);
 
-  useEffect(() => {
-    const pool = new SerialVariablePool(customSerializableClasses);
-    const commService = new CommunicationService(pool, (status: boolean) => {
+  const pool = useMemo(() => {
+    console.log(
+      'Creating SerialVariablePool with customSerializableClasses:',
+      customSerializableClasses
+    );
+    return new SerialVariablePool(customSerializableClasses);
+  }, [customSerializableClasses]);
+
+  const commService = useMemo(() => {
+    console.log('Creating CommunicationService with pool:', pool);
+    return new CommunicationService(pool, (status: boolean) => {
       setIsConnected(status);
       console.log(
         `CommunicationContext: Connection status changed: ${
@@ -45,49 +53,45 @@ export const CommunicationProvider: React.FC<CommunicationProviderProps> = ({
         }`
       );
     });
+  }, [pool]);
 
-    setCommService(commService);
-    setPool(pool);
-  }, [customSerializableClasses]);
+  const registerCommunicationFunctions = useCallback(
+    (sendDataFunc: SendDataFunction, getDataFunc: GetDataFunction) => {
+      commService.registerCommunicationFunctions(sendDataFunc, getDataFunc);
+    },
+    [commService]
+  );
 
-  const registerCommunicationFunctions = (
-    sendDataFunc: SendDataFunction,
-    getDataFunc: GetDataFunction
-  ) => {
-    if (!commService) return;
-    commService.registerCommunicationFunctions(sendDataFunc, getDataFunc);
-  };
-
-  const startCommunication = () => {
-    if (!commService) return;
+  const startCommunication = useCallback(() => {
     commService.startCommunication();
-  };
+  }, [commService]);
 
-  const stopCommunication = () => {
-    if (!commService) return;
+  const stopCommunication = useCallback(() => {
     commService.stopCommunication();
-  };
+  }, [commService]);
 
-  const contextValue = {
-    commService,
-    isConnected,
-    registerCommunicationFunctions,
-    startCommunication,
-    stopCommunication,
-    pool,
-  };
+  const contextValue = useMemo(
+    () => ({
+      commService,
+      isConnected,
+      registerCommunicationFunctions,
+      startCommunication,
+      stopCommunication,
+      pool,
+    }),
+    [
+      commService,
+      isConnected,
+      registerCommunicationFunctions,
+      startCommunication,
+      stopCommunication,
+      pool,
+    ]
+  );
 
   return (
     <CommunicationContext.Provider value={contextValue}>
       {children}
     </CommunicationContext.Provider>
   );
-};
-
-export const useCommunication = () => {
-  const context = useContext(CommunicationContext);
-  if (!context) {
-    throw new Error('useCommunication must be used within a CommunicationProvider');
-  }
-  return context;
 };
