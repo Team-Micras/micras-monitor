@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useCommunication } from '../contexts/CommunicationContext';
-import { WebSocketService } from '../lib/websocket/WebSocketService';
+import { useCommunication } from './useCommunication';
+import { WebSocketService } from '@/lib/websocket/WebSocketService';
 
 interface UseWebSocketCommunicationConfig {
   url?: string;
@@ -8,7 +8,7 @@ interface UseWebSocketCommunicationConfig {
 }
 
 interface UseWebSocketCommunicationResult {
-  webSocketService: WebSocketService | null;
+  webSocketService: WebSocketService;
   isWebSocketConnected: boolean;
   isProtocolConnected: boolean;
   isConnecting: boolean;
@@ -22,11 +22,12 @@ export const useWebSocketCommunication = ({
   url = 'ws://localhost:8080',
   autoStart = false,
 }: UseWebSocketCommunicationConfig = {}): UseWebSocketCommunicationResult => {
-  const [webSocketService, setWebSocketService] = useState<WebSocketService | null>(null);
   const [serverUrl, setServerUrl] = useState<string>(url);
   const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  console.log('useWebSocketCommunication init');
 
   const {
     registerCommunicationFunctions,
@@ -35,22 +36,23 @@ export const useWebSocketCommunication = ({
     isConnected: isProtocolConnected,
   } = useCommunication();
 
-  useEffect(() => {
+  const [webSocketService] = useState(() => {
     const service = new WebSocketService(url, (connected) => {
       setIsWebSocketConnected(connected);
       if (connected) {
         setServerUrl(service.getServerUrl());
       }
     });
+    return service;
+  });
 
-    setWebSocketService(service);
-
+  useEffect(() => {
     return () => {
-      if (service && service.isDeviceConnected()) {
-        service.disconnect();
+      if (webSocketService.isDeviceConnected()) {
+        webSocketService.disconnect();
       }
     };
-  }, [url]);
+  }, [webSocketService]);
 
   useEffect(() => {
     if (!webSocketService) return;
@@ -70,58 +72,51 @@ export const useWebSocketCommunication = ({
   useEffect(() => {
     if (isWebSocketConnected) {
       startCommunication();
-    } else {
+    } else if (isProtocolConnected) {
       stopCommunication();
     }
-  }, [isWebSocketConnected, startCommunication, stopCommunication]);
+  }, [isWebSocketConnected, isProtocolConnected, startCommunication, stopCommunication]);
 
-  useEffect(() => {
-    if (autoStart && webSocketService && !isWebSocketConnected && !isConnecting) {
-      connect();
+  const connect = useCallback(async () => {
+    setIsConnecting(true);
+    setError(null);
+
+    // @TODO handle custom URL logic (customUrl?: string)
+    // let serviceToUse = webSocketService;
+    // if (customUrl && customUrl !== url) {
+    //   serviceToUse = new WebSocketService(customUrl, (connected) => {
+    //     setIsWebSocketConnected(connected);
+    //     if (connected) {
+    //       setServerUrl(customUrl);
+    //     }
+    //   });
+    //   setWebSocketService(serviceToUse);
+    // }
+
+    try {
+      await webSocketService.connect();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(errorMessage);
+      console.error('Failed to connect to WebSocket server:', err);
+    } finally {
+      setIsConnecting(false);
     }
-  }, [autoStart, webSocketService]);
-
-  const connect = useCallback(
-    async (customUrl?: string) => {
-      if (!webSocketService) return;
-
-      setIsConnecting(true);
-      setError(null);
-
-      let serviceToUse = webSocketService;
-      if (customUrl && customUrl !== url) {
-        serviceToUse = new WebSocketService(customUrl, (connected) => {
-          setIsWebSocketConnected(connected);
-          if (connected) {
-            setServerUrl(customUrl);
-          }
-        });
-        setWebSocketService(serviceToUse);
-      }
-
-      try {
-        await serviceToUse.connect();
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Unknown error occurred';
-        setError(errorMessage);
-        console.error('Failed to connect to WebSocket server:', err);
-      } finally {
-        setIsConnecting(false);
-      }
-    },
-    [webSocketService, url]
-  );
+  }, [webSocketService]);
 
   const disconnect = useCallback(async () => {
-    if (!webSocketService) return;
-
     try {
       await webSocketService.disconnect();
     } catch (err) {
       console.error('Error disconnecting from WebSocket server:', err);
     }
   }, [webSocketService]);
+
+  useEffect(() => {
+    if (autoStart && webSocketService && !isWebSocketConnected && !isConnecting) {
+      connect();
+    }
+  }, [autoStart, webSocketService, isWebSocketConnected, isConnecting, connect]);
 
   return {
     webSocketService,
