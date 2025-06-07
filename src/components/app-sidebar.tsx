@@ -4,6 +4,7 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
 } from '@/components/ui/sidebar';
 import { Variable } from '@/types/variable';
 import { VariableCard } from './variable-card';
@@ -13,6 +14,7 @@ import {
   VariableChangeProvider,
   useVariableChangeContext,
 } from '@/contexts/VariableChangeContext';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 function AppSidebarContent() {
   const { pool, isConnected } = useCommunication();
@@ -80,18 +82,20 @@ function AppSidebarContent() {
 
   return (
     <Sidebar collapsible="offcanvas">
+      <SidebarHeader className="border-b">
+        <h2 className="text-lg font-semibold px-2">Variables</h2>
+      </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Micras Monitor</SidebarGroupLabel>
-          <SidebarGroupContent>
-            {memoizedVariables.map((variable) => (
-              <VariableCard
-                key={variable.serialVariable.value.getName()}
-                variable={variable}
-              />
-            ))}
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <ScrollArea className="h-full w-full rounded-md border">
+          <SidebarGroup className="px-4">
+            <SidebarGroupLabel>Micras Monitor</SidebarGroupLabel>
+            <SidebarGroupContent className="space-y-2">
+              {memoizedVariables.map((variable) => (
+                <VariableCard key={variable.id} variable={variable} />
+              ))}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </ScrollArea>
       </SidebarContent>
     </Sidebar>
   );
