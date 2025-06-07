@@ -355,7 +355,6 @@ export class CommunicationService {
         if (!this.isConnected) {
           break; //@todo nao faz sentido so pra testar.
         }
-        console.debug(`Received SERIAL_VARIABLE with ID: ${packet.getId()}`);
         this.pool.deserializeVariable(packet.getId(), packet.getPayload());
         break;
       }
