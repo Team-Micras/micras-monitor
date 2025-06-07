@@ -1,4 +1,4 @@
-import { ISerialVariable, Fundamental } from './variables/ISerialVariable';
+import { ISerialVariable, Fundamental, isFundamental } from './variables/ISerialVariable';
 import { CppBinarySerializer } from './CppSerializer';
 import { PrimitiveSerialVariable } from './variables/PrimitiveSerialVariable';
 import { CustomSerialVariable } from './variables/CustomSerialVariable';
@@ -186,10 +186,17 @@ export class SerialVariablePool {
    */
   deserializeVariable(id: number, data: Uint8Array): void {
     const variable = this.variables.get(id);
-    if (variable) {
-      variable.deserialize(data);
-    } else {
+    if (!variable) {
       console.warn(`No variable found with ID: ${id}`);
+      return;
+    }
+
+    const lastValue = variable.getReference().value;
+    variable.deserialize(data);
+    const newValue = variable.getReference().value;
+
+    if (this.hasValueChanged(lastValue, newValue, variable)) {
+      this.notifyVariableChange(id, variable);
     }
   }
 
@@ -302,8 +309,29 @@ export class SerialVariablePool {
    * @param variable Variable instance
    */
   private notifyVariableChange(id: number, variable: ISerialVariable): void {
+    // console.log(`Variable changed: ${variable.getName()} (ID: ${id})`);
     for (const callback of this.variableChangeCallbacks) {
       callback(id, variable);
+    }
+  }
+
+  /**
+   * Check if a variable's value has changed
+   *
+   * @param lastValue The previous value
+   * @param newValue The new value
+   * @param variable The variable instance for comparison
+   * @returns True if the value has changed, false otherwise
+   */
+  private hasValueChanged(
+    lastValue: Fundamental | ISerializable,
+    newValue: Fundamental | ISerializable,
+    variable: ISerialVariable
+  ): boolean {
+    if (isFundamental(newValue)) {
+      return newValue !== lastValue;
+    } else {
+      return !variable.isEquals(lastValue as ISerializable);
     }
   }
 }
