@@ -16,6 +16,7 @@ export class BluetoothService {
   private readonly MAX_RETRY_ATTEMPTS = 3;
   private retryCount = 0;
   private isProcessingSendBuffer = false;
+  private keepAlive: boolean = true;
 
   /**
    * Creates a new BluetoothService instance
@@ -109,6 +110,7 @@ export class BluetoothService {
     );
     await this.characteristic.startNotifications();
 
+    this.keepAlive = true;
     this.setConnectionStatus(true);
     this.startSendBufferTask();
   }
@@ -135,6 +137,7 @@ export class BluetoothService {
       console.log('Bluetooth device disconnected');
     }
 
+    this.keepAlive = false;
     this.setConnectionStatus(false);
     this.stopSendBufferTask();
     this.characteristic = null;
@@ -194,13 +197,15 @@ export class BluetoothService {
    */
   private handleDisconnection(event: Event): void {
     const device = event.target as BluetoothDevice;
-    console.log(
-      `Bluetooth device "${device.name}" disconnected, attempting to reconnect...`
-    );
     this.setConnectionStatus(false);
     this.stopSendBufferTask();
 
-    this.attemptReconnection();
+    if (this.keepAlive) {
+      console.log(
+        `Bluetooth device "${device.name}" disconnected, attempting to reconnect...`
+      );
+      this.attemptReconnection();
+    }
   }
 
   /**

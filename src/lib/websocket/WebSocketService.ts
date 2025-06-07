@@ -14,6 +14,7 @@ export class WebSocketService {
   private reconnectAttempts = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private reconnectTimeout: number | null = null;
+  private keepAlive: boolean = true;
 
   /**
    * Creates a new WebSocketService instance
@@ -46,6 +47,7 @@ export class WebSocketService {
         this.socket.onopen = () => {
           console.log('WebSocket connection established');
           this.setConnectionStatus(true);
+          this.keepAlive = true;
           this.reconnectAttempts = 0;
           this.startSendBufferTask();
           resolve();
@@ -85,6 +87,7 @@ export class WebSocketService {
       console.warn('No WebSocket connection to disconnect from');
       return;
     }
+    this.keepAlive = false;
 
     // Clear any pending reconnect timeout
     if (this.reconnectTimeout) {
@@ -156,17 +159,20 @@ export class WebSocketService {
    * Handle disconnection event
    */
   private handleDisconnection(): void {
-    console.log('WebSocket disconnected, attempting to reconnect...');
     this.setConnectionStatus(false);
     this.stopSendBufferTask();
 
-    this.attemptReconnection(); // @todo tirar isso
+    if (this.keepAlive) {
+      console.log('WebSocket disconnected, attempting to reconnect...');
+      this.attemptReconnection();
+    }
   }
 
   /**
    * Attempt to reconnect to the WebSocket server with exponential backoff
    */
   private attemptReconnection(): void {
+    //@TODO tirar isso
     if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
       this.reconnectAttempts++;
       const delay = Math.pow(2, this.reconnectAttempts) * 1000;
