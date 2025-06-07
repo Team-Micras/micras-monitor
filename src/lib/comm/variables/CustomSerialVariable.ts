@@ -33,10 +33,21 @@ export class CustomSerialVariable<T extends ISerializable> implements ISerialVar
     return this.name;
   }
 
+  /**
+   * Get the variable's type.
+   *
+   * @returns Type of the variable as a string.
+   */
   getType(): string {
+    //@TODO só funciona se a classe tiver o mesmo nome que no c++
     return this.valueRef.value.constructor.name;
   }
 
+  /**
+   * Get a reference to the variable's value.
+   *
+   * @returns Reference object containing the variable's value.
+   */
   getReference(): { value: T } {
     return this.valueRef;
   }
@@ -66,5 +77,18 @@ export class CustomSerialVariable<T extends ISerializable> implements ISerialVar
    */
   deserialize(serialData: Uint8Array): void {
     this.valueRef.value.deserialize(serialData);
+  }
+
+  /**
+   * Check if the variable is equal to another ISerializable.
+   *
+   * @param other Another ISerializable to compare with.
+   * @returns True if the two variables are equal, false otherwise.
+   */
+  isEquals(other: ISerializable): boolean {
+    if (!(other instanceof CustomSerialVariable)) {
+      return false;
+    }
+    return this.valueRef.value.isEquals(other.getReference().value);
   }
 }

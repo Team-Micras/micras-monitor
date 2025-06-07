@@ -104,4 +104,24 @@ export class State implements ISerializable {
   toString(): string {
     return `State { pose: { position: { x: ${this.pose.position.x}, y: ${this.pose.position.y} }, orientation: ${this.pose.orientation} }, velocity: { linear: ${this.velocity.linear}, angular: ${this.velocity.angular} } }`;
   }
+
+  /**
+   * Check if the variable is equal to another ISerializable.
+   *
+   * @param other Another ISerializable to compare with.
+   * @returns True if the two variables are equal, false otherwise.
+   */
+  isEquals(other: ISerializable): boolean {
+    if (!(other instanceof State)) {
+      return false;
+    }
+
+    return (
+      this.pose.position.x === other.pose.position.x &&
+      this.pose.position.y === other.pose.position.y &&
+      this.pose.orientation === other.pose.orientation &&
+      this.velocity.linear === other.velocity.linear &&
+      this.velocity.angular === other.velocity.angular
+    );
+  }
 }

@@ -1,5 +1,6 @@
 import { ISerialVariable, Fundamental } from './ISerialVariable';
 import { CppBinarySerializer, CppType } from '../CppSerializer';
+import { ISerializable } from '../ISerializable';
 
 /**
  * Class for serializing and deserializing primitive variables.
@@ -35,10 +36,20 @@ export class PrimitiveSerialVariable<T extends Fundamental> implements ISerialVa
     return this.name;
   }
 
+  /**
+   * Get the variable's type.
+   *
+   * @returns Type of the variable as a string.
+   */
   getType(): string {
     return this.type;
   }
 
+  /**
+   * Get a reference to the variable's value.
+   *
+   * @returns Reference object containing the variable's value.
+   */
   getReference(): { value: T } {
     return this.valueRef;
   }
@@ -71,5 +82,18 @@ export class PrimitiveSerialVariable<T extends Fundamental> implements ISerialVa
     if (value !== null) {
       this.valueRef.value = value as T;
     }
+  }
+
+  /**
+   * Check if the variable is equal to another ISerializable.
+   *
+   * @param other Another ISerializable to compare with.
+   * @returns True if the two variables are equal, false otherwise.
+   */
+  isEquals(other: ISerializable): boolean {
+    if (!(other instanceof PrimitiveSerialVariable)) {
+      return false;
+    }
+    return this.name === other.name && this.valueRef.value === other.valueRef.value;
   }
 }
