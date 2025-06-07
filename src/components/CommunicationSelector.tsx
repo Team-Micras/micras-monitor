@@ -4,11 +4,13 @@ import { WebSocketCommunication } from './WebSocketCommunication';
 
 enum CommunicationType {
   BLUETOOTH,
-  WEBSOCKET
+  WEBSOCKET,
 }
 
 export const CommunicationSelector: React.FC = () => {
-  const [communicationType, setCommunicationType] = useState<CommunicationType>(CommunicationType.BLUETOOTH);
+  const [communicationType, setCommunicationType] = useState<CommunicationType>(
+    CommunicationType.BLUETOOTH
+  );
 
   const handleCommunicationTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCommunicationType(parseInt(e.target.value) as CommunicationType);
