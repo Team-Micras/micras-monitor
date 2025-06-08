@@ -9,14 +9,18 @@ export type SerializableClasses = {
 };
 
 type SerialVariableFactory = (name: string, readOnly: boolean) => ISerialVariable;
-
 export type VariableChangeCallback = (id: number, variable: ISerialVariable) => void;
 
+export type LogData = [Array<number>, Array<Fundamental | ISerializable>];
+
 export class SerialVariablePool {
+  static readonly LOG_BUFFER_SIZE = 1000000;
+
   private variables: Map<number, ISerialVariable> = new Map();
   private factories: Record<string, SerialVariableFactory> = {};
   private variableChangeCallbacks: VariableChangeCallback[] = [];
   private nameToIdMap: Map<string, number> = new Map();
+  private logs: Map<number, LogData> = new Map();
 
   /**
    * Constructor for the SerialVariablePool class.
@@ -195,6 +199,8 @@ export class SerialVariablePool {
     variable.deserialize(data);
     const newValue = variable.getReference().value;
 
+    this.addVariableToLog(id, newValue);
+
     if (this.hasValueChanged(lastValue, newValue, variable)) {
       this.notifyVariableChange(id, variable);
     }
@@ -232,6 +238,16 @@ export class SerialVariablePool {
    */
   getVariableCount(): number {
     return this.variables.size;
+  }
+
+  /**
+   * Get the logs for a variable
+   *
+   * @param id Variable ID
+   * @returns Variable logs
+   */
+  getVariableLogs(id: number): LogData | undefined {
+    return this.logs.get(id);
   }
 
   /**
@@ -300,6 +316,27 @@ export class SerialVariablePool {
     }
 
     return null;
+  }
+
+  /**
+   * Add a variable's value to the log
+   *
+   * @param id Variable ID
+   * @param value Variable value
+   */
+  private addVariableToLog(id: number, value: Fundamental | ISerializable): void {
+    if (!this.logs.has(id)) {
+      this.logs.set(id, [[], []]);
+    }
+
+    const logData = this.logs.get(id) as LogData;
+    logData[0].push(window.performance.now());
+    logData[1].push(value);
+
+    if (logData[0].length > SerialVariablePool.LOG_BUFFER_SIZE) {
+      logData[0].shift();
+      logData[1].shift();
+    }
   }
 
   /**
