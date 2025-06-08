@@ -5,6 +5,7 @@ import { WebSocketService } from '@/lib/websocket/WebSocketService';
 interface UseWebSocketCommunicationConfig {
   url?: string;
   autoStart?: boolean;
+  enabled?: boolean; // New parameter to control hook registration
 }
 
 interface UseWebSocketCommunicationResult {
@@ -21,6 +22,7 @@ interface UseWebSocketCommunicationResult {
 export const useWebSocketCommunication = ({
   url = 'ws://localhost:8080',
   autoStart = false,
+  enabled = true, // Default to enabled for backward compatibility
 }: UseWebSocketCommunicationConfig = {}): UseWebSocketCommunicationResult => {
   const [serverUrl, setServerUrl] = useState<string>(url);
   const [isWebSocketConnected, setIsWebSocketConnected] = useState<boolean>(false);
@@ -55,7 +57,7 @@ export const useWebSocketCommunication = ({
   }, [webSocketService]);
 
   useEffect(() => {
-    if (!webSocketService) return;
+    if (!webSocketService || !enabled) return;
 
     const sendData = async (data: Uint8Array): Promise<void> => {
       webSocketService.sendData(data);
@@ -67,15 +69,23 @@ export const useWebSocketCommunication = ({
     };
 
     registerCommunicationFunctions(sendData, getData);
-  }, [webSocketService, registerCommunicationFunctions]);
+  }, [webSocketService, registerCommunicationFunctions, enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
+
     if (isWebSocketConnected) {
       startCommunication();
     } else if (isProtocolConnected) {
       stopCommunication();
     }
-  }, [isWebSocketConnected, isProtocolConnected, startCommunication, stopCommunication]);
+  }, [
+    isWebSocketConnected,
+    isProtocolConnected,
+    startCommunication,
+    stopCommunication,
+    enabled,
+  ]);
 
   const connect = useCallback(async () => {
     setIsConnecting(true);

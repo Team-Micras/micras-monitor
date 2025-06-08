@@ -6,6 +6,7 @@ interface UseBluetoothCommunicationConfig {
   serviceUuid?: string;
   characteristicUuid?: string;
   autoStart?: boolean;
+  enabled?: boolean; // New parameter to control hook registration
 }
 
 interface UseBluetoothCommunicationResult {
@@ -23,6 +24,7 @@ export const useBluetoothCommunication = ({
   serviceUuid,
   characteristicUuid,
   autoStart = false,
+  enabled = true, // Default to enabled for backward compatibility
 }: UseBluetoothCommunicationConfig = {}): UseBluetoothCommunicationResult => {
   const [deviceName, setDeviceName] = useState<string>('No Device');
   const [isBluetoothConnected, setIsBluetoothConnected] = useState<boolean>(false);
@@ -59,6 +61,9 @@ export const useBluetoothCommunication = ({
   }, [bluetoothService]);
 
   useEffect(() => {
+    // Only register if this hook is enabled
+    if (!enabled) return;
+
     const sendData = async (data: Uint8Array): Promise<void> => {
       bluetoothService.sendData(data);
       return Promise.resolve();
@@ -69,15 +74,24 @@ export const useBluetoothCommunication = ({
     };
 
     registerCommunicationFunctions(sendData, getData);
-  }, [bluetoothService, registerCommunicationFunctions]);
+  }, [bluetoothService, registerCommunicationFunctions, enabled]);
 
   useEffect(() => {
+    // Only auto-start/manage protocol if enabled
+    if (!enabled) return;
+
     if (isBluetoothConnected) {
       startCommunication();
     } else if (isProtocolConnected) {
       stopCommunication();
     }
-  }, [isBluetoothConnected, isProtocolConnected, startCommunication, stopCommunication]);
+  }, [
+    isBluetoothConnected,
+    isProtocolConnected,
+    startCommunication,
+    stopCommunication,
+    enabled,
+  ]);
 
   const connect = useCallback(async () => {
     setIsConnecting(true);
