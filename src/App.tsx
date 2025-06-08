@@ -1,27 +1,28 @@
 import { CommunicationProvider } from './contexts/CommunicationContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { customSerializableClasses } from './types/serializables';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
-import { CommunicationSelector } from './components/CommunicationSelector';
+import { TopBar } from '@/components/top-bar';
 import { VariablesMonitor } from './components/VariablesMonitor';
+import { VariableChart } from './components/variable-chart';
 
 function App() {
   return (
-    <CommunicationProvider customSerializableClasses={customSerializableClasses}>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarTrigger />
-        <div>
-          <header>
-            <h1>Micras Monitor</h1>
-          </header>
-          <main>
-            <CommunicationSelector />
-            <VariablesMonitor />
-          </main>
-        </div>
-      </SidebarProvider>
-    </CommunicationProvider>
+    <ThemeProvider>
+      <CommunicationProvider customSerializableClasses={customSerializableClasses}>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset>
+            <TopBar />
+            <main className="flex-1 p-4">
+              <VariablesMonitor />
+              <VariableChart />
+            </main>
+          </SidebarInset>
+        </SidebarProvider>
+      </CommunicationProvider>
+    </ThemeProvider>
   );
 }
 
