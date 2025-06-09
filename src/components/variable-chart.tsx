@@ -7,7 +7,7 @@ import { Layout } from 'plotly.js'; // Import Layout type
 export function VariableChart() {
   const { pool } = useCommunication();
   const [revision, setRevision] = useState(0);
-  const [lastDataLength, setLastDataLength] = useState(0);
+  const variablesIds: number[] = [8, 21, 11, 12, 13, 14, 15, 16, 18, 17];
 
   console.log('VariableChart rendered, revision:', revision);
 
@@ -16,36 +16,26 @@ export function VariableChart() {
 
     // Check for data changes every 100ms, but only update revision when data actually changes
     const interval = setInterval(() => {
-      const logs = pool.getVariableLogs(17);
-      const currentLength = logs?.[0]?.length || 0;
-
-      if (currentLength !== lastDataLength) {
-        setLastDataLength(currentLength);
-        setRevision((prev) => prev + 1);
-      }
+      setRevision((prev) => prev + 1);
     }, 100);
 
     return () => {
       console.log('VariableChart unmounted');
       clearInterval(interval);
     };
-  }, [pool, lastDataLength]);
-
-  // Get logs once per render to avoid calling getVariableLogs multiple times
-  const logs = pool.getVariableLogs(17);
+  }, [pool]);
 
   return (
     <div className="flex flex-col h-full">
       <Plot
         className="w-full h-full"
-        data={[
-          {
-            // x: logs?.[0] || [],
-            y: (logs?.[1] || []) as any,
-            type: 'scattergl',
-            mode: 'lines+markers',
-          },
-        ]}
+        data={variablesIds.map((id) => ({
+          // x: pool.getVariableLogs(id)?.[0] || [],
+          y: (pool.getVariableLogs(id)?.[1] || []) as any,
+          type: 'scattergl' as const,
+          mode: 'lines' as const,
+          name: `Variable ${id}`, // Add a name for the legend
+        }))}
         layout={
           {
             title: 'Variable Chart',
