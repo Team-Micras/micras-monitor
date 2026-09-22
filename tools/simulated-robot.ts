@@ -28,7 +28,7 @@ import { TYPE_SIZE, writeValue } from '../src/lib/comm/TypeCodec';
 const LOOP_TIME_US = 125;
 const INITIAL_CREDIT = 256;
 const SAMPLE_HEADER_SIZE = 7;
-const PORT = 8080;
+const PORT = Number(process.env.MICRAS_SIM_PORT ?? 8080);
 
 /** One registered variable, the way the firmware's pool holds it. */
 interface Variable {
@@ -193,27 +193,23 @@ const variables: Variable[] = [
   },
 ];
 
-/** The same CRC-32 the firmware hashes its schema with, so the hash matches a real robot's. */
-function crc32(data: Uint8Array, seed = 0xffffffff): number {
-  let crc = seed;
+/** The same FNV-1a the firmware hashes its schema with, so the hash matches a real robot's. */
+function mix(hash: number, bytes: Uint8Array): number {
+  let mixed = hash;
 
-  for (const byte of data) {
-    crc = (crc ^ (byte << 24)) >>> 0;
-
-    for (let bit = 0; bit < 8; bit++) {
-      crc = (crc & 0x80000000 ? (crc << 1) ^ 0x04c11db7 : crc << 1) >>> 0;
-    }
+  for (const byte of bytes) {
+    mixed = Math.imul(mixed ^ byte, 16777619) >>> 0;
   }
 
-  return crc >>> 0;
+  return mixed;
 }
 
 function schemaHash(): number {
-  let hash = 0xffffffff;
+  let hash = 2166136261;
 
   for (const variable of variables) {
-    hash = crc32(new TextEncoder().encode(variable.name), hash);
-    hash = crc32(new Uint8Array([variable.type, variable.access]), hash);
+    hash = mix(hash, new TextEncoder().encode(variable.name));
+    hash = mix(hash, new Uint8Array([variable.type, variable.access]));
   }
 
   return hash;
@@ -677,6 +673,13 @@ class Robot {
 }
 
 const server = new WebSocketServer({ port: PORT });
+
+// Without this a port already in use is an unhandled event, and anything driving this would
+// quietly end up talking to whatever is already listening there
+server.on('error', (error) => {
+  console.error(`could not listen on ${PORT}:`, error.message);
+  process.exit(1);
+});
 
 server.on('connection', (socket) => {
   console.log('application connected');

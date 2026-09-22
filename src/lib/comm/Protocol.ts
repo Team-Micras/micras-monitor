@@ -65,7 +65,6 @@ export enum ErrorCode {
   GROUP_TOO_LARGE = 3,
   NOT_STREAMABLE = 4,
   NO_SUCH_VARIABLE = 5,
-  BUSY = 6,
 }
 
 export enum Severity {

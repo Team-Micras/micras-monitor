@@ -33,13 +33,37 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-const robot = spawn('npx', ['tsx', 'tools/simulated-robot.ts'], { stdio: 'ignore' });
+// A port of its own, so that a simulator left running for the interface is neither disturbed by
+// this nor silently talks to it
+const PORT = 8099;
 
-process.on('exit', () => robot.kill());
+// Its own process group, because killing the wrapper alone leaves the robot holding the port, and
+// the next run then quietly talks to the one left behind instead of to the one it started
+const robot = spawn('npx', ['tsx', 'tools/simulated-robot.ts'], {
+  stdio: ['ignore', 'ignore', 'inherit'],
+  env: { ...process.env, MICRAS_SIM_PORT: String(PORT) },
+  detached: true,
+});
+
+robot.on('exit', (code) => {
+  if (code !== null && code !== 0) {
+    fail(`the simulated robot exited with ${code} instead of listening`);
+  }
+});
+
+function stopRobot(): void {
+  try {
+    process.kill(-robot.pid!, 'SIGKILL');
+  } catch {
+    robot.kill('SIGKILL');
+  }
+}
+
+process.on('exit', stopRobot);
 
 await sleep(3000);
 
-const socket = new WebSocket('ws://localhost:8080');
+const socket = new WebSocket(`ws://localhost:${PORT}`);
 socket.binaryType = 'arraybuffer';
 
 const incoming: number[] = [];
@@ -150,7 +174,7 @@ console.log(
 
 service.stopCommunication();
 socket.close();
-robot.kill();
+stopRobot();
 
 console.log('session ok');
 process.exit(0);
