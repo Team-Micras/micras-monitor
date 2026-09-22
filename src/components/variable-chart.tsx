@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useCommunication } from '@/hooks/useCommunication';
 import Plot from 'react-plotly.js';
 

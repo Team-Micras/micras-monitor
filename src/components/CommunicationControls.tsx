@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Circle, Loader2, X, Bluetooth, Wifi } from 'lucide-react';
+import { Circle, Loader2 } from 'lucide-react';
 import { useBluetoothCommunication } from '@/hooks/useBluetoothCommunication';
 import { useWebSocketCommunication } from '@/hooks/useWebSocketCommunication';
 import { cn } from '@/lib/utils';
@@ -65,7 +65,6 @@ export function CommunicationControls({ selectedMethod }: CommunicationControlsP
   );
 
   const transportLabel = selectedMethod === 'bluetooth' ? 'Bluetooth' : 'WebSocket';
-  const ConnectIcon = selectedMethod === 'bluetooth' ? Bluetooth : Wifi;
 
   return (
     <>
