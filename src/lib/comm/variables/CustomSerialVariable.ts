@@ -1,5 +1,6 @@
 import { ISerialVariable } from './ISerialVariable';
 import { ISerializable } from '../ISerializable';
+import { Access, TypeCode } from '../Protocol';
 
 /**
  * Class for serializing and deserializing custom variables.
@@ -9,19 +10,37 @@ import { ISerializable } from '../ISerializable';
 export class CustomSerialVariable<T extends ISerializable> implements ISerialVariable {
   private valueRef: { value: T };
   private name: string;
-  private readOnly: boolean;
+  private access: Access;
 
   /**
    * Constructor for the CustomSerialVariable class.
    *
    * @param name Name of the variable.
    * @param valueRef Reference object containing the value.
-   * @param readOnly True if the variable is read-only, false otherwise.
+   * @param access What the link is allowed to do with the variable.
    */
-  constructor(name: string, valueRef: { value: T }, readOnly: boolean) {
+  constructor(name: string, valueRef: { value: T }, access: Access) {
     this.valueRef = valueRef;
     this.name = name;
-    this.readOnly = readOnly;
+    this.access = access;
+  }
+
+  /**
+   * Get the type of the variable as the schema states it.
+   *
+   * @returns Always a blob, which is what a class with its own encoding is on the wire.
+   */
+  getTypeCode(): TypeCode {
+    return TypeCode.BLOB;
+  }
+
+  /**
+   * Get what the link is allowed to do with the variable.
+   *
+   * @returns Access flags of the variable.
+   */
+  getAccess(): Access {
+    return this.access;
   }
 
   /**
@@ -39,7 +58,6 @@ export class CustomSerialVariable<T extends ISerializable> implements ISerialVar
    * @returns Type of the variable as a string.
    */
   getType(): string {
-    //@TODO só funciona se a classe tiver o mesmo nome que no c++
     return this.valueRef.value.constructor.name;
   }
 
@@ -58,7 +76,7 @@ export class CustomSerialVariable<T extends ISerializable> implements ISerialVar
    * @returns True if the variable is read-only, false otherwise.
    */
   isReadOnly(): boolean {
-    return this.readOnly;
+    return !this.access.write;
   }
 
   /**

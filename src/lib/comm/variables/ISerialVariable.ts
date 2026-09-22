@@ -1,4 +1,5 @@
 import { ISerializable } from '../ISerializable';
+import { Access, TypeCode } from '../Protocol';
 
 export interface ISerialVariable extends ISerializable {
   /**
@@ -9,18 +10,35 @@ export interface ISerialVariable extends ISerializable {
   getName(): string;
 
   /**
-   * Check if the variable is read-only.
+   * Check if the variable can be written from here.
+   *
+   * @note A variable can be writable and still refuse a write while the robot is moving, which is
+   * what the idle flag says and what the acknowledgement of the write reports.
    *
    * @returns True if the variable is read-only, false otherwise.
    */
   isReadOnly(): boolean;
 
   /**
-   * Get the type of the variable.
+   * Get the type of the variable, for display.
    *
    * @returns Type of the variable as a string.
    */
   getType(): string;
+
+  /**
+   * Get the type of the variable as the schema states it.
+   *
+   * @returns Type code of the variable.
+   */
+  getTypeCode(): TypeCode;
+
+  /**
+   * Get what the link is allowed to do with the variable.
+   *
+   * @returns Access flags of the variable.
+   */
+  getAccess(): Access;
 
   /**
    * Get a reference to the variable's value.

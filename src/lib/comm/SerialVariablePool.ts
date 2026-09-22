@@ -1,93 +1,167 @@
 import { ISerialVariable, Fundamental, isFundamental } from './variables/ISerialVariable';
-import { CppBinarySerializer } from './CppSerializer';
 import { PrimitiveSerialVariable } from './variables/PrimitiveSerialVariable';
 import { CustomSerialVariable } from './variables/CustomSerialVariable';
 import { ISerializable } from './ISerializable';
+import { Access, TypeCode } from './Protocol';
+import { TYPE_SIZE, readValue } from './TypeCodec';
 
 export type SerializableClasses = {
   [key: string]: new () => ISerializable;
 };
 
-type SerialVariableFactory = (name: string, readOnly: boolean) => ISerialVariable;
 export type VariableChangeCallback = (id: number, variable: ISerialVariable) => void;
 
+/**
+ * The samples of one variable: the robot's own timestamps in milliseconds, and the values.
+ */
 export type LogData = [Array<number>, Array<Fundamental | ISerializable>];
 
+/**
+ * One entry of the schema, as the firmware describes it.
+ */
+export interface SchemaEntry {
+  id: number;
+  type: TypeCode;
+  access: Access;
+  name: string;
+}
+
+/**
+ * Every variable the robot exposes, and the samples that have arrived for each of them.
+ *
+ * The identifiers are registration order in the firmware, so adding one variable there shifts every
+ * later one. That is why the schema is stamped with a hash and cached against it, instead of being
+ * trusted because it was fetched once.
+ */
 export class SerialVariablePool {
   static readonly LOG_BUFFER_SIZE = 1000000;
 
   private variables: Map<number, ISerialVariable> = new Map();
-  private factories: Record<string, SerialVariableFactory> = {};
   private variableChangeCallbacks: VariableChangeCallback[] = [];
+  private variableWriteCallbacks: VariableChangeCallback[] = [];
   private nameToIdMap: Map<string, number> = new Map();
   private logs: Map<number, LogData> = new Map();
+  private customClasses: SerializableClasses;
+  private hash = 0;
 
   /**
-   * Constructor for the SerialVariablePool class.
-   *
-   * @param customSerializableClasses Optional list of custom serializable classes that implement ISerializable
-   *
-   * @description This constructor initializes the variable pool with a map of custom serializable classes.
-   * It allows the pool to create instances of these classes when deserializing data.
-   *
-   * @example
-   * ```typescript
-   * // If your typescript serializable classes does not have the same name as in the C++
-   * // firmware, you can create a map of the C++ class names to the typescript class:
-   * const mySerializableClasses = {
-   *   "CppMyFirstClass": MyFirstClass,
-   *   "CppMySecondClass": MySecondClass,
-   * };
-   *
-   * // If your typescript serializable classes have the same name as in the C++ firmware:
-   * const mySerializableClasses = {
-   *   MyFirstClass,
-   *   MySecondClass,
-   * };
-   *
-   * // If you have a template class in C++ like MyClass<T>, you can register it like this:
-   * const mySerializableClasses = {
-   *   MyClass, // This will match MyClass<int>, MyClass<string>, etc.
-   *   "MyClass<int>": MyClassInt, // If you have a specific instantiation you can map accordingly
-   * };
-   *
-   * const pool = new SerialVariablePool(mySerializableClasses);
-   * ```
+   * @param customSerializableClasses Classes to build the variables the firmware registered as
+   * blobs, keyed by the name they are registered under there.
    */
   constructor(customSerializableClasses?: SerializableClasses) {
-    this.registerPrimitiveFactories();
+    this.customClasses = customSerializableClasses ?? {};
+  }
 
-    if (customSerializableClasses) {
-      this.registerCustomFactories(customSerializableClasses);
+  /**
+   * Replace the schema with the one the robot just described.
+   *
+   * @param hash The hash the robot stamped the schema with.
+   * @param entries Every variable, in identifier order.
+   */
+  setSchema(hash: number, entries: SchemaEntry[]): void {
+    this.variables.clear();
+    this.nameToIdMap.clear();
+    this.logs.clear();
+    this.hash = hash;
+
+    for (const entry of entries) {
+      this.variables.set(entry.id, this.build(entry));
+      this.nameToIdMap.set(entry.name, entry.id);
     }
   }
 
   /**
-   * Add a variable change listener
+   * The hash of the schema currently loaded, which is what the robot has to agree with.
+   */
+  getSchemaHash(): number {
+    return this.hash;
+  }
+
+  /**
+   * Every variable, in identifier order, as the schema described it.
+   */
+  getSchema(): SchemaEntry[] {
+    return [...this.variables.entries()].map(([id, variable]) => ({
+      id,
+      type: variable.getTypeCode(),
+      access: variable.getAccess(),
+      name: variable.getName(),
+    }));
+  }
+
+  /**
+   * Take the values of one group out of a sample, all captured in the same control loop iteration.
    *
-   * @param callback Callback function to be called when a variable changes
+   * @param ids The variables of the group, in the order they are packed.
+   * @param timestampMs When the robot captured them.
+   * @param values The packed values.
+   */
+  applySample(ids: number[], timestampMs: number, values: Uint8Array): void {
+    let offset = 0;
+
+    for (const id of ids) {
+      const variable = this.variables.get(id);
+
+      if (!variable) {
+        continue;
+      }
+
+      const type = variable.getTypeCode();
+      const value = readValue(values, offset, type);
+      offset += TYPE_SIZE[type];
+
+      if (value === null) {
+        return;
+      }
+
+      this.record(id, variable, value, timestampMs);
+    }
+  }
+
+  /**
+   * Take the value of a single variable, as a reply to a read.
+   *
+   * @param id The variable the value belongs to.
+   * @param data The bytes of the value.
+   * @param timestampMs When it was taken, as far as this side can tell.
+   */
+  applyValue(id: number, data: Uint8Array, timestampMs: number): void {
+    const variable = this.variables.get(id);
+
+    if (!variable) {
+      return;
+    }
+
+    const lastValue = variable.getReference().value;
+    variable.deserialize(data);
+    this.record(id, variable, variable.getReference().value, timestampMs, lastValue);
+  }
+
+  /**
+   * Be told whenever a value changes, whoever changed it. This is what the interface redraws on.
    */
   addVariableChangeListener(callback: VariableChangeCallback): void {
     this.variableChangeCallbacks.push(callback);
   }
 
   /**
-   * Update a variable by ID
+   * Be told only when a value is changed from here, which is what has to be sent to the robot.
    *
-   * @param id Variable ID
-   * @param setter Function to set the variable value
-   *
-   * @description This method updates a variable by its ID.
-   * It calls the provided setter function to set the variable value.
-   * The setter function receives a reference to the variable's value.
-   * It is important to note that the setter function should not directly
-   * modify the variable's value, but rather use the reference to update it.
-   * This ensures that the variable's change is properly tracked and notified.
+   * @note Keeping this apart from the change listeners is what stops a sample from being echoed
+   * straight back as a write. With one list, every value the robot sent would be written back to
+   * it, and a value set here would be overwritten by whichever sample was already in flight.
+   */
+  addVariableWriteListener(callback: VariableChangeCallback): void {
+    this.variableWriteCallbacks.push(callback);
+  }
+
+  /**
+   * Set a variable from here, which sends it to the robot.
    *
    * @example
    * ```typescript
    * pool.updateVariable<number>(variableId, (valueRef) => {
-   *   valueRef.value = 42; // Update the variable value
+   *   valueRef.value = 42;
    * });
    * ```
    */
@@ -96,6 +170,7 @@ export class SerialVariablePool {
     setter: (valueRef: { value: T }) => void
   ): void {
     const variable = this.variables.get(id);
+
     if (!variable) {
       console.warn(`No variable found with ID: ${id}`);
       return;
@@ -109,257 +184,122 @@ export class SerialVariablePool {
     const valueRef = variable.getReference();
     setter(valueRef as { value: T });
     this.notifyVariableChange(id, variable);
+
+    for (const callback of this.variableWriteCallbacks) {
+      callback(id, variable);
+    }
   }
 
   /**
-   * Update a variable by name
-   *
-   * @param name Variable name
-   * @param setter Function to set the variable value
-   *
-   * @description This method updates a variable by its name.
-   * It calls the provided setter function to set the variable value.
+   * Set a variable by name, which sends it to the robot.
    */
   updateVariableByName<T extends Fundamental | ISerializable>(
     name: string,
     setter: (valueRef: { value: T }) => void
   ): void {
     const id = this.nameToIdMap.get(name);
+
     if (id === undefined) {
       console.warn(`No variable found with name: ${name}`);
       return;
     }
+
     this.updateVariable(id, setter);
   }
 
-  /**
-   * Deserialize the variable map from a byte array
-   *
-   * @param data Serialized variable map
-   *
-   * @description This method deserializes the variable map from a byte array.
-   * It populates the variables map with instances of the appropriate types.
-   */
-  deserializeVarMap(data: Uint8Array): void {
-    this.variables.clear();
-    this.nameToIdMap.clear();
-
-    try {
-      const count = data[0] | (data[1] << 8);
-      let offset = 2;
-
-      for (let i = 0; i < count; i++) {
-        const id = data[offset] | (data[offset + 1] << 8);
-        offset += 2;
-
-        const nameLength = data[offset++];
-        const nameBytes = data.slice(offset, offset + nameLength);
-        const decoder = new TextDecoder();
-        const name = decoder.decode(nameBytes);
-        offset += nameLength;
-
-        const typeLength = data[offset++];
-        const typeBytes = data.slice(offset, offset + typeLength);
-        const type = decoder.decode(typeBytes);
-        offset += typeLength;
-
-        const readOnly = data[offset++] !== 0;
-
-        const factoryType = this.getFactoryType(type);
-        if (factoryType) {
-          const variable = this.factories[factoryType](name, readOnly);
-          this.variables.set(id, variable);
-          this.nameToIdMap.set(name, id);
-        } else {
-          console.warn(`No factory registered for type: ${type}`);
-        }
-      }
-    } catch (error) {
-      console.error('Error deserializing variable map:', error);
-    }
-  }
-
-  /**
-   * Deserialize a variable by ID
-   *
-   * @param id Variable ID
-   * @param data Serialized variable data
-   *
-   * @description This method deserializes a variable by its ID.
-   * It populates the variable with the deserialized data.
-   */
-  deserializeVariable(id: number, data: Uint8Array): void {
-    const variable = this.variables.get(id);
-    if (!variable) {
-      console.warn(`No variable found with ID: ${id}`);
-      return;
-    }
-
-    const lastValue = variable.getReference().value;
-    variable.deserialize(data);
-    const newValue = variable.getReference().value;
-
-    this.addVariableToLog(id, newValue);
-
-    if (this.hasValueChanged(lastValue, newValue, variable)) {
-      this.notifyVariableChange(id, variable);
-    }
-  }
-
-  /**
-   * Get the variable by ID
-   *
-   * @param id Variable ID
-   *
-   * @description This method retrieves a variable by its ID.
-   * It returns the variable if found, or undefined if not.
-   */
   getVariable(id: number): ISerialVariable | undefined {
     return this.variables.get(id);
   }
 
-  /**
-   * Get the variable by name
-   *
-   * @param name Variable name
-   *
-   * @description This method retrieves a variable by its name.
-   * It returns the variable if found, or undefined if not.
-   */
   getVariableByName(name: string): ISerialVariable | undefined {
     return this.variables.get(this.nameToIdMap.get(name) ?? -1);
   }
 
-  /**
-   * Get the number of variables in the pool
-   *
-   * @description This method returns the number of variables in the pool.
-   * It is useful for iterating over the variables.
-   */
+  getVariableId(name: string): number | undefined {
+    return this.nameToIdMap.get(name);
+  }
+
   getVariableCount(): number {
     return this.variables.size;
   }
 
-  /**
-   * Get the logs for a variable
-   *
-   * @param id Variable ID
-   * @returns Variable logs
-   */
   getVariableLogs(id: number): LogData | undefined {
     return this.logs.get(id);
   }
 
-  /**
-   * Iterate over the variables in the pool
-   *
-   * @param callback Callback function to be called for each variable
-   *
-   * @description This method iterates over the variables in the pool.
-   * It calls the provided callback function for each variable.
-   */
+  clearVariableLogs(): void {
+    this.logs.clear();
+  }
+
   forEach(callback: (variable: ISerialVariable, id: number) => void): void {
     this.variables.forEach((variable, id) => {
       callback(variable, id);
     });
   }
 
-  /**
-   * Register primitive types with their default values
-   *
-   * @description This method registers the primitive types with their default values.
-   * It allows the pool to create instances of these types when deserializing data.
-   */
-  private registerPrimitiveFactories() {
-    CppBinarySerializer.CPP_TYPE_VALUES.forEach((cppType) => {
-      const defaultValue = CppBinarySerializer.getTsType(cppType);
-      this.factories[cppType] = (name: string, readOnly: boolean) =>
-        new PrimitiveSerialVariable(name, { value: defaultValue }, readOnly, cppType);
-    });
+  private build(entry: SchemaEntry): ISerialVariable {
+    if (entry.type !== TypeCode.BLOB) {
+      return new PrimitiveSerialVariable(entry.name, entry.type, entry.access);
+    }
+
+    const ClassConstructor = this.resolveClass(entry.name);
+
+    if (!ClassConstructor) {
+      console.warn(`No class registered to decode the blob "${entry.name}"`);
+    }
+
+    return new CustomSerialVariable(
+      entry.name,
+      { value: ClassConstructor ? new ClassConstructor() : new UnknownBlob() },
+      entry.access
+    );
   }
 
   /**
-   * Register custom serializable classes
-   *
-   * @param classes Object containing class constructors
-   *
-   * @description This method registers custom serializable classes with the pool.
-   * It allows the pool to create instances of these classes when deserializing data.
+   * Find the class that decodes a blob, by the name the firmware registered it under or by the
+   * last segment of that name, so that a prefix does not have to be repeated here.
    */
-  private registerCustomFactories(classes: SerializableClasses): void {
-    for (const className in classes) {
-      const ClassConstructor = classes[className];
-      this.factories[className] = (name: string, readOnly: boolean) =>
-        new CustomSerialVariable(name, { value: new ClassConstructor() }, readOnly);
-    }
+  private resolveClass(name: string): (new () => ISerializable) | undefined {
+    return this.customClasses[name] ?? this.customClasses[name.split('/').pop() ?? name];
   }
 
-  /**
-   * Get the factory type for a given type string
-   *
-   * @param type The type string to resolve
-   * @returns The factory type if found, null otherwise
-   */
-  private getFactoryType(type: string): string | null {
-    if (this.factories[type]) {
-      return type;
+  private record(
+    id: number,
+    variable: ISerialVariable,
+    value: Fundamental | ISerializable,
+    timestampMs: number,
+    lastValue?: Fundamental | ISerializable
+  ): void {
+    const previous = lastValue ?? variable.getReference().value;
+
+    if (isFundamental(value)) {
+      variable.getReference().value = value;
     }
 
-    const templateRegex = /^(\w+)<(.+)>$/;
-    const match = type.match(templateRegex);
-
-    if (match) {
-      const [, templateTypeName] = match;
-      if (this.factories[templateTypeName]) {
-        return templateTypeName;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Add a variable's value to the log
-   *
-   * @param id Variable ID
-   * @param value Variable value
-   */
-  private addVariableToLog(id: number, value: Fundamental | ISerializable): void {
     if (!this.logs.has(id)) {
       this.logs.set(id, [[], []]);
     }
 
     const logData = this.logs.get(id) as LogData;
-    logData[0].push(window.performance.now());
+    logData[0].push(timestampMs);
     logData[1].push(value);
 
     if (logData[0].length > SerialVariablePool.LOG_BUFFER_SIZE) {
       logData[0].shift();
       logData[1].shift();
     }
+
+    if (this.hasValueChanged(previous, value, variable)) {
+      this.notifyVariableChange(id, variable);
+    }
   }
 
-  /**
-   * Notify all listeners of a variable change
-   *
-   * @param id Variable ID
-   * @param variable Variable instance
-   */
   private notifyVariableChange(id: number, variable: ISerialVariable): void {
-    // console.log(`Variable changed: ${variable.getName()} (ID: ${id})`);
     for (const callback of this.variableChangeCallbacks) {
       callback(id, variable);
     }
   }
 
-  /**
-   * Check if a variable's value has changed
-   *
-   * @param lastValue The previous value
-   * @param newValue The new value
-   * @param variable The variable instance for comparison
-   * @returns True if the value has changed, false otherwise
-   */
   private hasValueChanged(
     lastValue: Fundamental | ISerializable,
     newValue: Fundamental | ISerializable,
@@ -367,8 +307,27 @@ export class SerialVariablePool {
   ): boolean {
     if (isFundamental(newValue)) {
       return newValue !== lastValue;
-    } else {
-      return !variable.isEquals(lastValue as ISerializable);
     }
+
+    return !variable.isEquals(lastValue as ISerializable);
+  }
+}
+
+/**
+ * Stands in for a blob no class was registered for, so that the rest of the schema still loads.
+ */
+class UnknownBlob implements ISerializable {
+  private bytes: Uint8Array = new Uint8Array(0);
+
+  serialize(): Uint8Array {
+    return this.bytes;
+  }
+
+  deserialize(serialData: Uint8Array): void {
+    this.bytes = serialData;
+  }
+
+  isEquals(other: ISerializable): boolean {
+    return other === this;
   }
 }
