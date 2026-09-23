@@ -1,99 +1,64 @@
-import { ISerialVariable, Fundamental } from './ISerialVariable';
-import { CppBinarySerializer, CppType } from '../CppSerializer';
+import { Access, TypeCode } from '../Protocol';
 import { ISerializable } from '../ISerializable';
+import { ISerialVariable, Fundamental } from './ISerialVariable';
+import { defaultValue, readValue, typeName, writeValue } from '../TypeCodec';
 
 /**
- * Class for serializing and deserializing primitive variables.
- *
- * @template T Type of the primitive variable.
+ * A variable the schema described by a type code, read and written straight out of a `DataView`.
  */
 export class PrimitiveSerialVariable<T extends Fundamental> implements ISerialVariable {
   private valueRef: { value: T };
-  private name: string;
-  private type: CppType;
-  private readOnly: boolean;
 
-  /**
-   * Constructor for the PrimitiveSerialVariable class.
-   *
-   * @param name Name of the variable.
-   * @param valueRef Reference object containing the value.
-   * @param readOnly True if the variable is read-only, false otherwise.
-   */
-  constructor(name: string, valueRef: { value: T }, readOnly: boolean, type: CppType) {
-    this.valueRef = valueRef;
-    this.name = name;
-    this.readOnly = readOnly;
-    this.type = type;
+  constructor(
+    private readonly name: string,
+    private readonly type: TypeCode,
+    private readonly access: Access,
+    valueRef?: { value: T }
+  ) {
+    this.valueRef = valueRef ?? { value: defaultValue(type) as T };
   }
 
-  /**
-   * Get the variable's name.
-   *
-   * @returns Name of the variable.
-   */
   getName(): string {
     return this.name;
   }
 
-  /**
-   * Get the variable's type.
-   *
-   * @returns Type of the variable as a string.
-   */
   getType(): string {
+    return typeName(this.type);
+  }
+
+  getTypeCode(): TypeCode {
     return this.type;
   }
 
-  /**
-   * Get a reference to the variable's value.
-   *
-   * @returns Reference object containing the variable's value.
-   */
+  getAccess(): Access {
+    return this.access;
+  }
+
   getReference(): { value: T } {
     return this.valueRef;
   }
 
-  /**
-   * Check if the variable is read-only.
-   *
-   * @returns True if the variable is read-only, false otherwise.
-   */
   isReadOnly(): boolean {
-    return this.readOnly;
+    return !this.access.write;
   }
 
-  /**
-   * Serialize the variable.
-   *
-   * @returns Serialized data.
-   */
   serialize(): Uint8Array {
-    return CppBinarySerializer.serializeValue(this.valueRef.value, this.type);
+    return writeValue(this.valueRef.value, this.type);
   }
 
-  /**
-   * Deserialize the variable.
-   *
-   * @param serialData Pointer to the serialized data.
-   */
   deserialize(serialData: Uint8Array): void {
-    const value = CppBinarySerializer.deserializeValue(serialData, this.type);
+    const value = readValue(serialData, 0, this.type);
+
     if (value !== null) {
       this.valueRef.value = value as T;
     }
   }
 
-  /**
-   * Check if the variable is equal to another ISerializable.
-   *
-   * @param other Another ISerializable to compare with.
-   * @returns True if the two variables are equal, false otherwise.
-   */
   isEquals(other: ISerializable): boolean {
-    if (!(other instanceof PrimitiveSerialVariable)) {
-      return false;
-    }
-    return this.name === other.name && this.valueRef.value === other.valueRef.value;
+    return (
+      other instanceof PrimitiveSerialVariable &&
+      this.name === other.name &&
+      this.valueRef.value === other.valueRef.value
+    );
   }
 }

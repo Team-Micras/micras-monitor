@@ -6,7 +6,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { Bluetooth, Plug, Wifi } from 'lucide-react';
+import { Bluetooth, Plug } from 'lucide-react';
 import { useState } from 'react';
 import { CommunicationControls } from './CommunicationControls';
 
