@@ -18,8 +18,6 @@ import {
   MAX_PAYLOAD_SIZE,
   MessageType,
   PROTOCOL_VERSION,
-  TraceState,
-  TriggerType,
   TypeCode,
   WriteStatus,
 } from '../src/lib/comm/Protocol';
@@ -233,15 +231,6 @@ class Robot {
   private droppedSamples = 0;
   private idle = true;
 
-  private traceState = TraceState.IDLE;
-  private traceGroup?: Group;
-  private traceRing: number[][] = [];
-  private traceCapacity = 2048;
-  private tracePre = 0;
-  private traceRemaining = 0;
-  private traceDumpOffset?: number;
-  private traceBytes = new Uint8Array(0);
-
   constructor(private readonly socket: WebSocket) {
     socket.on('message', (data: Buffer) => this.onData(new Uint8Array(data)));
   }
@@ -249,8 +238,6 @@ class Robot {
   /** One control loop iteration. */
   tick(): void {
     this.iteration++;
-
-    this.captureTrace();
 
     for (let index = 0; index < MAX_GROUPS; index++) {
       const group = this.groups[index];
@@ -277,8 +264,6 @@ class Robot {
         variables[20].value = this.droppedSamples;
       }
     }
-
-    this.dumpTrace();
   }
 
   private now(): number {
@@ -316,8 +301,6 @@ class Robot {
         this.groups.fill(undefined);
         this.credit = INITIAL_CREDIT;
         this.schemaIndex = variables.length;
-        this.traceState = TraceState.IDLE;
-        this.traceDumpOffset = undefined;
         this.send(
           MessageType.HELLO_ACK,
           new Writer()
@@ -357,14 +340,6 @@ class Robot {
 
       case MessageType.COMMAND:
         this.onCommand(reader);
-        break;
-
-      case MessageType.TRACE_ARM:
-        this.onTraceArm(reader);
-        break;
-
-      case MessageType.TRACE_READ:
-        this.onTraceRead(reader);
         break;
 
       default:
@@ -483,10 +458,6 @@ class Robot {
 
     console.log(`command ${code} (${argument})`);
 
-    if (code === 5) {
-      this.fireTrace();
-    }
-
     this.idle = code !== 0 && code !== 1;
     this.send(MessageType.COMMAND_ACK, new Writer().u8(code).u8(0).done());
     this.send(
@@ -494,114 +465,6 @@ class Robot {
       new Writer()
         .u8(1)
         .raw(new TextEncoder().encode(`ran command ${code}`))
-        .done()
-    );
-  }
-
-  private onTraceArm(reader: Reader): void {
-    const index = reader.u8();
-    const preTrigger = reader.u8();
-    const trigger = reader.u8() as TriggerType;
-    const group = this.groups[index];
-
-    if (!group) {
-      this.send(MessageType.ERROR, new Writer().u8(2).u16(index).done());
-      return;
-    }
-
-    this.traceGroup = group;
-    this.traceCapacity = Math.floor(32768 / group.sampleSize);
-    this.tracePre = Math.min(
-      Math.floor((this.traceCapacity * Math.min(preTrigger, 100)) / 100),
-      this.traceCapacity - 1
-    );
-    this.traceRing = [];
-    this.traceState = TraceState.ARMED;
-    this.traceDumpOffset = undefined;
-
-    if (trigger === TriggerType.IMMEDIATE) {
-      this.fireTrace();
-    }
-
-    this.sendTraceStatus();
-  }
-
-  private fireTrace(): void {
-    if (this.traceState !== TraceState.ARMED) {
-      return;
-    }
-
-    this.tracePre = Math.min(this.traceRing.length, this.tracePre);
-    this.traceRemaining = this.traceCapacity - this.tracePre;
-    this.traceState = TraceState.TRIGGERED;
-  }
-
-  private captureTrace(): void {
-    if (!this.traceGroup) {
-      return;
-    }
-
-    if (
-      this.traceState !== TraceState.ARMED &&
-      this.traceState !== TraceState.TRIGGERED
-    ) {
-      return;
-    }
-
-    this.traceRing.push([...this.sampleGroup(this.traceGroup)]);
-
-    while (this.traceRing.length > this.traceCapacity) {
-      this.traceRing.shift();
-    }
-
-    if (this.traceState === TraceState.TRIGGERED && --this.traceRemaining === 0) {
-      this.traceState = TraceState.FULL;
-      this.traceBytes = new Uint8Array(this.traceRing.flat());
-      this.sendTraceStatus();
-    }
-  }
-
-  private onTraceRead(reader: Reader): void {
-    const offset = reader.u32();
-
-    if (this.traceState !== TraceState.FULL) {
-      this.sendTraceStatus();
-      return;
-    }
-
-    this.traceDumpOffset = offset;
-  }
-
-  private dumpTrace(): void {
-    if (
-      this.traceDumpOffset === undefined ||
-      this.traceDumpOffset >= this.traceBytes.length
-    ) {
-      this.traceDumpOffset = undefined;
-      return;
-    }
-
-    const block = this.traceBytes.subarray(
-      this.traceDumpOffset,
-      this.traceDumpOffset + 196
-    );
-    const payload = new Writer().u32(this.traceDumpOffset).raw(block).done();
-
-    if (this.sendMetered(MessageType.TRACE_DATA, payload)) {
-      this.traceDumpOffset += block.length;
-    }
-  }
-
-  private sendTraceStatus(): void {
-    this.send(
-      MessageType.TRACE_STATUS,
-      new Writer()
-        .u8(this.traceState)
-        .u32(this.traceState === TraceState.FULL ? this.traceRing.length : 0)
-        .u32(this.tracePre)
-        .u16(this.traceGroup?.sampleSize ?? 0)
-        .u16(this.traceGroup?.period ?? 1)
-        .u32((this.iteration * LOOP_TIME_US) >>> 0)
         .done()
     );
   }

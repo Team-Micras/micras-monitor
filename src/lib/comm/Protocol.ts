@@ -17,9 +17,7 @@ export enum MessageType {
   WRITE = 0x06,
   READ = 0x07,
   COMMAND = 0x08,
-  TRACE_ARM = 0x09,
-  TRACE_READ = 0x0a,
-  PING = 0x0b,
+  PING = 0x09,
 
   HELLO_ACK = 0x81,
   SCHEMA_PAGE = 0x82,
@@ -28,10 +26,8 @@ export enum MessageType {
   WRITE_ACK = 0x86,
   VALUE = 0x87,
   COMMAND_ACK = 0x88,
-  LOG = 0x89,
-  TRACE_STATUS = 0x8a,
-  TRACE_DATA = 0x8b,
-  PONG = 0x8c,
+  PONG = 0x89,
+  LOG = 0x8a,
   ERROR = 0x8f,
 }
 
@@ -74,25 +70,11 @@ export enum Severity {
   ERROR = 3,
 }
 
-export enum TriggerType {
-  IMMEDIATE = 0,
-  COMMAND = 1,
-  ABOVE = 2,
-  BELOW = 3,
-}
-
-export enum TraceState {
-  IDLE = 0,
-  ARMED = 1,
-  TRIGGERED = 2,
-  FULL = 3,
-}
-
 /**
  * What each consumer of the pool is allowed to do with a variable, as the schema spells it out.
  */
 export interface Access {
-  /** May appear in a stream or in a trace group. */
+  /** May appear in a stream. */
   stream: boolean;
 
   /** May be written over the link. */

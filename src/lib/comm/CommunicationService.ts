@@ -8,8 +8,6 @@ import {
   MessageType,
   PROTOCOL_VERSION,
   Severity,
-  TraceState,
-  TriggerType,
   TypeCode,
   WriteStatus,
   decodeAccess,
@@ -32,18 +30,6 @@ const SAMPLE_HEADER_SIZE = 7;
  * per connection. It is a kilobyte over a link that carries a few thousand bytes a second.
  */
 const SCHEMA_CACHE_KEY = 'micras.schema';
-
-/**
- * What the capture is doing, as the robot last reported it.
- */
-export interface TraceStatus {
-  state: TraceState;
-  samples: number;
-  preTrigger: number;
-  sampleSize: number;
-  period: number;
-  timestampUs: number;
-}
 
 /**
  * The session with the robot: the handshake, the schema, the groups that stream, the credit window
@@ -75,10 +61,6 @@ export class CommunicationService {
   private unconsumedBytes = 0;
   private lastTimestampUs = 0;
   private timestampWrapMs = 0;
-
-  private traceStatus?: TraceStatus;
-  private traceBlocks: Uint8Array[] = [];
-  private onTrace?: (status: TraceStatus, samples: Float64Array[]) => void;
 
   /**
    * @param pool The variables the session fills.
@@ -153,8 +135,7 @@ export class CommunicationService {
    * Set how often the streamed variables are sampled.
    *
    * The link carries a few thousand bytes a second, so eight signals fit in fifty to a hundred
-   * samples a second and no more. The control loop runs at eight thousand; to see that, arm a
-   * trace instead.
+   * samples a second and no more, well under the eight thousand the control loop runs at.
    *
    * @param hz Samples per second.
    */
@@ -241,43 +222,6 @@ export class CommunicationService {
    */
   readVariable(id: number): void {
     this.send(MessageType.READ, new Writer().u16(id).done());
-  }
-
-  /**
-   * Record a group at the full control loop rate, to be read out once it has stopped.
-   *
-   * @param group Which of the defined groups to capture.
-   * @param preTrigger How much of the capture to keep from before the trigger, in percent.
-   * @param trigger What starts it.
-   * @param watched The variable a threshold trigger watches.
-   * @param threshold The value it has to cross.
-   */
-  armTrace(
-    group: number,
-    preTrigger: number,
-    trigger: TriggerType,
-    watched: number = 0,
-    threshold: number = 0
-  ): void {
-    this.traceBlocks = [];
-    this.send(
-      MessageType.TRACE_ARM,
-      new Writer().u8(group).u8(preTrigger).u8(trigger).u16(watched).f32(threshold).done()
-    );
-  }
-
-  /**
-   * Start reading a finished capture out. It arrives one block per control loop iteration that the
-   * credit window allows, and the callback runs once the last block has landed.
-   */
-  readTrace(onTrace: (status: TraceStatus, samples: Float64Array[]) => void): void {
-    this.onTrace = onTrace;
-    this.traceBlocks = [];
-    this.send(MessageType.TRACE_READ, new Writer().u32(0).done());
-  }
-
-  getTraceStatus(): TraceStatus | undefined {
-    return this.traceStatus;
   }
 
   private hello(): void {
@@ -428,14 +372,6 @@ export class CommunicationService {
 
       case MessageType.LOG:
         this.onLog(reader, payload);
-        break;
-
-      case MessageType.TRACE_STATUS:
-        this.onTraceStatus(reader);
-        break;
-
-      case MessageType.TRACE_DATA:
-        this.onTraceData(reader);
         break;
 
       case MessageType.ERROR:
@@ -598,78 +534,6 @@ export class CommunicationService {
     } else {
       console.log('Robot:', text);
     }
-  }
-
-  private onTraceStatus(reader: Reader): void {
-    this.traceStatus = {
-      state: reader.u8() as TraceState,
-      samples: reader.u32(),
-      preTrigger: reader.u32(),
-      sampleSize: reader.u16(),
-      period: reader.u16(),
-      timestampUs: reader.u32(),
-    };
-  }
-
-  private onTraceData(reader: Reader): void {
-    reader.u32();
-    this.traceBlocks.push(reader.rest());
-
-    const held = this.traceBlocks.reduce((total, block) => total + block.length, 0);
-    const expected =
-      (this.traceStatus?.samples ?? 0) * (this.traceStatus?.sampleSize ?? 0);
-
-    if (held < expected || expected === 0 || !this.onTrace || !this.traceStatus) {
-      return;
-    }
-
-    const capture = new Uint8Array(held);
-    let offset = 0;
-
-    for (const block of this.traceBlocks) {
-      capture.set(block, offset);
-      offset += block.length;
-    }
-
-    const callback = this.onTrace;
-    this.onTrace = undefined;
-    callback(this.traceStatus, this.splitTrace(capture));
-  }
-
-  /**
-   * Turn the capture into one series per variable of the group it was armed on.
-   */
-  private splitTrace(capture: Uint8Array): Float64Array[] {
-    const status = this.traceStatus!;
-    const ids = this.groups.find(
-      (group) =>
-        group.reduce(
-          (total, id) => total + TYPE_SIZE[this.pool.getVariable(id)!.getTypeCode()],
-          0
-        ) === status.sampleSize
-    );
-
-    if (!ids) {
-      return [];
-    }
-
-    const series = ids.map(() => new Float64Array(status.samples));
-    const view = new DataView(capture.buffer, capture.byteOffset, capture.byteLength);
-
-    for (let sample = 0; sample < status.samples; sample++) {
-      let offset = sample * status.sampleSize;
-
-      ids.forEach((id, column) => {
-        const type = this.pool.getVariable(id)!.getTypeCode();
-        series[column][sample] =
-          type === TypeCode.F32
-            ? view.getFloat32(offset, true)
-            : view.getInt32(offset, true);
-        offset += TYPE_SIZE[type];
-      });
-    }
-
-    return series;
   }
 
   /**
