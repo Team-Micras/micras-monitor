@@ -7,7 +7,6 @@
 import { encodeFrame, FrameReader } from '../Frame';
 import { FRAME_VECTORS } from './frameVectors';
 import * as Cobs from '../Cobs';
-import { crc16 } from '../Crc';
 
 function fail(message: string): never {
   console.error(`FAIL ${message}`);
@@ -16,12 +15,6 @@ function fail(message: string): never {
 
 function same(a: Uint8Array | number[], b: Uint8Array | number[]): boolean {
   return a.length === b.length && [...a].every((value, index) => value === b[index]);
-}
-
-// CRC-16/CCITT-FALSE has a published check value, so this side is anchored to the standard and not
-// only to the other implementation
-if (crc16(new TextEncoder().encode('123456789')) !== 0x29b1) {
-  fail('crc16 does not match the published check value');
 }
 
 for (const vector of FRAME_VECTORS) {

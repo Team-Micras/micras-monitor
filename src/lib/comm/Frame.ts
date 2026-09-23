@@ -1,6 +1,28 @@
 import * as Cobs from './Cobs';
-import { crc16 } from './Crc';
 import { MAX_PAYLOAD_SIZE, MessageType } from './Protocol';
+
+/**
+ * The frame check, matching `fletcher16` in `micras_comm/src/frame.cpp`.
+ *
+ * It is not protecting against the radio, which has a CRC-24 of its own and retransmits until
+ * acknowledged. It covers the two hops BLE never sees: the 8N1 serial port with no parity between
+ * the microcontroller and the module, and the module's buffer, which drops runs of bytes with no
+ * indication that it did.
+ *
+ * @param data The bytes to check.
+ * @returns The check value.
+ */
+function fletcher16(data: Uint8Array): number {
+  let low = 0;
+  let high = 0;
+
+  for (const byte of data) {
+    low = (low + byte) % 255;
+    high = (high + low) % 255;
+  }
+
+  return (high << 8) | low;
+}
 
 /**
  * A message that arrived whole and passed the frame check.
@@ -110,7 +132,7 @@ export function encodeFrame(type: MessageType, payload: Uint8Array): Uint8Array 
   plain[0] = type;
   plain.set(payload, 1);
 
-  const check = crc16(plain.subarray(0, payload.length + 1));
+  const check = fletcher16(plain.subarray(0, payload.length + 1));
   plain[payload.length + 1] = check & 0xff;
   plain[payload.length + 2] = check >> 8;
 
@@ -187,7 +209,7 @@ export class FrameReader {
     const checked = decoded.subarray(0, decoded.length - 2);
     const expected = decoded[decoded.length - 2] | (decoded[decoded.length - 1] << 8);
 
-    if (crc16(checked) !== expected) {
+    if (fletcher16(checked) !== expected) {
       return null;
     }
 
