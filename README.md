@@ -31,8 +31,14 @@ wire layer and an empty app shell).
 | `bun run simulate`     | Simulated robot on `ws://localhost:8080`                    |
 | `bun run check`        | Lint, format check, typecheck, tests and build, as in CI    |
 
-The simulated robot listens on `MICRAS_SIM_PORT` when it is set. `bun run bench:telemetry` measures
-the telemetry store's memory and query times at full size.
+The simulated robot listens on `MICRAS_SIM_PORT` when it is set. Flags shape its link and inject
+faults, for example `bun run simulate --throughput 3000 --latency 50 --corrupt 0.02`; the header of
+`tools/simulated-robot.ts` lists them all. Tests start it in-process on a free port.
+`bun run bench:telemetry` measures the telemetry store's memory and query times at full size.
+
+`bun tools/check-live-session.ts --url ws://localhost:8080` connects a session to a live robot, such
+as the simulation's monitor bridge (`just micras serve`), streams a few variables for five seconds
+and prints what the link did. It is a manual check, not part of CI.
 
 ## Layout
 
@@ -42,13 +48,13 @@ keep their dependencies pointing one way; each planned layer gets its rule when 
 | Path              | Layer                                                     | May import                       |
 | ----------------- | --------------------------------------------------------- | -------------------------------- |
 | `src/protocol/`   | COBS, frames, message layouts and value codecs            | nothing else in the monitor      |
-| `src/link/`       | Transports and the session (planned)                      | `protocol`                       |
+| `src/link/`       | Transports (WebSocket, Bluetooth) and the session         | `protocol`                       |
 | `src/telemetry/`  | Session store, history, decimation and recording format   | types of `protocol`              |
 | `src/tiling/`     | Tiling window engine, no DOM                              | nothing else in the monitor      |
 | `src/robot-kit/`  | Contracts for robot packages (planned)                    | `protocol`                       |
 | `src/app/`        | React: shell, windows, theme                              | every layer above                |
 | `robots/<robot>/` | Robot packages: types, views, commands, presets (planned) | `robot-kit`, React for the views |
-| `tools/`          | Development tools such as the simulated robot             | `protocol` (bench: `telemetry`)  |
+| `tools/`          | Simulated robot, live check, bench and their tests        | `protocol`, `link`, `telemetry`  |
 
 Only `src/app/` and the `src/main.tsx` entry point may import React. `src/main.tsx` is the composition
 root: it is the only file that imports the robot packages, and it hands them to the app, so nothing
