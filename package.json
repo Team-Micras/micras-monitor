@@ -16,6 +16,7 @@
     "test:unit": "vitest run --project unit",
     "test:browser": "vitest run --project browser",
     "simulate": "bun tools/simulated-robot.ts",
+    "bench:telemetry": "bun tools/bench-telemetry.ts",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {

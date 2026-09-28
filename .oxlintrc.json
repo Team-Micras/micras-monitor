@@ -181,6 +181,26 @@
           }
         ]
       }
+    },
+    {
+      "files": ["tools/bench-telemetry.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@/(link|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|tiling|robot-kit|app)|robots))(/|$)",
+                "message": "The telemetry benchmark may only depend on src/protocol and src/telemetry."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Tools are Node scripts; no React."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

@@ -31,7 +31,8 @@ wire layer and an empty app shell).
 | `bun run simulate`     | Simulated robot on `ws://localhost:8080`                    |
 | `bun run check`        | Lint, format check, typecheck, tests and build, as in CI    |
 
-The simulated robot listens on `MICRAS_SIM_PORT` when it is set.
+The simulated robot listens on `MICRAS_SIM_PORT` when it is set. `bun run bench:telemetry` measures
+the telemetry store's memory and query times at full size.
 
 ## Layout
 
@@ -47,7 +48,7 @@ keep their dependencies pointing one way; each planned layer gets its rule when 
 | `src/robot-kit/`  | Contracts for robot packages (planned)                    | `protocol`                       |
 | `src/app/`        | React: shell, windows, theme                              | every layer above                |
 | `robots/<robot>/` | Robot packages: types, views, commands, presets (planned) | `robot-kit`, React for the views |
-| `tools/`          | Development tools such as the simulated robot             | `protocol`                       |
+| `tools/`          | Development tools such as the simulated robot             | `protocol` (bench: `telemetry`)  |
 
 Only `src/app/` and the `src/main.tsx` entry point may import React. `src/main.tsx` is the composition
 root: it is the only file that imports the robot packages, and it hands them to the app, so nothing
