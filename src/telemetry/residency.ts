@@ -341,6 +341,10 @@ export class BlockResidency implements BlockAccess {
   }
 
   private makeRoom(bytes: number, forLoad: boolean): boolean {
+    if (forLoad && this.usedBytes - this.evictableBytes() + bytes > this.options.capBytes) {
+      return false;
+    }
+
     let changed = false;
 
     while (this.usedBytes + bytes > this.options.capBytes) {
@@ -375,20 +379,34 @@ export class BlockResidency implements BlockAccess {
     let victim: Block | undefined;
 
     for (const block of this.blocks) {
-      if (!block.resident || !block.copy || block.writing || block.loading) {
-        continue;
-      }
-
-      if (forLoad && block.lastUsed === this.tick) {
-        continue;
-      }
-
-      if (!victim || block.lastUsed < victim.lastUsed) {
+      if (this.canEvict(block, forLoad) && (!victim || block.lastUsed < victim.lastUsed)) {
         victim = block;
       }
     }
 
     return victim;
+  }
+
+  private evictableBytes(): number {
+    let bytes = 0;
+
+    for (const block of this.blocks) {
+      if (this.canEvict(block, true)) {
+        bytes += block.rawByteLength;
+      }
+    }
+
+    return bytes;
+  }
+
+  private canEvict(block: Block, forLoad: boolean): boolean {
+    return (
+      block.resident &&
+      block.copy !== undefined &&
+      !block.writing &&
+      !block.loading &&
+      !(forLoad && block.lastUsed === this.tick)
+    );
   }
 
   private droppable(): Block | undefined {
@@ -455,7 +473,9 @@ export class BlockResidency implements BlockAccess {
         return;
       }
 
-      await this.persist(block, target, () => source.read(block.ref));
+      const write = this.persist(block, target, () => source.read(block.ref));
+      this.track(write);
+      await write;
     }, Promise.resolve());
   }
 

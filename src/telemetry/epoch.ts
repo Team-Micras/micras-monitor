@@ -318,24 +318,27 @@ export class Epoch {
     const next = this.blocks[position];
     const previous = this.gaps.find((gap) => gap.kind === 'not-stored' && gap.index === start);
 
-    if (previous) {
-      previous.index = end;
-      previous.count += block.length;
-      previous.untilUs = next?.firstTimeUs ?? Number.NaN;
-      return;
-    }
-
-    const gap: EpochGap = {
+    const gap: EpochGap = previous ?? {
       kind: 'not-stored',
       index: end,
-      count: block.length,
+      count: 0,
       startUs: block.firstTimeUs,
       afterUs: this.blocks[position - 1]?.lastTimeUs ?? Number.NaN,
-      untilUs: next?.firstTimeUs ?? Number.NaN,
+      untilUs: Number.NaN,
     };
-    const after = this.gaps.findIndex((other) => other.index > end);
-    this.gaps.splice(after < 0 ? this.gaps.length : after, 0, gap);
-    this.host.account(GAP_BYTES);
+    gap.index = end;
+    gap.count += block.length;
+    gap.untilUs = next?.firstTimeUs ?? Number.NaN;
+
+    if (!previous) {
+      const after = this.gaps.findIndex((other) => other.index > end);
+      this.gaps.splice(after < 0 ? this.gaps.length : after, 0, gap);
+      this.host.account(GAP_BYTES);
+    }
+
+    if (!next && !this.isClosed && !this.pending.includes(gap)) {
+      this.pending.push(gap);
+    }
   }
 
   /**
@@ -394,7 +397,10 @@ export class Epoch {
     gap.untilUs = untilUs;
     this.pendingUnstored = 0;
     this.unstoredFromUs = Number.NaN;
-    this.host.gapFinal(this, gap);
+
+    if (!this.pending.includes(gap)) {
+      this.host.gapFinal(this, gap);
+    }
   }
 
   private resolvePending(untilUs: number): void {

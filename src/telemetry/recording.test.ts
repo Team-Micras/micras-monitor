@@ -19,6 +19,8 @@ import {
   type RecordingRecord,
 } from './recording';
 
+const RECORD_KIND_BOUNDARY = 4;
+
 const HEADER: RecordingHeader = {
   format: RECORDING_FORMAT,
   version: RECORDING_FORMAT_VERSION,
@@ -141,7 +143,7 @@ describe('recording format v1', () => {
     expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x4d, 0x4d, 0x52, 0x45, 0x43, 0x0d, 0x0a]);
     expect(JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + size)))).toEqual(HEADER);
     expect([view.getUint8(0), view.getUint32(4, true)]).toEqual([6, 4]);
-    expect(view.getUint32(8, true)).toBe(crc32(record.subarray(12)));
+    expect(view.getUint32(8, true)).toBe(crc32(record.subarray(12), crc32(record.subarray(0, 8))));
     expect(crc32(new TextEncoder().encode('123456789'))).toBe(0xcbf43926);
   });
 
@@ -151,7 +153,7 @@ describe('recording format v1', () => {
     const view = new DataView(unknown.buffer);
     view.setUint8(0, 0x7f);
     view.setUint32(4, 3, true);
-    view.setUint32(8, crc32(payload), true);
+    view.setUint32(8, crc32(payload, crc32(unknown.subarray(0, 8))), true);
     const bytes = join(serializeRecording({ header: HEADER, records: [] }), unknown, payload);
 
     expect(deserializeRecording(bytes)).toEqual({ header: HEADER, records: [] });
@@ -201,6 +203,44 @@ describe('recording format v1', () => {
         reason: 'check mismatch',
       },
     ]);
+  });
+
+  test('checks the kind and size of a record too, and finds the next record after them', () => {
+    const header = encodeRecordingHeader(HEADER);
+    const offsetOf = (records: readonly Uint8Array[], index: number) =>
+      header.byteLength + records.slice(0, index).reduce((sum, record) => sum + record.length, 0);
+
+    for (const damage of [
+      (record: Uint8Array) => {
+        record[0] = RECORD_KIND_BOUNDARY;
+      },
+      (record: Uint8Array) => {
+        new DataView(record.buffer).setUint32(4, 5, true);
+      },
+      (record: Uint8Array) => {
+        new DataView(record.buffer).setUint32(4, 0xffff, true);
+      },
+    ]) {
+      const records = RECORDS.map((record) => encodeRecordingRecord(record));
+      damage(records[1]);
+      const read = deserializeRecording(join(header, ...records));
+
+      expect(read.records).toEqual(RECORDS.filter((_, index) => index !== 1));
+      expect(read.damaged).toEqual([{ offset: offsetOf(records, 1), reason: 'check mismatch' }]);
+      expect(read.truncatedAt).toBeUndefined();
+    }
+  });
+
+  test('takes a damaged size in the last record as where the recording was cut', () => {
+    const records = RECORDS.map((record) => encodeRecordingRecord(record));
+    const last = records.at(-1) ?? records[0];
+    new DataView(last.buffer).setUint32(4, 1, true);
+    const bytes = join(encodeRecordingHeader(HEADER), ...records);
+    const read = deserializeRecording(bytes);
+
+    expect(read.records).toEqual(RECORDS.slice(0, -1));
+    expect(read.truncatedAt).toBe(bytes.byteLength - last.byteLength);
+    expect(read.damaged).toBeUndefined();
   });
 
   test('refuses values that do not fit the layout', () => {

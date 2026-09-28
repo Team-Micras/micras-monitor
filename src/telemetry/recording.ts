@@ -28,7 +28,7 @@ import type {
  *                         unknown kinds are skipped
  *   reserved    3 bytes
  *   size        u32       bytes of the payload
- *   check       u32       CRC-32 of the payload
+ *   check       u32       CRC-32 of the kind, reserved and size bytes, then the payload
  *   payload
  * ```
  *
@@ -47,8 +47,11 @@ import type {
  *   and bytes.
  * - epoch closed: `u32` epoch id.
  *
- * A record that fails its check or does not decode at the end of the bytes is where a recording
- * was cut short; anywhere else, it is skipped and reported.
+ * The check covers the record's own header, so a damaged size cannot send a reader astray. A
+ * record that fails its check is skipped up to the next record that passes one, and reported; with
+ * none after it, it is where the recording was cut short. A record that passes its check but does
+ * not decode is skipped and reported, unless it is the last one, which is also taken as a cut.
+ * Version 1 was never released with the check over the payload alone, so it stays version 1.
  *
  * @module
  */
@@ -61,6 +64,7 @@ export const RECORDING_FORMAT = 'micras-monitor-recording';
 
 const MAGIC = new Uint8Array([0x89, 0x4d, 0x4d, 0x52, 0x45, 0x43, 0x0d, 0x0a]);
 const RECORD_HEADER_SIZE = 12;
+const RECORD_CHECKED_SIZE = 8;
 
 const RECORD_KIND = {
   epoch: 1,
@@ -637,11 +641,14 @@ export function encodeRecordingHeader(header: RecordingHeader): Uint8Array {
  */
 export function encodeRecordingRecord(record: RecordingRecord): Uint8Array {
   const payload = payloadOf(record);
-  return new ByteWriter(RECORD_HEADER_SIZE + payload.byteLength)
+  const head = new ByteWriter(RECORD_CHECKED_SIZE)
     .u8(RECORD_KIND[record.kind])
     .skip(3)
     .u32(payload.byteLength, 'Record size')
-    .u32(crc32(payload), 'Record check')
+    .done();
+  return new ByteWriter(RECORD_HEADER_SIZE + payload.byteLength)
+    .raw(head)
+    .u32(crc32(payload, crc32(head)), 'Record check')
     .raw(payload)
     .done();
 }
@@ -700,15 +707,44 @@ function decodeHeader(bytes: Uint8Array): { header: RecordingHeader; end: number
   return { header, end: start + size };
 }
 
-function damageOf(
-  kind: number,
-  payload: Uint8Array,
-  check: number
-): string | RecordingRecord | undefined {
-  if (crc32(payload) !== check) {
-    return 'check mismatch';
+function checkedEnd(bytes: Uint8Array, view: DataView, offset: number): number | undefined {
+  const start = offset + RECORD_HEADER_SIZE;
+
+  if (start > bytes.byteLength) {
+    return undefined;
   }
 
+  const stop = start + view.getUint32(offset + 4, true);
+
+  if (stop > bytes.byteLength) {
+    return undefined;
+  }
+
+  const head = crc32(bytes.subarray(offset, offset + RECORD_CHECKED_SIZE));
+  return crc32(bytes.subarray(start, stop), head) === view.getUint32(offset + 8, true)
+    ? stop
+    : undefined;
+}
+
+function nextRecord(bytes: Uint8Array, view: DataView, from: number): number | undefined {
+  const kinds: readonly number[] = Object.values(RECORD_KIND);
+
+  for (let offset = from; offset + RECORD_HEADER_SIZE <= bytes.byteLength; offset++) {
+    const plausible =
+      kinds.includes(bytes[offset]) &&
+      bytes[offset + 1] === 0 &&
+      bytes[offset + 2] === 0 &&
+      bytes[offset + 3] === 0;
+
+    if (plausible && checkedEnd(bytes, view, offset) !== undefined) {
+      return offset;
+    }
+  }
+
+  return undefined;
+}
+
+function decoded(kind: number, payload: Uint8Array): string | RecordingRecord | undefined {
   try {
     return decodeRecord(kind, payload);
   } catch (error) {
@@ -731,18 +767,24 @@ export function deserializeRecording(bytes: Uint8Array): Recording {
   let truncatedAt: number | undefined;
 
   for (let offset = end; offset < bytes.byteLength;) {
-    const start = offset + RECORD_HEADER_SIZE;
-    const stop = start > bytes.byteLength ? start : start + view.getUint32(offset + 4, true);
+    const stop = checkedEnd(bytes, view, offset);
 
-    if (stop > bytes.byteLength) {
-      truncatedAt = offset;
-      break;
+    if (stop === undefined) {
+      const next = nextRecord(bytes, view, offset + 1);
+
+      if (next === undefined) {
+        truncatedAt = offset;
+        break;
+      }
+
+      damaged.push({ offset, reason: 'check mismatch' });
+      offset = next;
+      continue;
     }
 
-    const result = damageOf(
+    const result = decoded(
       view.getUint8(offset),
-      bytes.subarray(start, stop),
-      view.getUint32(offset + 8, true)
+      bytes.subarray(offset + RECORD_HEADER_SIZE, stop)
     );
 
     if (typeof result === 'string') {

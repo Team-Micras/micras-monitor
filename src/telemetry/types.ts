@@ -26,9 +26,10 @@ export interface SchemaEntry {
 }
 
 /**
- * How queries name a variable: by name, or by its id in the current schema.
+ * How queries name a variable: by name, or by its id in the current schema, for its current
+ * history; or by name and type, for the history it had with that type.
  */
-export type VariableRef = string | number;
+export type VariableRef = string | number | { readonly name: string; readonly type: TypeCode };
 
 /**
  * One variable of a stream group, in the order its values arrive in each sample.

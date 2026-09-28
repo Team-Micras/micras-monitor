@@ -116,6 +116,24 @@ describe('memory cap without recording', () => {
       referenceDecimation(samples, range?.startUs ?? 0, range?.endUs ?? 1, 100).min
     );
   });
+  test('closes the gap left by dropping the newest block once the next sample is kept', () => {
+    const { store } = cappedStore(1.5);
+    const finalGaps: unknown[] = [];
+    store.onIngestion((event) => {
+      if (event.type === 'gap') {
+        finalGaps.push(event.gap);
+      }
+    });
+    appendRange(store, 0, 3000);
+    const firstKept = [...store.samples(1, 0, Number.POSITIVE_INFINITY)][0].time[0];
+
+    expect(firstKept).toBe(2048 * 1000);
+    expect(store.gaps(1, 2_500_000, 2_600_000)).toEqual([]);
+    expect(store.gaps(1, 0, Number.POSITIVE_INFINITY)).toEqual([
+      { kind: 'not-stored', startUs: 0, endUs: firstKept, count: 2048 },
+    ]);
+    expect(finalGaps.at(-1)).toMatchObject({ kind: 'not-stored', index: 2048, untilUs: firstKept });
+  });
 });
 
 describe('memory cap while recording', () => {
@@ -201,6 +219,25 @@ describe('memory cap while recording', () => {
     expect(reads.at(-1)).toBeLessThan(8);
     expect(reads.at(-1)).toBe(reads[2]);
     expect(store.status().usedBytes).toBeLessThanOrEqual(5 * BLOCK_BYTES);
+  });
+
+  test('does not evict for a read back that would not fit even then', async () => {
+    const { scheduler, store } = cappedStore(4);
+    const persistence = new MemoryBlockPersistence();
+    store.startRecording(persistence);
+    await streamBlocks(store, 0, 6);
+    appendRange(store, 6 * BLOCK_SIZE, 6 * BLOCK_SIZE + 100);
+    await store.stopRecording();
+    store.decimate(1, 6 * BLOCK_SIZE * 1000, 7 * BLOCK_SIZE * 1000, 1000);
+    scheduler.flush();
+    await settle();
+    const evicted = store.status().evictedBlocks;
+    const reads = persistence.reads;
+
+    await frames(3, () => store.decimate(1, 0, 6 * BLOCK_SIZE * 1000, 6 * BLOCK_SIZE), scheduler);
+
+    expect(persistence.reads).toBe(reads + 1);
+    expect(store.status().evictedBlocks).toBe(evicted - 1);
   });
 
   test('answers coarse queries on evicted blocks from their pyramids alone', async () => {
@@ -354,6 +391,35 @@ describe('writing while recording', () => {
     expect(first.size).toBe(9);
   });
 
+  test('waits on stop for a block being read back for the new recording', async () => {
+    const { store } = cappedStore(4);
+    const first = new MemoryBlockPersistence();
+    store.startRecording(first);
+    await streamBlocks(store, 0, 8);
+    await store.stopRecording();
+    const release: (() => void)[] = [];
+    const read = first.read.bind(first);
+    first.read = (ref) =>
+      new Promise<void>((resolve) => release.push(resolve)).then(() => read(ref));
+    const second = new MemoryBlockPersistence();
+    store.startRecording(second);
+    await settle();
+    let stopped = false;
+    const stop = store.stopRecording().then(() => {
+      stopped = true;
+    });
+    await settle();
+
+    expect(release).toHaveLength(1);
+    expect(stopped).toBe(false);
+
+    release.forEach((resolve) => resolve());
+    await stop;
+
+    expect(stopped).toBe(true);
+    expect(first.reads).toBe(1);
+  });
+
   test('tells about failing writes once, backs off, and recovers', async () => {
     let clock = 0;
     let failing = true;
@@ -389,6 +455,63 @@ describe('writing while recording', () => {
       'history-resumed',
     ]);
     expect(store.status().persistenceFailing).toBe(false);
+  });
+
+  test('breaks the line of a view drawn while samples were not kept, once they are again', async () => {
+    let clock = 0;
+    let failing = true;
+    const memory = new MemoryBlockPersistence();
+    const flaky: BlockPersistence = {
+      write: (block: PersistedBlock) =>
+        failing ? Promise.reject(new Error('disk full')) : memory.write(block),
+      read: (ref: BlockRef) => memory.read(ref),
+    };
+    const { store } = cappedStore(5, { now: () => clock });
+    const other = (from: number, to: number) => {
+      for (let index = from; index < to; index++) {
+        store.append(2, index, index * 1000, [valueAt(index), index]);
+      }
+    };
+    store.startRecording(flaky);
+    await streamBlocks(store, 0, 4);
+    store.openEpoch({
+      epochId: 2,
+      groupId: 1,
+      variables: [
+        { id: 3, type: TypeCode.F32 },
+        { id: 4, type: TypeCode.F64 },
+      ],
+    });
+    other(0, BLOCK_SIZE);
+    await settle();
+    other(BLOCK_SIZE, BLOCK_SIZE + 100);
+
+    expect(store.status().historyStopped).toBe(true);
+
+    const endUs = 2 * BLOCK_SIZE * 1000;
+    const view = store.decimate(3, 0, endUs, 800);
+    other(BLOCK_SIZE + 100, BLOCK_SIZE + 500);
+    store.decimate(3, 0, endUs, 800, { into: view });
+    const rewrite = store.historyMark(3)?.rewrite;
+    failing = false;
+    clock = 6000;
+    other(BLOCK_SIZE + 500, BLOCK_SIZE + 510);
+    await settle();
+    await settle();
+    other(BLOCK_SIZE + 510, BLOCK_SIZE + 600);
+
+    expect(store.status().historyStopped).toBe(false);
+    expect(store.gaps(3, 0, endUs)).toEqual([
+      expect.objectContaining({ kind: 'not-stored', startUs: BLOCK_SIZE * 1000 }),
+    ]);
+    expect(store.historyMark(3)?.rewrite).toBe(rewrite);
+
+    const incremental = store.decimate(3, 0, endUs, 800, { into: view });
+    const fresh = store.decimate(3, 0, endUs, 800);
+
+    expect(Array.from(incremental.flags.subarray(0, 800))).toEqual(
+      Array.from(fresh.flags.subarray(0, 800))
+    );
   });
 
   test('shows the samples an empty epoch could not keep as a gap', async () => {

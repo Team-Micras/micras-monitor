@@ -23,7 +23,7 @@ export class ChannelRegistry {
    */
   constructor(private readonly historyLength: number) {}
 
-  /** Every record, in the order they were made. */
+  /** Every record, one per name and type. */
   all(): IterableIterator<VariableRecord> {
     return this.records.values();
   }
@@ -62,7 +62,7 @@ export class ChannelRegistry {
 
   /**
    * The record of a name and type, made if needed. A record whose type was not known yet takes
-   * the type; a different known type starts a new record.
+   * the type; a different known type goes back to the record of that type, or starts one.
    */
   recordFor(name: string, type: TypeCode | undefined): VariableRecord {
     const current = this.latestByName.get(name);
@@ -72,23 +72,41 @@ export class ChannelRegistry {
     }
 
     if (current && current.type === undefined) {
+      this.records.delete(keyOf(name, undefined));
+      this.records.set(keyOf(name, type), current);
       current.type = type;
       return current;
     }
 
-    const record = new VariableRecord(name, type, this.channelOf(name), this.historyLength);
-    this.records.set(`${name}\u0000${type ?? ''}`, record);
+    let record = this.records.get(keyOf(name, type));
+
+    if (!record) {
+      record = new VariableRecord(name, type, this.channelOf(name), this.historyLength);
+      this.records.set(keyOf(name, type), record);
+    }
+
     this.latestByName.set(name, record);
     return record;
   }
 
-  /** The current record a reference points at, if there is one. */
+  /**
+   * The record a reference points at, if there is one: the current one of a name or id, or the
+   * one of a name and type.
+   */
   resolve(ref: VariableRef): VariableRecord | undefined {
+    if (typeof ref === 'object') {
+      return this.records.get(keyOf(ref.name, ref.type));
+    }
+
     return this.latestByName.get(typeof ref === 'number' ? this.nameOf(ref) : ref);
   }
 
   /** The change channel of the name a reference points at, made if needed. */
   channelFor(ref: VariableRef): Channel {
+    if (typeof ref === 'object') {
+      return this.channelOf(ref.name);
+    }
+
     return this.channelOf(typeof ref === 'number' ? this.nameOf(ref) : ref);
   }
 
@@ -102,4 +120,8 @@ export class ChannelRegistry {
 
     return channel;
   }
+}
+
+function keyOf(name: string, type: TypeCode | undefined): string {
+  return `${name}\u0000${type ?? ''}`;
 }

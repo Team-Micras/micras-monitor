@@ -7,13 +7,17 @@ import { GAP_BYTES } from './epoch';
 import { ManualScheduler } from './scheduler';
 import { toLineSeries } from './series';
 import { TelemetryStore, type TelemetryStoreOptions } from './store';
-import type { IngestionEvent, TelemetryEvent } from './types';
+import type { IngestionEvent, SchemaEntry, TelemetryEvent } from './types';
 
 const MS = 1000;
 const SECOND = 1_000_000;
 
 function makeStore(options: Partial<TelemetryStoreOptions> = {}): TelemetryStore {
   return new TelemetryStore({ scheduler: new ManualScheduler(), blockSize: 256, ...options });
+}
+
+function mode(type: TypeCode): SchemaEntry[] {
+  return [{ id: 0, name: 'mode', type }];
 }
 
 function single(store: TelemetryStore, epochId: number, id = 1, groupId = 0): void {
@@ -311,6 +315,35 @@ describe('schema', () => {
     expect(store.historyMark('mode')?.source).not.toBe(before?.source);
     expect(store.boundaries()).toEqual([{ kind: 'schema', timeUs: 9 * MS }]);
     expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  test('goes back to the history of a type that returns, and keeps the other reachable', () => {
+    const store = makeStore();
+    store.setSchema(mode(TypeCode.F32));
+    single(store, 1, 0);
+    streamSingle(store, 1, 0, 10, (index) => index * MS);
+    store.setSchema(mode(TypeCode.U8));
+    store.openEpoch({ epochId: 2, groupId: 0, variables: mode(TypeCode.U8) });
+    store.append(2, 0, 20 * MS, [7]);
+    store.setSchema(mode(TypeCode.F32));
+    single(store, 3, 0);
+    store.append(3, 0, 30 * MS, [1.5]);
+
+    expect(store.variable('mode')).toMatchObject({
+      type: TypeCode.F32,
+      storedSamples: 11,
+      epochs: 2,
+    });
+    expect(store.variable({ name: 'mode', type: TypeCode.U8 })).toMatchObject({
+      type: TypeCode.U8,
+      storedSamples: 1,
+    });
+    expect(store.boundaries().map(({ timeUs }) => timeUs)).toEqual([9 * MS, 20 * MS]);
+
+    store.reset();
+
+    expect(store.variable({ name: 'mode', type: TypeCode.U8 })?.storedSamples).toBe(0);
+    expect(store.variable('mode')?.storedSamples).toBe(0);
   });
 
   test('names variables after their ids without a schema', () => {

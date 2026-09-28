@@ -361,9 +361,9 @@ export class TelemetryStore {
     }
 
     const kept = received >= 0;
+    const stored = kept && epoch.store(timeUs, values);
 
     if (kept) {
-      epoch.store(timeUs, values);
       this.clockUs = Math.max(this.clockUs, timeUs);
       this.historyVersion++;
     }
@@ -378,8 +378,11 @@ export class TelemetryStore {
         this.ingestValue(record, epoch.variables[index].id, value, timeUs);
       } else if (kept) {
         this.checkPrecision(record, epoch.wide[index], value);
-        record.tailUs = timeUs;
-        record.appended();
+
+        if (stored) {
+          record.tailUs = timeUs;
+          record.appended();
+        }
       }
 
       this.notifier.touch(record.channel);
