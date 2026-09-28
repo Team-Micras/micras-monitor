@@ -55,7 +55,8 @@ export interface BlockPersistence {
   write(block: PersistedBlock): Promise<void>;
 
   /**
-   * Bring back a block written before.
+   * Bring back a block written before. The arrays must hold exactly the block's samples, no more:
+   * the store counts their size against its memory cap, and keeps them.
    *
    * @throws If no block with that reference was written.
    */

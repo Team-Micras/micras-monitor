@@ -27,10 +27,12 @@ export interface BlockLayout {
  * A fixed-size chunk of an epoch: a time column, one value column per numeric variable, and a
  * min/max pyramid per column.
  *
- * Its arrays are allocated once, at full size, and never grow, so a view handed out stays valid
- * for as long as the block is resident. Once sealed, its raw columns may be evicted to a
- * persistence layer and brought back; the pyramids and the time of each pyramid leaf stay in
- * memory, so a coarse query never needs the raw samples.
+ * Its arrays are allocated once, at full size, and never grow, so a view handed out stays valid.
+ * A block sealed before it filled, as recording does every few seconds, is compacted once to the
+ * samples it holds; the views handed out before keep the old arrays, which are never written
+ * again. Once sealed, its raw columns may be evicted to a persistence layer and brought back; the
+ * pyramids and the time of each pyramid leaf stay in memory, so a coarse query never needs the
+ * raw samples.
  */
 export class Block {
   /** Which block it is. */
@@ -51,20 +53,23 @@ export class Block {
   /** One pyramid per column. */
   readonly pyramids: readonly MinMaxPyramid[];
 
-  /** The time of the first sample of each pyramid leaf; stays in memory when the block is evicted. */
-  readonly leafTimes: Float64Array;
-
   /** The time of its first sample, or NaN while empty. */
   firstTimeUs = Number.NaN;
 
   /** The time of its last sample, or NaN while empty. */
   lastTimeUs = Number.NaN;
 
-  /** Where the block was written, once the write finished. */
-  persistedTo: BlockPersistence | undefined;
+  /** Where a whole copy of the block can be read back from, once a write finished. */
+  copy: BlockPersistence | undefined;
+
+  /** The persistence layer the block was last written to. */
+  recordedBy: BlockPersistence | undefined;
 
   /** Whether a write to a persistence layer is under way. */
   writing = false;
+
+  /** Whether the last write failed. */
+  writeFailed = false;
 
   /** Whether a read from the persistence layer is under way. */
   loading = false;
@@ -74,6 +79,7 @@ export class Block {
 
   private timeColumn: Float64Array | null;
   private valueColumns: NumericColumn[] | null;
+  private leafTimeColumn: Float64Array;
   private count = 0;
   private isSealed = false;
 
@@ -89,7 +95,7 @@ export class Block {
     this.timeColumn = new Float64Array(layout.capacity);
     this.valueColumns = layout.kinds.map((kind) => allocateColumn(kind, layout.capacity));
     this.pyramids = layout.kinds.map((kind) => new MinMaxPyramid(kind, layout.capacity));
-    this.leafTimes = new Float64Array(Math.ceil(layout.capacity / LEAF_SIZE));
+    this.leafTimeColumn = new Float64Array(Math.ceil(layout.capacity / LEAF_SIZE));
   }
 
   /**
@@ -104,6 +110,11 @@ export class Block {
     }
 
     return bytes;
+  }
+
+  /** The time of the first sample of each pyramid leaf; stays in memory when the block is evicted. */
+  get leafTimes(): Float64Array {
+    return this.leafTimeColumn;
   }
 
   /** How many samples it holds. */
@@ -164,7 +175,7 @@ export class Block {
 
   /** The memory taken by what never leaves: the pyramids and the leaf times. */
   get indexByteLength(): number {
-    let bytes = this.leafTimes.byteLength;
+    let bytes = this.leafTimeColumn.byteLength;
 
     for (const pyramid of this.pyramids) {
       bytes += pyramid.byteLength;
@@ -191,7 +202,7 @@ export class Block {
     time[index] = timeUs;
 
     if (index % LEAF_SIZE === 0) {
-      this.leafTimes[index / LEAF_SIZE] = timeUs;
+      this.leafTimeColumn[index / LEAF_SIZE] = timeUs;
     }
 
     for (let column = 0; column < columns.length; column++) {
@@ -214,6 +225,31 @@ export class Block {
     for (const pyramid of this.pyramids) {
       pyramid.seal();
     }
+  }
+
+  /**
+   * Shrink a block sealed before it filled to the samples it holds.
+   *
+   * @returns The bytes given back.
+   */
+  compact(): number {
+    if (!this.isSealed || this.count === this.capacity) {
+      return 0;
+    }
+
+    const before = this.rawByteLength + this.indexByteLength;
+    this.timeColumn = this.timeColumn?.slice(0, this.count) ?? null;
+    this.valueColumns = this.valueColumns?.map((values) => values.slice(0, this.count)) ?? null;
+    this.leafTimeColumn = this.leafTimeColumn.slice(
+      0,
+      Math.max(1, Math.ceil(this.count / LEAF_SIZE))
+    );
+
+    for (const pyramid of this.pyramids) {
+      pyramid.compact();
+    }
+
+    return before - this.rawByteLength - this.indexByteLength;
   }
 
   /**
@@ -253,7 +289,8 @@ export class Block {
   /**
    * Take the raw columns back from a persisted copy.
    *
-   * @param persisted What the persistence layer returned for this block.
+   * @param persisted What the persistence layer returned for this block, with arrays of exactly
+   *   {@link length} entries.
    * @returns The bytes taken.
    * @throws If the copy does not match the block.
    */

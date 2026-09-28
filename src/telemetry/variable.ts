@@ -1,8 +1,8 @@
 import type { TypeCode } from '@/protocol';
 
 import type { Epoch } from './epoch';
-import { Channel } from './notifier';
-import type { LatestValue, TelemetryValue } from './types';
+import type { Channel } from './notifier';
+import type { HistoryMark, LatestValue, TelemetryValue } from './types';
 
 /**
  * A stretch of a variable's history: an epoch it was part of, and its column there.
@@ -16,32 +16,45 @@ export interface Segment {
 }
 
 /**
- * Everything the store knows about one variable.
+ * The history of one variable under one name and type.
+ *
+ * A variable that comes back with another type after a reboot gets a new record, so that its old
+ * samples keep their meaning; both share the name's channel, so readers subscribed by name hear
+ * about either.
  */
 export class VariableRecord {
-  /** Grows on every change readers could see. */
-  readonly channel = new Channel();
+  private static made = 0;
+
+  /** Tells this history apart from any other, for its marks. */
+  readonly serial = ++VariableRecord.made;
 
   /** The epochs it was part of, in the order they opened. */
   readonly segments: Segment[] = [];
 
-  /** Its type, once an epoch named it. */
-  type: TypeCode | undefined;
-
   /** Whether a 64 bit integer it held did not fit a float exactly. */
   precisionLost = false;
+
+  /** The time of its last stored sample, or −∞. */
+  tailUs = Number.NEGATIVE_INFINITY;
 
   private latestValue: TelemetryValue | undefined;
   private latestTimeUs: number | undefined;
   private latestSnapshot: LatestValue | undefined;
   private recent: readonly LatestValue[] = [];
+  private historyVersion = 0;
+  private rewriteVersion = 0;
+  private markSnapshot: HistoryMark | undefined;
 
   /**
-   * @param id The variable's id in the schema.
-   * @param historyLength How many values to keep for variables that are not stored numerically.
+   * @param name The variable's name.
+   * @param type Its type, if known yet.
+   * @param channel The name's change channel.
+   * @param historyLength How many values to keep for variables not stored numerically.
    */
   constructor(
-    readonly id: number,
+    readonly name: string,
+    public type: TypeCode | undefined,
+    readonly channel: Channel,
     private readonly historyLength: number
   ) {}
 
@@ -51,9 +64,7 @@ export class VariableRecord {
     return last !== undefined && last.column >= 0;
   }
 
-  /**
-   * The latest value; the same object until the value changes.
-   */
+  /** The latest value; the same object until the value changes. */
   get latest(): LatestValue | undefined {
     if (this.latestValue === undefined) {
       return undefined;
@@ -71,21 +82,40 @@ export class VariableRecord {
     return this.recent;
   }
 
-  /**
-   * Record a new value.
-   *
-   * @param value The value as decoded.
-   * @param timeUs When it was sampled, if known.
-   * @param keep Whether it also goes into the short history.
-   */
-  update(value: TelemetryValue, timeUs: number | undefined, keep: boolean): void {
+  /** Where the history stands; the same object until it changes. */
+  get mark(): HistoryMark {
+    this.markSnapshot ??= {
+      source: this.serial,
+      version: this.historyVersion,
+      rewrite: this.rewriteVersion,
+      tailUs: this.tailUs,
+    };
+    return this.markSnapshot;
+  }
+
+  /** Record a new latest value. */
+  setLatest(value: TelemetryValue, timeUs: number | undefined): void {
     this.latestValue = value;
     this.latestTimeUs = timeUs;
     this.latestSnapshot = undefined;
+  }
 
-    if (keep) {
-      const start = Math.max(0, this.recent.length + 1 - this.historyLength);
-      this.recent = [...this.recent.slice(start), { value, timeUs }];
-    }
+  /** Keep a value in the short history of a variable not stored numerically. */
+  remember(value: TelemetryValue, timeUs: number | undefined): void {
+    const start = Math.max(0, this.recent.length + 1 - this.historyLength);
+    this.recent = [...this.recent.slice(start), { value, timeUs }];
+  }
+
+  /** The history grew at its end. */
+  appended(): void {
+    this.historyVersion++;
+    this.markSnapshot = undefined;
+  }
+
+  /** The history changed somewhere other than its end. */
+  rewritten(): void {
+    this.historyVersion++;
+    this.rewriteVersion++;
+    this.markSnapshot = undefined;
   }
 }

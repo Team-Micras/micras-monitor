@@ -29,10 +29,8 @@ export function referenceColumn(
 }
 
 /**
- * Decimate by looking at every sample.
- *
- * A column holding a NaN is drawn as a break, so its bounds do not matter; they are left out, as
- * {@link withoutNanBounds} does for the store's answer.
+ * Decimate by looking at every sample: the bounds of the numbers in each column, and whether it
+ * also held a NaN.
  */
 export function referenceDecimation(
   samples: readonly ReferenceSample[],
@@ -63,19 +61,7 @@ export function referenceDecimation(
     }
   }
 
-  return withoutNanBounds(columns);
-}
-
-/**
- * Forget the bounds of the columns that hold a NaN.
- */
-export function withoutNanBounds(columns: ReferenceColumns): ReferenceColumns {
-  return {
-    nan: columns.nan,
-    data: columns.data.map((data, column) => data && !columns.nan[column]),
-    min: columns.min.map((min, column) => (columns.nan[column] ? Number.POSITIVE_INFINITY : min)),
-    max: columns.max.map((max, column) => (columns.nan[column] ? Number.NEGATIVE_INFINITY : max)),
-  };
+  return columns;
 }
 
 /**

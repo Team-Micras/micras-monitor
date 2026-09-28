@@ -12,8 +12,8 @@ export const LEAF_SIZE = 1 << LEAF_SHIFT;
 /** How many entries of one level each entry of the next level summarises. */
 export const FANOUT = 1 << FANOUT_SHIFT;
 
-function levelSizes(capacity: number): number[] {
-  const sizes = [Math.ceil(capacity / LEAF_SIZE)];
+function levelSizes(samples: number): number[] {
+  const sizes = [Math.max(1, Math.ceil(samples / LEAF_SIZE))];
 
   while (sizes[sizes.length - 1] > 1) {
     sizes.push(Math.ceil(sizes[sizes.length - 1] / FANOUT));
@@ -23,16 +23,16 @@ function levelSizes(capacity: number): number[] {
 }
 
 /**
- * Collects the minimum and maximum of a range, and whether any NaN was in it.
+ * Collects the minimum and maximum of the numbers in a range, and whether any NaN was in it.
  *
  * It also counts what it read, raw samples and pyramid entries apart, so that tests can check
  * what a query costs.
  */
 export class MinMaxAccumulator {
-  /** The smallest value seen, or +∞ if none. */
+  /** The smallest number seen, or +∞ if none. */
   min = Number.POSITIVE_INFINITY;
 
-  /** The largest value seen, or −∞ if none. */
+  /** The largest number seen, or −∞ if none. */
   max = Number.NEGATIVE_INFINITY;
 
   /** Whether a NaN was seen. */
@@ -84,13 +84,12 @@ export class MinMaxAccumulator {
     this.rawSamples += end - start;
   }
 
-  /** Take one pyramid entry into account; an entry holding a NaN has NaN bounds. */
-  addEntry(min: number, max: number): void {
+  /** Take one pyramid entry into account. */
+  addEntry(min: number, max: number, nan: number): void {
     this.pyramidEntries++;
 
-    if (min !== min) {
+    if (nan !== 0) {
       this.nan = true;
-      return;
     }
 
     if (min < this.min) {
@@ -108,16 +107,18 @@ export class MinMaxAccumulator {
  * to the whole block.
  *
  * It is filled as samples arrive, one comparison per sample for the finest level and one per
- * completed entry above it, so it is never rebuilt. An entry covering a NaN has NaN bounds: the
- * decimation turns it into a break in the line, which is what a NaN in the data means.
+ * completed entry above it, so it is never rebuilt. The bounds of an entry are those of its
+ * numbers; a separate marker says whether it also covers a NaN, so that a stray NaN hides
+ * nothing around it.
  *
  * A range of `n` entries is covered by at most `2·(FANOUT − 1)` entries per level, which is what
  * makes a whole-history query cost the number of pixels times the number of levels instead of
  * the number of samples.
  */
 export class MinMaxPyramid {
-  private readonly mins: NumericColumn[] = [];
-  private readonly maxs: NumericColumn[] = [];
+  private mins: NumericColumn[] = [];
+  private maxs: NumericColumn[] = [];
+  private nans: Uint8Array[] = [];
   private count = 0;
   private sealed = false;
 
@@ -129,6 +130,7 @@ export class MinMaxPyramid {
     for (const entries of levelSizes(capacity)) {
       this.mins.push(allocateColumn(kind, entries));
       this.maxs.push(allocateColumn(kind, entries));
+      this.nans.push(new Uint8Array(entries));
     }
   }
 
@@ -136,16 +138,16 @@ export class MinMaxPyramid {
    * The memory a pyramid takes, without making one.
    *
    * @param kind The kind of the column it would summarise.
-   * @param capacity How many samples the block would hold.
+   * @param samples How many samples it would summarise.
    */
-  static byteLengthFor(kind: ColumnKind, capacity: number): number {
+  static byteLengthFor(kind: ColumnKind, samples: number): number {
     let entries = 0;
 
-    for (const size of levelSizes(capacity)) {
+    for (const size of levelSizes(samples)) {
       entries += size;
     }
 
-    return 2 * entries * bytesPerValue(kind);
+    return entries * (2 * bytesPerValue(kind) + 1);
   }
 
   /** How many levels the pyramid has. */
@@ -164,6 +166,7 @@ export class MinMaxPyramid {
 
     for (let level = 0; level < this.mins.length; level++) {
       bytes += this.mins[level].byteLength + this.maxs[level].byteLength;
+      bytes += this.nans[level].byteLength;
     }
 
     return bytes;
@@ -179,10 +182,21 @@ export class MinMaxPyramid {
     const leaf = index >> LEAF_SHIFT;
 
     if ((index & LEAF_MASK) === 0) {
-      this.mins[0][leaf] = value;
-      this.maxs[0][leaf] = value;
+      this.mins[0][leaf] = Number.POSITIVE_INFINITY;
+      this.maxs[0][leaf] = Number.NEGATIVE_INFINITY;
+      this.nans[0][leaf] = 0;
+    }
+
+    if (value !== value) {
+      this.nans[0][leaf] = 1;
     } else {
-      this.merge(0, leaf, value, value, false);
+      if (value < this.mins[0][leaf]) {
+        this.mins[0][leaf] = value;
+      }
+
+      if (value > this.maxs[0][leaf]) {
+        this.maxs[0][leaf] = value;
+      }
     }
 
     if ((index & LEAF_MASK) === LEAF_MASK) {
@@ -191,8 +205,8 @@ export class MinMaxPyramid {
   }
 
   /**
-   * Complete the entries the last, partial sample left open. Called once no more samples will
-   * come, so that the pyramid alone can answer for the whole block.
+   * Complete the entries the last, partial leaf left open. Called once no more samples will come,
+   * so that the pyramid alone can answer for the whole block.
    */
   seal(): void {
     if (this.sealed) {
@@ -207,18 +221,24 @@ export class MinMaxPyramid {
       const last = entries - 1;
 
       if (this.count % size !== 0) {
-        this.merge(
-          level + 1,
-          last >> FANOUT_SHIFT,
-          this.mins[level][last],
-          this.maxs[level][last],
-          (last & FANOUT_MASK) === 0
-        );
+        this.merge(level, last, (last & FANOUT_MASK) === 0);
       }
 
       size <<= FANOUT_SHIFT;
       entries = (last >> FANOUT_SHIFT) + 1;
     }
+  }
+
+  /**
+   * Shrink every level to the entries the samples use, once sealed: a block sealed early, before
+   * it filled, gives back the rest of its memory.
+   */
+  compact(): void {
+    const sizes = levelSizes(this.count);
+    const size = (level: number) => sizes[Math.min(level, sizes.length - 1)];
+    this.mins = this.mins.map((entries, level) => entries.slice(0, size(level)));
+    this.maxs = this.maxs.map((entries, level) => entries.slice(0, size(level)));
+    this.nans = this.nans.map((entries, level) => entries.slice(0, size(level)));
   }
 
   /**
@@ -261,23 +281,24 @@ export class MinMaxPyramid {
     for (let level = 0; low < high; level++) {
       const mins = this.mins[level];
       const maxs = this.maxs[level];
+      const nans = this.nans[level];
 
       if (level === top) {
         for (let entry = low; entry < high; entry++) {
-          into.addEntry(mins[entry], maxs[entry]);
+          into.addEntry(mins[entry], maxs[entry], nans[entry]);
         }
 
         return;
       }
 
       while (low < high && (low & FANOUT_MASK) !== 0) {
-        into.addEntry(mins[low], maxs[low]);
+        into.addEntry(mins[low], maxs[low], nans[low]);
         low++;
       }
 
       while (low < high && (high & FANOUT_MASK) !== 0) {
         high--;
-        into.addEntry(mins[high], maxs[high]);
+        into.addEntry(mins[high], maxs[high], nans[high]);
       }
 
       low >>= FANOUT_SHIFT;
@@ -290,43 +311,37 @@ export class MinMaxPyramid {
       return;
     }
 
-    const parent = entry >> FANOUT_SHIFT;
-    const first = (entry & FANOUT_MASK) === 0;
-    this.merge(level + 1, parent, this.mins[level][entry], this.maxs[level][entry], first);
+    this.merge(level, entry, (entry & FANOUT_MASK) === 0);
 
     if ((entry & FANOUT_MASK) === FANOUT_MASK) {
-      this.fold(level + 1, parent);
+      this.fold(level + 1, entry >> FANOUT_SHIFT);
     }
   }
 
-  private merge(level: number, entry: number, min: number, max: number, first: boolean): void {
-    const mins = this.mins[level];
-    const maxs = this.maxs[level];
+  private merge(level: number, entry: number, first: boolean): void {
+    const parent = entry >> FANOUT_SHIFT;
+    const mins = this.mins[level + 1];
+    const maxs = this.maxs[level + 1];
+    const nans = this.nans[level + 1];
+    const min = this.mins[level][entry];
+    const max = this.maxs[level][entry];
+    const nan = this.nans[level][entry];
 
     if (first) {
-      mins[entry] = min;
-      maxs[entry] = max;
+      mins[parent] = min;
+      maxs[parent] = max;
+      nans[parent] = nan;
       return;
     }
 
-    const current = mins[entry];
-
-    if (current !== current) {
-      return;
+    if (min < mins[parent]) {
+      mins[parent] = min;
     }
 
-    if (min !== min) {
-      mins[entry] = Number.NaN;
-      maxs[entry] = Number.NaN;
-      return;
+    if (max > maxs[parent]) {
+      maxs[parent] = max;
     }
 
-    if (min < current) {
-      mins[entry] = min;
-    }
-
-    if (max > maxs[entry]) {
-      maxs[entry] = max;
-    }
+    nans[parent] |= nan;
   }
 }

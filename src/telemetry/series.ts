@@ -10,8 +10,9 @@ export type PlotValue = number | null | undefined;
  * One line, ready for uPlot's `setData` as `[x, y]`.
  *
  * Each pixel column takes three slots: its minimum, its maximum, and a slot that is `null` where
- * the line breaks. Every series decimated over the same window and width gets the same `x`, so
- * several of them can share one plot.
+ * the line breaks, after a gap or a NaN. A column holding only NaN is `null` in all three. Every
+ * series decimated over the same window and width gets the same `x`, so several of them can share
+ * one plot.
  */
 export interface LineSeries {
   /** The times of the slots. */
@@ -38,7 +39,7 @@ export interface BandSeries {
 }
 
 function breakSlot(flags: number): null | undefined {
-  return (flags & COLUMN_BREAKS) !== 0 ? null : undefined;
+  return (flags & (COLUMN_BREAKS | COLUMN_HAS_NAN)) !== 0 ? null : undefined;
 }
 
 /**
@@ -65,14 +66,14 @@ export function toLineSeries(
     into.x[slot + 1] = left + 0.5 * width;
     into.x[slot + 2] = left + 0.75 * width;
 
-    if ((state & COLUMN_HAS_NAN) !== 0) {
-      into.y[slot] = null;
-      into.y[slot + 1] = null;
-      into.y[slot + 2] = null;
-    } else if ((state & COLUMN_HAS_DATA) !== 0) {
+    if ((state & COLUMN_HAS_DATA) !== 0) {
       into.y[slot] = min[column];
       into.y[slot + 1] = max[column];
       into.y[slot + 2] = breakSlot(state);
+    } else if ((state & COLUMN_HAS_NAN) !== 0) {
+      into.y[slot] = null;
+      into.y[slot + 1] = null;
+      into.y[slot + 2] = null;
     } else {
       into.y[slot] = undefined;
       into.y[slot + 1] = undefined;
@@ -110,14 +111,12 @@ export function toBandSeries(
     into.min[slot + 1] = gap;
     into.max[slot + 1] = gap;
 
-    if ((state & COLUMN_HAS_NAN) !== 0) {
-      into.min[slot] = null;
-      into.max[slot] = null;
-      into.min[slot + 1] = null;
-      into.max[slot + 1] = null;
-    } else if ((state & COLUMN_HAS_DATA) !== 0) {
+    if ((state & COLUMN_HAS_DATA) !== 0) {
       into.min[slot] = min[column];
       into.max[slot] = max[column];
+    } else if ((state & COLUMN_HAS_NAN) !== 0) {
+      into.min[slot] = null;
+      into.max[slot] = null;
     } else {
       into.min[slot] = undefined;
       into.max[slot] = undefined;

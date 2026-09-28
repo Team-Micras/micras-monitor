@@ -12,6 +12,25 @@ export type TelemetryValue = number | bigint | boolean | string | Uint8Array;
 export type NumericColumn = Float32Array | Float64Array;
 
 /**
+ * A variable of the robot's schema.
+ */
+export interface SchemaEntry {
+  /** Its id in this boot's schema. */
+  readonly id: number;
+
+  /** Its name, which is what history and layouts are keyed by. */
+  readonly name: string;
+
+  /** Its type. */
+  readonly type: TypeCode;
+}
+
+/**
+ * How queries name a variable: by name, or by its id in the current schema.
+ */
+export type VariableRef = string | number;
+
+/**
  * One variable of a stream group, in the order its values arrive in each sample.
  */
 export interface VariableSpec {
@@ -20,11 +39,14 @@ export interface VariableSpec {
 
   /** Its type, as the schema states it. */
   readonly type: TypeCode;
+
+  /** Its name; taken from the schema when left out. */
+  readonly name?: string;
 }
 
 /**
- * A group layout the robot acknowledged. Every definition of a group starts a new epoch, because
- * the robot restarts the sequence numbers of the group.
+ * A group layout the robot acknowledged, opened when its GROUP_ACK arrives. Every definition of a
+ * group starts a new epoch, because the robot restarts the sequence numbers of the group.
  */
 export interface EpochSpec {
   /** Unique for the whole session; the session picks it. */
@@ -35,15 +57,22 @@ export interface EpochSpec {
 
   /** The variables in each sample, in wire order. */
   readonly variables: readonly VariableSpec[];
+
+  /**
+   * The sequence number the robot starts the group at, when known, so that samples lost before
+   * the first one that arrives count as dropped. Left out, the first sample sets the sequence.
+   */
+  readonly firstSequence?: number;
 }
 
 /**
- * Why the link lost track of the robot.
+ * Why no line is drawn across a moment: the link lost the robot, or a variable changed type.
  */
-export type BoundaryKind = 'reconnect' | 'reboot';
+export type BoundaryKind = 'reconnect' | 'reboot' | 'schema';
 
 /**
- * A moment where the link lost track of the robot. No line is drawn across it.
+ * A moment where the link lost track of the robot, or the schema changed. No line is drawn across
+ * it.
  */
 export interface Boundary {
   /** What happened. */
@@ -58,7 +87,8 @@ export interface Boundary {
  *
  * - `not-streamed`: the variable was in no group at the time.
  * - `dropped`: it was in a group, and the sequence numbers show samples that never arrived.
- * - `not-stored`: they arrived, but the memory cap stopped the store from keeping them.
+ * - `not-stored`: they arrived, but the memory cap kept the store from keeping them, or made it
+ *   let go of them later.
  */
 export type GapKind = 'not-streamed' | 'dropped' | 'not-stored';
 
@@ -69,7 +99,7 @@ export interface Gap {
   /** Why there are no samples. */
   readonly kind: GapKind;
 
-  /** The time of the last sample before the gap. */
+  /** Where the gap starts: the last sample before it, or the first sample not kept. */
   readonly startUs: number;
 
   /** The time of the first sample after it, or NaN if none arrived yet. */
@@ -77,6 +107,17 @@ export interface Gap {
 
   /** How many samples are missing, when the sequence numbers tell (dropped and not stored). */
   readonly count?: number;
+}
+
+/**
+ * A half-open span of time, `[startUs, endUs)`, as every query takes it.
+ */
+export interface TimeRange {
+  /** The first time, inclusive. */
+  readonly startUs: number;
+
+  /** The end, exclusive. */
+  readonly endUs: number;
 }
 
 /**
@@ -88,6 +129,17 @@ export interface LatestValue {
 
   /** When the robot sampled it, if known; a READ answer carries no timestamp. */
   readonly timeUs: number | undefined;
+}
+
+/**
+ * A stored sample.
+ */
+export interface SampleValue {
+  /** The value as stored, a float. */
+  readonly value: number;
+
+  /** When it was taken. */
+  readonly timeUs: number;
 }
 
 /**
@@ -107,30 +159,132 @@ export interface SampleRun {
 }
 
 /**
+ * Where a variable's history stood when a reader last looked, to ask later whether a window of it
+ * changed since.
+ */
+export interface HistoryMark {
+  /** Which history it is: a variable that changes type starts a new one. */
+  readonly source: number;
+
+  /** Grows with every change to the history. */
+  readonly version: number;
+
+  /** Grows with every change that is not an append at the end. */
+  readonly rewrite: number;
+
+  /** The time of the last sample then. */
+  readonly tailUs: number;
+}
+
+/**
+ * An epoch as a recording remembers it, with the names its variables had.
+ */
+export interface RecordedEpoch {
+  /** The session's id for the epoch. */
+  readonly epochId: number;
+
+  /** The robot's group slot. */
+  readonly groupId: number;
+
+  /** The variables of each sample, in wire order. */
+  readonly variables: readonly SchemaEntry[];
+}
+
+/**
+ * Samples missing inside an epoch, as a recording remembers them.
+ */
+export interface RecordedGap {
+  /** The epoch. */
+  readonly epochId: number;
+
+  /** Whether the samples never arrived or were not kept. */
+  readonly kind: 'dropped' | 'not-stored';
+
+  /** The epoch sample index of the first stored sample after the gap. */
+  readonly index: number;
+
+  /** How many samples are missing. */
+  readonly count: number;
+
+  /** Where the gap starts. */
+  readonly startUs: number;
+
+  /** The time of the last sample kept before the gap, or NaN. */
+  readonly afterUs: number;
+
+  /** The time of the first sample kept after the gap, or NaN. */
+  readonly untilUs: number;
+}
+
+/**
+ * A value that is not part of a stored stream, such as a READ answer or a blob, as a recording
+ * remembers it.
+ */
+export interface RecordedValue {
+  /** The variable's id in the schema at the time. */
+  readonly variableId: number;
+
+  /** Its name. */
+  readonly name: string;
+
+  /** When it was sampled, or NaN if unknown. */
+  readonly timeUs: number;
+
+  /** The value. */
+  readonly value: TelemetryValue;
+}
+
+/**
+ * What a recorder needs to know besides the blocks, each told once it is final.
+ */
+export type IngestionEvent =
+  | { readonly type: 'epoch-opened'; readonly epoch: RecordedEpoch }
+  | { readonly type: 'epoch-closed'; readonly epochId: number }
+  | { readonly type: 'gap'; readonly gap: RecordedGap }
+  | { readonly type: 'boundary'; readonly boundary: Boundary }
+  | { readonly type: 'value'; readonly value: RecordedValue };
+
+/**
  * Something the application should tell the user about.
  */
 export type TelemetryEvent =
   | { readonly type: 'memory-warning'; readonly usedBytes: number; readonly capBytes: number }
+  | {
+      readonly type: 'history-dropped';
+      readonly untilUs: number;
+      readonly usedBytes: number;
+      readonly capBytes: number;
+    }
   | { readonly type: 'history-stopped'; readonly usedBytes: number; readonly capBytes: number }
   | { readonly type: 'history-resumed' }
-  | { readonly type: 'precision-loss'; readonly variableId: number }
-  | { readonly type: 'persistence-error'; readonly error: unknown };
+  | { readonly type: 'precision-loss'; readonly name: string }
+  | { readonly type: 'persistence-error'; readonly error: unknown }
+  | { readonly type: 'persistence-recovered' }
+  | {
+      readonly type: 'time-backwards';
+      readonly epochId: number;
+      readonly timeUs: number;
+      readonly lastUs: number;
+    };
 
 /**
  * The store as a whole, for the memory gauge and the recording indicator.
  */
 export interface StoreStatus {
-  /** Bytes held by sample blocks and their pyramids. */
+  /** Bytes held by sample blocks, their pyramids and the gap records. */
   readonly usedBytes: number;
 
   /** The configured cap. */
   readonly capBytes: number;
 
-  /** Whether new samples stopped being kept because the cap was reached. */
+  /** Whether new samples stopped being kept, which only happens while recording. */
   readonly historyStopped: boolean;
 
   /** Whether blocks are being written to a persistence layer. */
   readonly recording: boolean;
+
+  /** Whether writes to the persistence layer are failing. */
+  readonly persistenceFailing: boolean;
 
   /** Blocks whose samples are in memory. */
   readonly residentBlocks: number;

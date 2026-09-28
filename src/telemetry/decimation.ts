@@ -1,13 +1,13 @@
 import type { Block } from './block';
 import type { EpochGap } from './epoch';
 import { LEAF_SIZE, MinMaxAccumulator } from './pyramid';
-import type { Boundary } from './types';
+import type { Boundary, HistoryMark } from './types';
 import type { Segment } from './variable';
 
-/** The column holds at least one value. */
+/** The column holds at least one number. */
 export const COLUMN_HAS_DATA = 1;
 
-/** The column holds a NaN, so the line breaks there. */
+/** The column holds a NaN, so the line breaks after it. */
 export const COLUMN_HAS_NAN = 2;
 
 /** The line breaks after the column: an epoch ended, samples were dropped, or the link was lost. */
@@ -22,49 +22,67 @@ const DENSE_SAMPLES_PER_COLUMN = 2 * LEAF_SIZE;
 
 /**
  * Below this many samples per pixel column, rounding a column's edges to whole pyramid leaves
- * would show, so an evicted block is brought back into memory.
+ * would show, so an evicted block is asked back into memory.
  */
 const RELOAD_SAMPLES_PER_COLUMN = 4 * LEAF_SIZE;
 
 /**
  * The minimum and maximum of a variable in each pixel column of a time window, with where its
- * line breaks.
- *
- * Make one per plotted series and pass it to every query, so that a frame allocates nothing; the
- * arrays only grow when the plot gets wider. Only the first {@link pixels} entries are the
- * result.
+ * line breaks. Only the first {@link pixels} entries of the arrays are the result; read them, do
+ * not write them.
  */
-export class Decimation {
+export interface Decimation {
   /** The start of the window, inclusive. */
-  startUs = 0;
+  readonly startUs: number;
 
   /** The end of the window, exclusive. */
-  endUs = 1;
+  readonly endUs: number;
 
   /** How many columns the window is split into. */
-  pixels = 0;
+  readonly pixels: number;
 
-  /**
-   * The smallest value in each column, when {@link COLUMN_HAS_DATA} is set. A column that also
-   * has {@link COLUMN_HAS_NAN} is drawn as a break, and its bounds may leave out samples that
-   * shared a pyramid entry with the NaN.
-   */
-  min = new Float64Array(0);
+  /** The smallest number in each column, when {@link COLUMN_HAS_DATA} is set. */
+  readonly min: Float64Array;
 
-  /** The largest value in each column, on the same terms as {@link min}. */
-  max = new Float64Array(0);
+  /** The largest number in each column, when {@link COLUMN_HAS_DATA} is set. */
+  readonly max: Float64Array;
 
   /** What each column holds: a combination of the `COLUMN_*` flags. */
+  readonly flags: Uint8Array;
+
+  /** The column a time falls in, clamped to the window. */
+  columnOf(timeUs: number): number;
+}
+
+/**
+ * Builds a {@link Decimation} in place, and remembers what it was built from so that the next
+ * query over the same grid only recomputes the columns that can have changed.
+ */
+export class DecimationBuilder implements Decimation {
+  startUs = 0;
+  endUs = 1;
+  pixels = 0;
+  min = new Float64Array(0);
+  max = new Float64Array(0);
   flags = new Uint8Array(0);
+
+  /** Columns before this one are kept from the previous query. */
+  fromColumn = 0;
+
+  /** Samples before this time cannot fall in a recomputed column. */
+  scanFromUs = 0;
+
+  /** What the result was built from, for the next query to compare with. */
+  source: object | undefined;
+
+  /** Where the source's history stood when the result was built. */
+  mark: HistoryMark | undefined;
 
   private scale = 0;
 
   /**
    * Empty every column for a new window.
    *
-   * @param startUs The start of the window, inclusive.
-   * @param endUs The end of the window, exclusive.
-   * @param pixels How many columns to split it into.
    * @throws If the window is empty or there are no columns.
    */
   reset(startUs: number, endUs: number, pixels: number): void {
@@ -82,27 +100,40 @@ export class Decimation {
     this.endUs = endUs;
     this.pixels = pixels;
     this.scale = pixels / (endUs - startUs);
-    this.min.fill(Number.POSITIVE_INFINITY, 0, pixels);
-    this.max.fill(Number.NEGATIVE_INFINITY, 0, pixels);
-    this.flags.fill(0, 0, pixels);
+    this.source = undefined;
+    this.mark = undefined;
+    this.resetFrom(0);
   }
 
-  /**
-   * The column a time inside the window falls in.
-   */
+  /** Whether the result covers exactly this window and grid. */
+  sameGrid(startUs: number, endUs: number, pixels: number): boolean {
+    return this.startUs === startUs && this.endUs === endUs && this.pixels === pixels;
+  }
+
+  /** Empty the columns from one on, keeping those before it. */
+  resetFrom(column: number): void {
+    this.fromColumn = column;
+    this.scanFromUs = Math.max(this.startUs, this.startUs + (column - 1) / this.scale);
+    this.min.fill(Number.POSITIVE_INFINITY, column, this.pixels);
+    this.max.fill(Number.NEGATIVE_INFINITY, column, this.pixels);
+    this.flags.fill(0, column, this.pixels);
+  }
+
+  /** {@inheritDoc Decimation.columnOf} */
   columnOf(timeUs: number): number {
-    return Math.min(this.pixels - 1, Math.floor((timeUs - this.startUs) * this.scale));
+    const column = Math.floor((timeUs - this.startUs) * this.scale);
+    return column < 0 ? 0 : column >= this.pixels ? this.pixels - 1 : column;
   }
 
-  /** Whether a time is inside the window. */
-  contains(timeUs: number): boolean {
-    return timeUs >= this.startUs && timeUs < this.endUs;
+  /** Whether a time falls in a column being recomputed. */
+  covers(timeUs: number): boolean {
+    return timeUs >= this.scanFromUs && timeUs < this.endUs;
   }
 
-  /** Break the line after the column a time falls in, if it is inside the window. */
+  /** Break the line after the column a time falls in. */
   breakAt(timeUs: number): void {
-    if (this.contains(timeUs)) {
-      this.flags[this.columnOf(timeUs)] |= COLUMN_BREAKS;
+    if (this.covers(timeUs)) {
+      this.setFlag(this.columnOf(timeUs), COLUMN_BREAKS);
     }
   }
 
@@ -114,7 +145,7 @@ export class Decimation {
    * @param untilUs The time of the sample after it, or NaN if none arrived yet.
    */
   breakBetween(afterUs: number, untilUs: number): void {
-    if (!this.contains(afterUs)) {
+    if (!this.covers(afterUs)) {
       return;
     }
 
@@ -124,11 +155,15 @@ export class Decimation {
       return;
     }
 
-    this.flags[column] |= COLUMN_BREAKS;
+    this.setFlag(column, COLUMN_BREAKS);
   }
 
   /** Take one sample into account. */
   addValue(column: number, value: number): void {
+    if (column < this.fromColumn) {
+      return;
+    }
+
     if (value !== value) {
       this.flags[column] |= COLUMN_HAS_NAN;
       return;
@@ -147,6 +182,10 @@ export class Decimation {
 
   /** Take the bounds of a range of samples into account. */
   addBounds(column: number, bounds: MinMaxAccumulator): void {
+    if (column < this.fromColumn) {
+      return;
+    }
+
     if (bounds.nan) {
       this.flags[column] |= COLUMN_HAS_NAN;
     }
@@ -185,6 +224,12 @@ export class Decimation {
 
     return first;
   }
+
+  private setFlag(column: number, flag: number): void {
+    if (column >= this.fromColumn) {
+      this.flags[column] |= flag;
+    }
+  }
 }
 
 /**
@@ -202,10 +247,10 @@ export interface DecimationStats {
  * How a query gets at a block's raw samples.
  */
 export interface BlockAccess {
-  /** Whether a block's raw samples are in memory, counting the block as used. */
-  touch(block: Block): boolean;
+  /** Count a block as used by the current query tick. */
+  markUsed(block: Block): void;
 
-  /** Ask for an evicted block to come back. */
+  /** Ask for an evicted block to come back once the tick ends. */
   request(block: Block): void;
 }
 
@@ -220,6 +265,26 @@ export function lowerBound(values: Float64Array, value: number, low: number, hig
     const middle = (first + last) >>> 1;
 
     if (values[middle] < value) {
+      first = middle + 1;
+    } else {
+      last = middle;
+    }
+  }
+
+  return first;
+}
+
+/**
+ * The first index in `[low, high)` of a sorted array whose value is above `value`.
+ */
+export function upperBound(values: Float64Array, value: number, low: number, high: number): number {
+  let first = low;
+  let last = high;
+
+  while (first < last) {
+    const middle = (first + last) >>> 1;
+
+    if (values[middle] <= value) {
       first = middle + 1;
     } else {
       last = middle;
@@ -246,11 +311,34 @@ function firstGapFrom(gaps: readonly EpochGap[], timeUs: number): number {
   return first;
 }
 
+function lastGapInColumn(
+  into: DecimationBuilder,
+  gaps: readonly EpochGap[],
+  column: number,
+  low: number
+): number {
+  let first = low;
+  let last = gaps.length;
+
+  while (first < last) {
+    const middle = (first + last) >>> 1;
+    const afterUs = gaps[middle].afterUs;
+
+    if (afterUs < into.endUs && into.columnOf(afterUs) <= column) {
+      first = middle + 1;
+    } else {
+      last = middle;
+    }
+  }
+
+  return first - 1;
+}
+
 function nextStart(segments: readonly Segment[], from: number): number {
   for (let index = from; index < segments.length; index++) {
     const { epoch, column } = segments[index];
 
-    if (column >= 0 && epoch.storedCount > 0) {
+    if (column >= 0 && epoch.keptCount > 0) {
       return epoch.firstTimeUs;
     }
   }
@@ -259,7 +347,7 @@ function nextStart(segments: readonly Segment[], from: number): number {
 }
 
 function decimateResident(
-  into: Decimation,
+  into: DecimationBuilder,
   block: Block,
   column: number,
   bounds: MinMaxAccumulator
@@ -272,7 +360,7 @@ function decimateResident(
   }
 
   const values = columns[column];
-  const first = lowerBound(time, into.startUs, 0, block.length);
+  const first = lowerBound(time, into.scanFromUs, 0, block.length);
   const end = lowerBound(time, into.endUs, first, block.length);
 
   if (first >= end) {
@@ -303,7 +391,7 @@ function decimateResident(
 }
 
 function decimateEvicted(
-  into: Decimation,
+  into: DecimationBuilder,
   block: Block,
   column: number,
   bounds: MinMaxAccumulator,
@@ -311,10 +399,14 @@ function decimateEvicted(
 ): void {
   const times = block.leafTimes;
   const leaves = Math.ceil(block.length / LEAF_SIZE);
-  const first = Math.max(0, lowerBound(times, into.startUs, 0, leaves) - 1);
+  const first = Math.max(0, upperBound(times, into.scanFromUs, 0, leaves) - 1);
   const end = lowerBound(times, into.endUs, first, leaves);
-  const firstColumn = Math.max(0, into.columnOf(times[first]));
-  const spanned = Math.max(0, into.columnOf(times[end - 1])) - firstColumn + 1;
+
+  if (first >= end) {
+    return;
+  }
+
+  const spanned = into.columnOf(times[end - 1]) - into.columnOf(times[first]) + 1;
 
   if ((end - first) * LEAF_SIZE < RELOAD_SAMPLES_PER_COLUMN * spanned) {
     access.request(block);
@@ -323,7 +415,7 @@ function decimateEvicted(
   const pyramid = block.pyramids[column];
 
   for (let start = first; start < end;) {
-    const pixel = Math.max(0, into.columnOf(times[start]));
+    const pixel = into.columnOf(times[start]);
     const stop = into.firstIndexInColumn(times, pixel + 1, start, end);
     bounds.clear();
     pyramid.addLeaves(start, stop, bounds);
@@ -332,13 +424,29 @@ function decimateEvicted(
   }
 }
 
+function breakAtGaps(into: DecimationBuilder, gaps: readonly EpochGap[]): void {
+  for (let gap = firstGapFrom(gaps, into.scanFromUs); gap < gaps.length;) {
+    const afterUs = gaps[gap].afterUs;
+
+    if (afterUs >= into.endUs) {
+      return;
+    }
+
+    const last = lastGapInColumn(into, gaps, into.columnOf(afterUs), gap);
+    into.breakBetween(gaps[last].afterUs, gaps[last].untilUs);
+    gap = last + 1;
+  }
+}
+
 /**
- * Fill a decimation with the samples of a variable's segments.
+ * Fill a decimation with the samples of a variable's segments, in the columns from
+ * {@link DecimationBuilder.fromColumn} on.
  *
  * Resident blocks give exact bounds: dense stretches go through the pyramids, reading raw samples
  * only at the edges of each column, and sparse ones, such as the live window, are scanned
  * directly. Evicted blocks answer from their pyramids, with column edges rounded to whole leaves
- * of 16 samples, and are asked back when the view is fine enough for the rounding to show.
+ * of 16 samples, and are asked back when the view is fine enough for the rounding to show. Gaps
+ * cost one search per column that holds any.
  *
  * @param into The decimation, already reset to the window.
  * @param segments The variable's epochs, oldest first.
@@ -347,7 +455,7 @@ function decimateEvicted(
  * @param stats Where to add what the query read, if anywhere.
  */
 export function decimateSegments(
-  into: Decimation,
+  into: DecimationBuilder,
   segments: readonly Segment[],
   boundaries: readonly Boundary[],
   access: BlockAccess,
@@ -358,16 +466,12 @@ export function decimateSegments(
   for (let index = 0; index < segments.length; index++) {
     const { epoch, column } = segments[index];
 
-    if (column < 0 || epoch.storedCount === 0) {
-      continue;
-    }
-
-    if (epoch.lastTimeUs < into.startUs || epoch.firstTimeUs >= into.endUs) {
+    if (column < 0 || epoch.keptCount === 0 || epoch.lastTimeUs < into.scanFromUs) {
       continue;
     }
 
     for (const block of epoch.blocks) {
-      if (block.length === 0 || block.lastTimeUs < into.startUs) {
+      if (block.length === 0 || block.lastTimeUs < into.scanFromUs) {
         continue;
       }
 
@@ -375,22 +479,16 @@ export function decimateSegments(
         break;
       }
 
-      if (access.touch(block)) {
+      access.markUsed(block);
+
+      if (block.resident) {
         decimateResident(into, block, column, bounds);
       } else {
         decimateEvicted(into, block, column, bounds, access);
       }
     }
 
-    for (let gap = firstGapFrom(epoch.gaps, into.startUs); gap < epoch.gaps.length; gap++) {
-      const { afterUs, untilUs } = epoch.gaps[gap];
-
-      if (afterUs >= into.endUs) {
-        break;
-      }
-
-      into.breakBetween(afterUs, untilUs);
-    }
+    breakAtGaps(into, epoch.gaps);
 
     if (index < segments.length - 1) {
       into.breakBetween(epoch.lastTimeUs, nextStart(segments, index + 1));

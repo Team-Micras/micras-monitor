@@ -1,8 +1,16 @@
 import type { TypeCode } from '@/protocol';
 
 import type { Block } from './block';
-import { Decimation, decimateSegments, type DecimationStats, lowerBound } from './decimation';
-import { Epoch } from './epoch';
+import { ChannelRegistry } from './channels';
+import {
+  type Decimation,
+  DecimationBuilder,
+  decimateSegments,
+  type DecimationStats,
+  lowerBound,
+  upperBound,
+} from './decimation';
+import { Epoch, type EpochHost, RECEIVED_BACKWARDS } from './epoch';
 import { ChangeNotifier, Channel } from './notifier';
 import type { BlockPersistence } from './persistence';
 import { LEAF_SIZE } from './pyramid';
@@ -14,25 +22,35 @@ import type {
   BoundaryKind,
   EpochSpec,
   Gap,
+  HistoryMark,
+  IngestionEvent,
   LatestValue,
   SampleRun,
+  SampleValue,
+  SchemaEntry,
   StoreStatus,
   TelemetryEvent,
   TelemetryValue,
+  TimeRange,
+  VariableRef,
 } from './types';
-import { VariableRecord } from './variable';
+import type { VariableRecord } from './variable';
+import { nextUp } from './window';
 
-/** How many samples a block holds unless told otherwise. */
+/** How many samples a block holds at most unless told otherwise. */
 export const DEFAULT_BLOCK_SIZE = 65_536;
 
 /** The memory cap unless told otherwise: 256 MiB. */
 export const DEFAULT_MEMORY_CAP_BYTES = 256 * 1024 * 1024;
 
+/** How often, while recording, the blocks being filled are written unless told otherwise. */
+export const DEFAULT_FLUSH_INTERVAL_MS = 5000;
+
 /**
  * How to set up a store.
  */
 export interface TelemetryStoreOptions {
-  /** When subscribers hear about changes: `requestAnimationFrame` in the application. */
+  /** When subscribers hear about changes and query ticks end: `requestAnimationFrame` in the app. */
   readonly scheduler: Scheduler;
 
   /**
@@ -41,10 +59,10 @@ export interface TelemetryStoreOptions {
    */
   readonly blockSize?: number;
 
-  /** The most memory blocks may take. */
+  /** The most memory blocks and gap records may take. */
   readonly memoryCapBytes?: number;
 
-  /** The share of the cap at which to warn while not recording; 0.8 by default. */
+  /** The share of the cap at which to warn; 0.8 by default. */
   readonly warningRatio?: number;
 
   /** Where the robot's sequence numbers wrap; 2¹⁶, a `u16` on the wire, by default. */
@@ -52,16 +70,25 @@ export interface TelemetryStoreOptions {
 
   /** How many values to keep for variables not stored numerically, such as blobs; 32. */
   readonly historyLength?: number;
+
+  /** Wall time in milliseconds; `Date.now` by default. */
+  readonly now?: () => number;
+
+  /** How often, while recording, the blocks being filled are sealed and written; 5 s. */
+  readonly flushIntervalMs?: number;
+
+  /** How many evicted blocks may be read back at once; 4. */
+  readonly maxConcurrentLoads?: number;
 }
 
 /**
  * What the store knows about a variable.
  */
 export interface VariableInfo {
-  /** Its id in the schema. */
-  readonly id: number;
+  /** Its name. */
+  readonly name: string;
 
-  /** Its type, once an epoch named it. */
+  /** Its type, once known. */
   readonly type: TypeCode | undefined;
 
   /** How its history is stored, or `none` for blobs. */
@@ -70,7 +97,7 @@ export interface VariableInfo {
   /** Whether a 64 bit integer it held did not fit a float exactly. */
   readonly precisionLost: boolean;
 
-  /** How many of its samples are stored. */
+  /** How many of its samples are kept. */
   readonly storedSamples: number;
 
   /** How many of its samples the sequence numbers show as lost. */
@@ -84,30 +111,27 @@ export interface VariableInfo {
  * Extra parameters of a decimation query.
  */
 export interface DecimateOptions {
-  /** Reuse this decimation instead of making one. */
+  /**
+   * A previous result to reuse. Asked again for the same variable and grid, only the columns
+   * from the previous last sample on are recomputed, unless the history changed further back.
+   */
   readonly into?: Decimation;
 
   /** Add what the query read to these counters. */
   readonly stats?: DecimationStats;
 }
 
-/**
- * A span of time.
- */
-export interface TimeRange {
-  /** The first time, inclusive. */
-  readonly startUs: number;
-
-  /** The last time, inclusive. */
-  readonly endUs: number;
-}
-
-const NO_VALUES: readonly LatestValue[] = [];
-
 interface OpenEpoch {
   readonly epoch: Epoch;
   readonly records: readonly VariableRecord[];
 }
+
+interface Cached<T> {
+  readonly version: number;
+  readonly value: T;
+}
+
+const NO_VALUES: readonly LatestValue[] = [];
 
 function checkBlockSize(size: number): number {
   if (!Number.isInteger(size) || size < LEAF_SIZE || (size & (size - 1)) !== 0) {
@@ -124,29 +148,39 @@ function overlaps(startUs: number, endUs: number, fromUs: number, toUs: number):
 /**
  * Every sample of the session, and what the interface needs to show it.
  *
- * The session feeds it through {@link openEpoch}, {@link append}, {@link markDropped},
- * {@link markBoundary} and {@link setLatestValue}; it knows nothing about the link. Times are on
- * the session timeline, in microseconds: the session unwraps the robot's 32 bit clock and keeps
- * time moving forward across reboots, so that samples arrive in time order.
+ * The session feeds it: {@link setSchema} after each handshake, {@link openEpoch} when a
+ * GROUP_ACK arrives, {@link closeEpoch} when a group is disabled or redefined, {@link append} for
+ * every sample, {@link markBoundary} when the link loses the robot, and {@link setLatestValue} for
+ * READ answers. It knows nothing about the link. Times are on the session timeline, in
+ * microseconds: the session unwraps the robot's 32 bit clock and keeps time moving forward across
+ * reboots.
  *
- * Readers subscribe to variables and hear about changes at most once per scheduler tick.
- * {@link version}, {@link latest}, {@link history}, {@link boundaries} and {@link status} return
- * the same value until something changes, so they can back `useSyncExternalStore` directly; the
- * other queries compute a fresh answer on each call.
+ * History is kept per variable name and type, so that it survives a schema change; queries take
+ * a name, or an id of the current schema. Readers subscribe and hear about changes at most once
+ * per scheduler tick. {@link version}, {@link latest}, {@link history}, {@link variable},
+ * {@link timeRange}, {@link historyMark}, {@link boundaries} and {@link status} return the same
+ * value until something changes, so they can back `useSyncExternalStore` directly.
  */
 export class TelemetryStore {
   private readonly blockSize: number;
   private readonly sequenceModulus: number;
-  private readonly historyLength: number;
-  private readonly variables = new Map<number, VariableRecord>();
+  private readonly registry: ChannelRegistry;
   private readonly epochs = new Map<number, OpenEpoch>();
   private readonly openByGroup = new Map<number, Epoch>();
   private boundaryList: readonly Boundary[] = [];
   private readonly listeners = new Set<(event: TelemetryEvent) => void>();
+  private readonly ingestionListeners = new Set<(event: IngestionEvent) => void>();
   private readonly notifier: ChangeNotifier;
   private readonly residency: BlockResidency;
+  private readonly host: EpochHost;
   private readonly statusChannel = new Channel();
+  private readonly infoCache = new WeakMap<VariableRecord, Cached<VariableInfo>>();
+  private readonly rangeCache = new WeakMap<VariableRecord, Cached<TimeRange | undefined>>();
+  private readonly lastIds = new WeakMap<VariableRecord, number>();
+  private sessionRange: Cached<TimeRange | undefined> | undefined;
   private statusSnapshot: StoreStatus;
+  private historyVersion = 0;
+  private clockUs = Number.NEGATIVE_INFINITY;
 
   /**
    * @param options The scheduler, and the sizes and limits to use.
@@ -154,24 +188,56 @@ export class TelemetryStore {
   constructor(options: TelemetryStoreOptions) {
     this.blockSize = checkBlockSize(options.blockSize ?? DEFAULT_BLOCK_SIZE);
     this.sequenceModulus = options.sequenceModulus ?? 2 ** 16;
-    this.historyLength = options.historyLength ?? 32;
+    this.registry = new ChannelRegistry(options.historyLength ?? 32);
     this.notifier = new ChangeNotifier(options.scheduler);
     this.residency = new BlockResidency({
       capBytes: options.memoryCapBytes ?? DEFAULT_MEMORY_CAP_BYTES,
       warningRatio: options.warningRatio ?? 0.8,
+      scheduler: options.scheduler,
+      now: options.now ?? Date.now,
+      flushIntervalMs: options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
+      maxConcurrentLoads: options.maxConcurrentLoads ?? 4,
       emit: (event) => this.emit(event),
       statusChanged: () => this.refreshStatus(),
-      reloaded: (block) => this.touchEpoch(block.ref.epochId),
+      sealOpenBlocks: () => {
+        for (const epoch of this.openByGroup.values()) {
+          epoch.sealOpenBlock();
+        }
+      },
+      reloaded: (block) => this.rewriteEpoch(block.ref.epochId),
+      evicted: (block) => this.rewriteEpoch(block.ref.epochId),
+      dropped: (block) => this.dropBlock(block),
     });
+    this.host = {
+      allocate: (layout) => this.residency.allocate(layout),
+      seal: (block) => this.residency.seal(block),
+      account: (bytes) => this.residency.account(bytes),
+      gapFinal: (epoch, gap) => this.ingest({ type: 'gap', gap: epoch.recordedGap(gap) }),
+    };
     this.statusSnapshot = this.residency.status();
   }
 
   /**
-   * Start an epoch: a group layout the robot acknowledged. An epoch still open for the same group
-   * closes.
+   * Take the robot's schema, which maps its ids to names. A name that comes back with another
+   * type starts a new history, and a boundary marks the change.
    *
-   * @throws If the epoch id was used before, a variable appears twice, or a variable is already
-   *   in the open epoch of another group.
+   * @param entries Every variable of the schema.
+   * @param timeUs When the schema took effect; the latest sample's time by default.
+   */
+  setSchema(entries: readonly SchemaEntry[], timeUs = this.clockUs): void {
+    if (this.registry.setSchema(entries) && Number.isFinite(timeUs)) {
+      this.addBoundary('schema', timeUs);
+    }
+
+    this.notifier.touch(this.statusChannel);
+  }
+
+  /**
+   * Start an epoch: a group layout the robot acknowledged. Any open epoch it conflicts with, of
+   * the same group or sharing a variable, closes first, so the order acknowledgements arrive in
+   * does not matter.
+   *
+   * @throws If the epoch id was used before or a variable appears twice.
    */
   openEpoch(spec: EpochSpec): void {
     if (this.epochs.has(spec.epochId)) {
@@ -182,38 +248,99 @@ export class TelemetryStore {
       throw new Error(`Epoch ${spec.epochId} names a variable twice`);
     }
 
-    for (const variable of spec.variables) {
-      const current = this.variables.get(variable.id)?.segments.at(-1)?.epoch;
+    const variables = spec.variables.map((variable) => ({
+      id: variable.id,
+      name: variable.name ?? this.registry.nameOf(variable.id),
+      type: variable.type,
+    }));
+    let typeChanged = false;
+    const records = variables.map(({ id, name, type }) => {
+      const before = this.registry.resolve(name);
+      const record = this.registry.recordFor(name, type);
+      typeChanged ||= before !== undefined && before !== record;
+      this.lastIds.set(record, id);
+      return record;
+    });
 
-      if (current && !current.closed && current.groupId !== spec.groupId) {
-        throw new Error(`Variable ${variable.id} is already streamed by epoch ${current.id}`);
+    if (typeChanged && Number.isFinite(this.clockUs)) {
+      this.addBoundary('schema', this.clockUs);
+    }
+
+    for (const open of this.epochs.values()) {
+      const conflicts =
+        open.epoch.groupId === spec.groupId ||
+        open.records.some((record) => records.includes(record));
+
+      if (!open.epoch.closed && conflicts) {
+        this.closeEpoch(open.epoch.id);
       }
     }
 
-    this.openByGroup.get(spec.groupId)?.close();
-    const epoch = new Epoch(spec, this.blockSize, this.sequenceModulus, this.residency);
-    const records = spec.variables.map((variable, index) => {
-      const record = this.recordOf(variable.id);
-      record.type = variable.type;
+    const epoch = new Epoch(
+      {
+        epochId: spec.epochId,
+        groupId: spec.groupId,
+        variables,
+        firstSequence: spec.firstSequence,
+      },
+      this.blockSize,
+      this.sequenceModulus,
+      this.host
+    );
+
+    records.forEach((record, index) => {
       record.segments.push({ epoch, column: epoch.columnOf[index] });
+      record.appended();
       this.notifier.touch(record.channel);
-      return record;
     });
 
     this.epochs.set(spec.epochId, { epoch, records });
     this.openByGroup.set(spec.groupId, epoch);
+    this.ingest({ type: 'epoch-opened', epoch: epoch.recorded });
     this.notifier.touch(this.statusChannel);
   }
 
   /**
-   * Add a sample of an open epoch.
+   * Close an epoch: its group was disabled or redefined. Closing a closed epoch does nothing.
+   *
+   * @throws If no epoch has that id.
+   */
+  closeEpoch(epochId: number): void {
+    const open = this.epochs.get(epochId);
+
+    if (!open) {
+      throw new Error(`No epoch ${epochId}`);
+    }
+
+    if (open.epoch.closed) {
+      return;
+    }
+
+    open.epoch.close();
+
+    if (this.openByGroup.get(open.epoch.groupId) === open.epoch) {
+      this.openByGroup.delete(open.epoch.groupId);
+    }
+
+    for (const record of open.records) {
+      record.appended();
+      this.notifier.touch(record.channel);
+    }
+
+    this.ingest({ type: 'epoch-closed', epochId });
+    this.notifier.touch(this.statusChannel);
+  }
+
+  /**
+   * Add a sample of an open epoch. The latest values always take it; the history leaves out a
+   * sample whose time repeats the previous one's, a duplicate, and one whose time goes back,
+   * which also raises a `time-backwards` event.
    *
    * @param epochId The epoch.
-   * @param sequence The sample's sequence number; a jump marks dropped samples, and one behind the
-   *   expected number, a duplicate, is ignored.
-   * @param timeUs When the robot took it, on the session timeline; never before the previous one.
+   * @param sequence The sample's sequence number; a jump marks dropped samples.
+   * @param timeUs When the robot took it, on the session timeline.
    * @param values One value per variable, in the epoch's order.
-   * @throws If the epoch is not open, the number of values is wrong or time went backwards.
+   * @throws If the epoch is not open or the number of values is wrong.
    */
   append(
     epochId: number,
@@ -227,35 +354,38 @@ export class TelemetryStore {
       throw new RangeError(`Epoch ${epochId} takes ${records.length} values, got ${values.length}`);
     }
 
-    if (epoch.receive(sequence, timeUs) < 0) {
-      return;
+    const received = epoch.receive(sequence, timeUs);
+
+    if (received === RECEIVED_BACKWARDS) {
+      this.emit({ type: 'time-backwards', epochId, timeUs, lastUs: epoch.lastTimeUs });
     }
 
-    epoch.store(timeUs, values);
+    const kept = received >= 0;
+
+    if (kept) {
+      epoch.store(timeUs, values);
+      this.clockUs = Math.max(this.clockUs, timeUs);
+      this.historyVersion++;
+    }
 
     for (let index = 0; index < records.length; index++) {
       const record = records[index];
       const value = values[index];
+      record.setLatest(value, timeUs);
 
-      if (epoch.wide[index] && !record.precisionLost && losesPrecision(value)) {
-        record.precisionLost = true;
-        this.emit({ type: 'precision-loss', variableId: record.id });
+      if (epoch.columnOf[index] < 0) {
+        record.remember(value, timeUs);
+        this.ingestValue(record, epoch.variables[index].id, value, timeUs);
+      } else if (kept) {
+        this.checkPrecision(record, epoch.wide[index], value);
+        record.tailUs = timeUs;
+        record.appended();
       }
 
-      record.update(value, timeUs, epoch.columnOf[index] < 0);
       this.notifier.touch(record.channel);
     }
-  }
 
-  /**
-   * Note that samples of an open epoch were lost after the last one, when the session knows it
-   * from something other than the sequence numbers.
-   *
-   * @throws If the epoch is not open.
-   */
-  markDropped(epochId: number, count: number): void {
-    this.openEpochOf(epochId).epoch.markDropped(count);
-    this.touchEpoch(epochId);
+    this.residency.flushIfDue();
   }
 
   /**
@@ -263,65 +393,107 @@ export class TelemetryStore {
    * across the moment.
    */
   markBoundary(kind: BoundaryKind, timeUs: number): void {
-    this.boundaryList = [...this.boundaryList, { kind, timeUs }];
+    this.addBoundary(kind, timeUs);
 
     for (const epoch of this.openByGroup.values()) {
-      epoch.close();
-      this.touchEpoch(epoch.id);
+      this.closeEpoch(epoch.id);
     }
-
-    this.openByGroup.clear();
-    this.notifier.touch(this.statusChannel);
   }
 
   /**
    * Record a value that did not come in a stream sample, such as a READ answer or a blob.
    *
-   * @param variableId The variable.
+   * @param variableId The variable, in the current schema.
    * @param value The value as decoded.
    * @param timeUs When it was sampled, if known.
    */
   setLatestValue(variableId: number, value: TelemetryValue, timeUs?: number): void {
-    const record = this.recordOf(variableId);
-    record.update(value, timeUs, !record.numeric);
+    const record = this.registry.recordFor(
+      this.registry.nameOf(variableId),
+      this.registry.typeOf(variableId)
+    );
+    this.lastIds.set(record, variableId);
+    record.setLatest(value, timeUs);
+
+    if (!record.numeric) {
+      record.remember(value, timeUs);
+    }
+
+    this.ingestValue(record, variableId, value, timeUs ?? Number.NaN);
     this.notifier.touch(record.channel);
   }
 
   /**
-   * The latest value of a variable; the same object until it changes.
+   * Forget the history and stop recording, keeping the schema, the latest values and the open
+   * epochs, which carry on from nothing. A persistence layer written before is no longer read.
    */
-  latest(variableId: number): LatestValue | undefined {
-    return this.variables.get(variableId)?.latest;
+  reset(): void {
+    for (const { epoch } of this.epochs.values()) {
+      if (!epoch.closed) {
+        epoch.clearHistory();
+      }
+    }
+
+    this.residency.reset();
+
+    for (const [epochId, { epoch }] of this.epochs) {
+      if (epoch.closed) {
+        this.epochs.delete(epochId);
+      }
+    }
+
+    for (const record of this.registry.all()) {
+      const open = record.segments.filter((segment) => !segment.epoch.closed);
+      record.segments.length = 0;
+      record.segments.push(...open);
+      record.tailUs = Number.NEGATIVE_INFINITY;
+      record.rewritten();
+      this.notifier.touch(record.channel);
+    }
+
+    this.boundaryList = [];
+    this.historyVersion++;
+    this.refreshStatus();
+  }
+
+  /** The latest value of a variable; the same object until it changes. */
+  latest(variable: VariableRef): LatestValue | undefined {
+    return this.registry.resolve(variable)?.latest;
   }
 
   /**
    * The last values of a variable that is not stored numerically, such as a blob, oldest first;
    * the same array until a value arrives.
    */
-  history(variableId: number): readonly LatestValue[] {
-    return this.variables.get(variableId)?.history ?? NO_VALUES;
+  history(variable: VariableRef): readonly LatestValue[] {
+    return this.registry.resolve(variable)?.history ?? NO_VALUES;
   }
 
-  /**
-   * What the store knows about a variable.
-   */
-  variable(variableId: number): VariableInfo | undefined {
-    const record = this.variables.get(variableId);
+  /** What the store knows about a variable; the same object until it changes. */
+  variable(variable: VariableRef): VariableInfo | undefined {
+    const record = this.registry.resolve(variable);
 
     if (!record) {
       return undefined;
+    }
+
+    const version = 2 * record.mark.version + (record.precisionLost ? 1 : 0);
+    const cached = this.infoCache.get(record);
+
+    if (cached?.version === version && cached.value.type === record.type) {
+      return cached.value;
     }
 
     let storedSamples = 0;
     let droppedSamples = 0;
 
     for (const { epoch } of record.segments) {
-      storedSamples += epoch.storedCount;
+      storedSamples += epoch.keptCount;
       droppedSamples += epoch.droppedCount;
     }
 
-    return {
-      id: record.id,
+    const value: VariableInfo = {
+      name: record.name,
       type: record.type,
       storage: record.type === undefined ? undefined : (columnKindOf(record.type) ?? 'none'),
       precisionLost: record.precisionLost,
@@ -329,29 +501,67 @@ export class TelemetryStore {
       droppedSamples,
       epochs: record.segments.length,
     };
+    this.infoCache.set(record, { version, value });
+    return value;
   }
 
   /**
-   * The span of the stored history, of one variable or of the whole session.
+   * The span of the kept history, of one variable or of the whole session, as a half-open range
+   * that holds the last sample; the same object until it changes.
    */
-  timeRange(variableId?: number): TimeRange | undefined {
-    const epochs =
-      variableId === undefined
-        ? [...this.epochs.values()].map(({ epoch }) => epoch)
-        : (this.variables.get(variableId)?.segments ?? [])
-            .filter((segment) => segment.column >= 0)
-            .map((segment) => segment.epoch);
-    let startUs = Number.POSITIVE_INFINITY;
-    let endUs = Number.NEGATIVE_INFINITY;
-
-    for (const epoch of epochs) {
-      if (epoch.storedCount > 0) {
-        startUs = Math.min(startUs, epoch.firstTimeUs);
-        endUs = Math.max(endUs, epoch.lastTimeUs);
+  timeRange(variable?: VariableRef): TimeRange | undefined {
+    if (variable === undefined) {
+      if (this.sessionRange?.version !== this.historyVersion) {
+        const epochs = [...this.epochs.values()].map(({ epoch }) => epoch);
+        this.sessionRange = { version: this.historyVersion, value: this.rangeOf(epochs) };
       }
+
+      return this.sessionRange.value;
     }
 
-    return startUs <= endUs ? { startUs, endUs } : undefined;
+    const record = this.registry.resolve(variable);
+
+    if (!record) {
+      return undefined;
+    }
+
+    const cached = this.rangeCache.get(record);
+
+    if (cached?.version === record.mark.version) {
+      return cached.value;
+    }
+
+    const epochs = record.segments.filter((segment) => segment.column >= 0).map((s) => s.epoch);
+    const value = this.rangeOf(epochs);
+    this.rangeCache.set(record, { version: record.mark.version, value });
+    return value;
+  }
+
+  /**
+   * Where a variable's history stands, to ask {@link changedSince} later; the same object until
+   * it changes.
+   */
+  historyMark(variable: VariableRef): HistoryMark | undefined {
+    return this.registry.resolve(variable)?.mark;
+  }
+
+  /**
+   * Whether a window of a variable's history may look different than when the mark was taken,
+   * so that a paused plot redraws only when it has to: appends at the live end do not touch a
+   * window that ends before them.
+   */
+  changedSince(variable: VariableRef, mark: HistoryMark | undefined, window: TimeRange): boolean {
+    const current = this.historyMark(variable);
+
+    if (!current || !mark) {
+      return current !== mark;
+    }
+
+    if (current.source !== mark.source || current.rewrite !== mark.rewrite) {
+      return true;
+    }
+
+    return current.version !== mark.version && window.endUs > mark.tailUs;
   }
 
   /**
@@ -360,8 +570,8 @@ export class TelemetryStore {
    * Blocks evicted to the persistence layer are skipped and asked back; the variable's version
    * changes when they return.
    */
-  *samples(variableId: number, startUs: number, endUs: number): Generator<SampleRun> {
-    const record = this.variables.get(variableId);
+  *samples(variable: VariableRef, startUs: number, endUs: number): Generator<SampleRun> {
+    const record = this.registry.resolve(variable);
 
     if (!record) {
       return;
@@ -393,34 +603,90 @@ export class TelemetryStore {
   }
 
   /**
+   * The stored sample of a variable at a time, or the last one before it, for cursors synced
+   * across plots. Undefined before the first sample, or while its block is being read back.
+   */
+  valueAt(variable: VariableRef, timeUs: number): SampleValue | undefined {
+    const segments = this.registry.resolve(variable)?.segments ?? [];
+    this.residency.beginQuery();
+
+    for (let index = segments.length - 1; index >= 0; index--) {
+      const { epoch, column } = segments[index];
+      const block = epoch.blocks.findLast(
+        (candidate) => candidate.length > 0 && candidate.firstTimeUs <= timeUs
+      );
+
+      if (column < 0 || !block) {
+        continue;
+      }
+
+      this.residency.markUsed(block);
+      const time = block.time;
+      const columns = block.columns;
+
+      if (!time || !columns) {
+        this.residency.request(block);
+        return undefined;
+      }
+
+      const at = upperBound(time, timeUs, 0, block.length) - 1;
+      return { value: columns[column][at], timeUs: time[at] };
+    }
+
+    return undefined;
+  }
+
+  /**
    * The minimum and maximum of a variable per pixel column of `[startUs, endUs)`, with where its
-   * line breaks: between epochs, at dropped samples, at boundaries and at NaN. Lay the result out
-   * for uPlot with `toLineSeries` or `toBandSeries`.
+   * line breaks: between epochs, at dropped samples, at boundaries and after NaN. Lay the result
+   * out for uPlot with `toLineSeries` or `toBandSeries`.
    *
-   * The cost follows the number of pixels and pyramid levels, not the number of samples.
+   * The cost follows the number of pixels and pyramid levels, not the number of samples; asked
+   * again with the previous result, over the same grid, only the trailing columns are redone.
    *
-   * @param variableId The variable.
+   * @param variable The variable.
    * @param startUs The start of the window, inclusive.
    * @param endUs The end of the window, exclusive.
    * @param pixels How many columns to split it into.
-   * @param options A decimation to reuse and counters to fill.
+   * @param options A result to reuse and counters to fill.
    */
   decimate(
-    variableId: number,
+    variable: VariableRef,
     startUs: number,
     endUs: number,
     pixels: number,
     options: DecimateOptions = {}
   ): Decimation {
-    const into = options.into ?? new Decimation();
-    into.reset(startUs, endUs, pixels);
-    const record = this.variables.get(variableId);
+    const into = options.into instanceof DecimationBuilder ? options.into : new DecimationBuilder();
+    const record = this.registry.resolve(variable);
 
-    if (record) {
-      this.residency.beginQuery();
-      decimateSegments(into, record.segments, this.boundaryList, this.residency, options.stats);
+    if (!record) {
+      into.reset(startUs, endUs, pixels);
+      return into;
     }
 
+    const mark = record.mark;
+    const previous = into.mark;
+    const reusable =
+      into.source === record &&
+      previous !== undefined &&
+      previous.rewrite === mark.rewrite &&
+      into.sameGrid(startUs, endUs, pixels);
+
+    if (reusable && previous.version === mark.version) {
+      return into;
+    }
+
+    if (reusable) {
+      into.resetFrom(into.columnOf(previous.tailUs));
+    } else {
+      into.reset(startUs, endUs, pixels);
+    }
+
+    this.residency.beginQuery();
+    decimateSegments(into, record.segments, this.boundaryList, this.residency, options.stats);
+    into.source = record;
+    into.mark = mark;
     return into;
   }
 
@@ -428,38 +694,40 @@ export class TelemetryStore {
    * Why a variable has no samples in parts of `[startUs, endUs)`: time between its epochs,
    * dropped samples and samples not kept, ordered by start.
    */
-  gaps(variableId: number, startUs: number, endUs: number): Gap[] {
+  gaps(variable: VariableRef, startUs: number, endUs: number): Gap[] {
     const found: Gap[] = [];
     let coveredUntil = Number.NaN;
 
-    for (const { epoch, column } of this.variables.get(variableId)?.segments ?? []) {
-      if (column < 0 || epoch.storedCount === 0) {
+    for (const { epoch, column } of this.registry.resolve(variable)?.segments ?? []) {
+      if (column < 0) {
         continue;
       }
 
-      if (
-        epoch.firstTimeUs > coveredUntil &&
-        overlaps(coveredUntil, epoch.firstTimeUs, startUs, endUs)
-      ) {
-        found.push({ kind: 'not-streamed', startUs: coveredUntil, endUs: epoch.firstTimeUs });
+      if (epoch.storedCount > 0) {
+        if (
+          epoch.firstStoredUs > coveredUntil &&
+          overlaps(coveredUntil, epoch.firstStoredUs, startUs, endUs)
+        ) {
+          found.push({ kind: 'not-streamed', startUs: coveredUntil, endUs: epoch.firstStoredUs });
+        }
+
+        coveredUntil = Number.isNaN(coveredUntil)
+          ? epoch.lastTimeUs
+          : Math.max(coveredUntil, epoch.lastTimeUs);
       }
 
-      coveredUntil = Number.isNaN(coveredUntil)
-        ? epoch.lastTimeUs
-        : Math.max(coveredUntil, epoch.lastTimeUs);
-
       for (const gap of epoch.gaps) {
-        const gapStart = Number.isNaN(gap.afterUs) ? gap.untilUs : gap.afterUs;
+        const gapStart = Number.isNaN(gap.startUs) ? gap.untilUs : gap.startUs;
 
         if (overlaps(gapStart, gap.untilUs, startUs, endUs)) {
           found.push({ kind: gap.kind, startUs: gapStart, endUs: gap.untilUs, count: gap.count });
         }
       }
 
-      if (epoch.unstoredRun > 0 && overlaps(epoch.lastTimeUs, Number.NaN, startUs, endUs)) {
+      if (epoch.unstoredRun > 0 && overlaps(epoch.unstoredFrom, Number.NaN, startUs, endUs)) {
         found.push({
           kind: 'not-stored',
-          startUs: epoch.lastTimeUs,
+          startUs: epoch.unstoredFrom,
           endUs: Number.NaN,
           count: epoch.unstoredRun,
         });
@@ -469,9 +737,7 @@ export class TelemetryStore {
     return found.toSorted((left, right) => left.startUs - right.startUs);
   }
 
-  /**
-   * Every boundary so far, oldest first; the same array until a boundary is added.
-   */
+  /** Every boundary so far, oldest first; the same array until a boundary is added. */
   boundaries(): readonly Boundary[] {
     return this.boundaryList;
   }
@@ -480,22 +746,24 @@ export class TelemetryStore {
    * A number that changes whenever anything a reader can see of a variable changes; the snapshot
    * for `useSyncExternalStore`.
    */
-  version(variableId: number): number {
-    return this.variables.get(variableId)?.channel.version ?? 0;
+  version(variable: VariableRef): number {
+    return this.registry.channelFor(variable).version;
   }
 
   /**
-   * Hear about changes to some variables, at most once per scheduler tick.
+   * Hear about changes to some variables, at most once per scheduler tick. A name keeps being
+   * followed across schema changes; an id is taken as the name it has now.
    *
    * @returns A function that ends the subscription.
    */
-  subscribe(variableIds: readonly number[], callback: () => void): () => void {
-    const channels = variableIds.map((id) => this.recordOf(id).channel);
+  subscribe(variables: readonly VariableRef[], callback: () => void): () => void {
+    const channels = variables.map((variable) => this.registry.channelFor(variable));
     return this.notifier.subscribe(channels, callback);
   }
 
   /**
-   * Hear about changes to the status, the epochs and the boundaries, at most once per tick.
+   * Hear about changes to the status, the schema, the epochs and the boundaries, at most once
+   * per tick.
    *
    * @returns A function that ends the subscription.
    */
@@ -503,15 +771,13 @@ export class TelemetryStore {
     return this.notifier.subscribe([this.statusChannel], callback);
   }
 
-  /**
-   * The memory used and the recording state; the same object until it changes.
-   */
+  /** The memory used and the recording state; the same object until it changes. */
   status(): StoreStatus {
     return this.statusSnapshot;
   }
 
   /**
-   * Hear about warnings as they happen: memory, precision and persistence.
+   * Hear about warnings as they happen: memory, precision, time and persistence.
    *
    * @returns A function that stops listening.
    */
@@ -521,29 +787,76 @@ export class TelemetryStore {
   }
 
   /**
-   * Start writing sealed blocks to a persistence layer, those already sealed included, so that
-   * they may leave memory under the cap and come back when a query needs them.
+   * Hear, as they happen, about what a recorder writes besides the blocks: epochs opening and
+   * closing, gaps once final, boundaries, and values outside the stored streams.
+   *
+   * @returns A function that stops listening.
+   */
+  onIngestion(listener: (event: IngestionEvent) => void): () => void {
+    this.ingestionListeners.add(listener);
+    return () => this.ingestionListeners.delete(listener);
+  }
+
+  /**
+   * Tell a listener, at once, what {@link onIngestion} would have told it about the session so
+   * far, for a recorder that starts late: every epoch and its final gaps, the boundaries, and the
+   * latest value of each variable not stored numerically.
+   */
+  replayIngestion(listener: (event: IngestionEvent) => void): void {
+    for (const { epoch } of this.epochs.values()) {
+      listener({ type: 'epoch-opened', epoch: epoch.recorded });
+
+      for (const gap of epoch.gaps) {
+        if (epoch.closed || !Number.isNaN(gap.untilUs)) {
+          listener({ type: 'gap', gap: epoch.recordedGap(gap) });
+        }
+      }
+
+      if (epoch.closed) {
+        listener({ type: 'epoch-closed', epochId: epoch.id });
+      }
+    }
+
+    for (const boundary of this.boundaryList) {
+      listener({ type: 'boundary', boundary });
+    }
+
+    for (const record of this.registry.all()) {
+      const latest = record.latest;
+      const variableId = this.lastIds.get(record);
+
+      if (latest && !record.numeric && variableId !== undefined) {
+        listener({
+          type: 'value',
+          value: {
+            variableId,
+            name: record.name,
+            timeUs: latest.timeUs ?? Number.NaN,
+            value: latest.value,
+          },
+        });
+      }
+    }
+  }
+
+  /**
+   * Start writing blocks to a persistence layer: the whole session so far first, then every
+   * block as it seals, and the blocks being filled every few seconds. Blocks written may leave
+   * memory under the cap and come back when a query needs them. The records besides the blocks
+   * come from {@link replayIngestion}, then {@link onIngestion}.
    */
   startRecording(persistence: BlockPersistence): void {
     this.residency.startRecording(persistence);
   }
 
   /**
-   * Stop writing blocks. Blocks already written can still leave memory and come back.
+   * Write what is being filled, then stop writing blocks. Blocks already written can still leave
+   * memory and come back.
+   *
+   * @returns A promise that settles once every write under way has.
    */
-  stopRecording(): void {
-    this.residency.stopRecording();
-  }
-
-  private recordOf(variableId: number): VariableRecord {
-    let record = this.variables.get(variableId);
-
-    if (!record) {
-      record = new VariableRecord(variableId, this.historyLength);
-      this.variables.set(variableId, record);
-    }
-
-    return record;
+  stopRecording(): Promise<void> {
+    return this.residency.stopRecording();
   }
 
   private openEpochOf(epochId: number): OpenEpoch {
@@ -560,16 +873,57 @@ export class TelemetryStore {
     return open;
   }
 
+  private checkPrecision(record: VariableRecord, wide: boolean, value: TelemetryValue): void {
+    if (wide && !record.precisionLost && losesPrecision(value)) {
+      record.precisionLost = true;
+      this.emit({ type: 'precision-loss', name: record.name });
+    }
+  }
+
+  private addBoundary(kind: BoundaryKind, timeUs: number): void {
+    const boundary = { kind, timeUs };
+    this.boundaryList = [...this.boundaryList, boundary];
+    this.historyVersion++;
+
+    for (const record of this.registry.all()) {
+      if (timeUs < record.tailUs) {
+        record.rewritten();
+      } else {
+        record.appended();
+      }
+
+      this.notifier.touch(record.channel);
+    }
+
+    this.ingest({ type: 'boundary', boundary });
+    this.notifier.touch(this.statusChannel);
+  }
+
+  private rangeOf(epochs: readonly Epoch[]): TimeRange | undefined {
+    let startUs = Number.POSITIVE_INFINITY;
+    let lastUs = Number.NEGATIVE_INFINITY;
+
+    for (const epoch of epochs) {
+      if (epoch.keptCount > 0) {
+        startUs = Math.min(startUs, epoch.firstTimeUs);
+        lastUs = Math.max(lastUs, epoch.lastTimeUs);
+      }
+    }
+
+    return startUs <= lastUs ? { startUs, endUs: nextUp(lastUs) } : undefined;
+  }
+
   private runOf(
     block: Block,
     column: number,
     startUs: number,
     endUs: number
   ): Omit<SampleRun, 'epochId'> | undefined {
+    this.residency.markUsed(block);
     const time = block.time;
     const columns = block.columns;
 
-    if (!this.residency.touch(block) || !time || !columns) {
+    if (!time || !columns) {
       this.residency.request(block);
       return undefined;
     }
@@ -584,9 +938,33 @@ export class TelemetryStore {
     return { time: time.subarray(first, end), values: columns[column].subarray(first, end) };
   }
 
-  private touchEpoch(epochId: number): void {
+  private dropBlock(block: Block): void {
+    this.epochs.get(block.ref.epochId)?.epoch.dropBlock(block);
+    this.historyVersion++;
+    this.rewriteEpoch(block.ref.epochId);
+  }
+
+  private rewriteEpoch(epochId: number): void {
     for (const record of this.epochs.get(epochId)?.records ?? []) {
+      record.rewritten();
       this.notifier.touch(record.channel);
+    }
+  }
+
+  private ingestValue(
+    record: VariableRecord,
+    variableId: number,
+    value: TelemetryValue,
+    timeUs: number
+  ): void {
+    if (this.ingestionListeners.size > 0) {
+      this.ingest({ type: 'value', value: { variableId, name: record.name, timeUs, value } });
+    }
+  }
+
+  private ingest(event: IngestionEvent): void {
+    for (const listener of this.ingestionListeners) {
+      listener(event);
     }
   }
 

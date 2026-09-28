@@ -114,6 +114,35 @@ describe('subscriptions', () => {
     expect(scheduler.pending).toBe(0);
   });
 
+  test('do not call a subscription ended earlier in the same tick', () => {
+    const { scheduler, store } = twoVariables();
+    const late = vi.fn<() => void>();
+    const ends: (() => void)[] = [];
+    store.subscribe([1], () => ends.forEach((end) => end()));
+    ends.push(store.subscribe([1], late));
+    store.append(1, 0, 0, [1, 2]);
+    scheduler.flush();
+
+    expect(late).not.toHaveBeenCalled();
+  });
+
+  test('follow a name across a schema change', () => {
+    const scheduler = new ManualScheduler();
+    const store = new TelemetryStore({ scheduler, blockSize: 256 });
+    const callback = vi.fn<() => void>();
+    store.setSchema([{ id: 3, name: 'battery', type: TypeCode.F32 }]);
+    store.subscribe(['battery'], callback);
+    store.setSchema([{ id: 8, name: 'battery', type: TypeCode.F32 }]);
+    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 8, type: TypeCode.F32 }] });
+    scheduler.flush();
+    callback.mockClear();
+    store.append(1, 0, 0, [7.4]);
+    scheduler.flush();
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(store.version('battery')).toBe(store.version(8));
+  });
+
   test('hear about boundaries and epochs through the status', () => {
     const { scheduler, store } = twoVariables();
     const callback = vi.fn<() => void>();

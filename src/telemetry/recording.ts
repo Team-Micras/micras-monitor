@@ -1,35 +1,54 @@
 import type { TypeCode } from '@/protocol';
 
+import { crc32 } from './crc32';
 import type { PersistedBlock, PersistedColumn } from './persistence';
 import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from './storage';
-import type { Boundary, BoundaryKind, EpochSpec } from './types';
+import type {
+  Boundary,
+  BoundaryKind,
+  IngestionEvent,
+  RecordedEpoch,
+  RecordedGap,
+  RecordedValue,
+  TelemetryValue,
+} from './types';
 
 /**
  * Recording format, version 1.
  *
  * A recording is a header followed by records, so that a recorder can append records as they
- * happen. Every number is little endian.
+ * happen. Every number is little endian; a string is a `u32` byte count and UTF-8.
  *
  * ```
  * magic         8 bytes   89 4D 4D 52 45 43 0D 0A  ("\x89MMREC\r\n")
  * header size   u32
  * header        UTF-8 JSON, a RecordingHeader
  * records       repeated until the end:
- *   kind        u8        1 epoch, 2 block, 3 gap, 4 boundary; unknown kinds are skipped
+ *   kind        u8        1 epoch, 2 block, 3 gap, 4 boundary, 5 value, 6 epoch closed;
+ *                         unknown kinds are skipped
  *   reserved    3 bytes
  *   size        u32       bytes of the payload
+ *   check       u32       CRC-32 of the payload
  *   payload
  * ```
  *
  * Payloads:
  *
- * - epoch: `u32` epoch id, `u32` group id, `u32` count, then per variable `u32` id and `u32` type.
+ * - epoch: `u32` epoch id, `u32` group id, `u32` count, then per variable `u32` id, `u32` type and
+ *   the name.
  * - block: `u32` epoch id, `u32` block index, `u32` start sample, `u32` length `n`, `u32` column
  *   count, then per column `u32` variable id, `u8` kind (0 f32, 1 f64) and 3 reserved bytes; then
  *   `n` f64 times, then each column's `n` values.
  * - gap: `u32` epoch id, `u8` kind (0 dropped, 1 not stored), 3 reserved bytes, `u32` index, `u32`
- *   count, `f64` time before, `f64` time after (NaN if unknown).
- * - boundary: `u8` kind (0 reconnect, 1 reboot), 7 reserved bytes, `f64` time.
+ *   count, `f64` start, `f64` time before, `f64` time after (NaN if unknown).
+ * - boundary: `u8` kind (0 reconnect, 1 reboot, 2 schema), 7 reserved bytes, `f64` time.
+ * - value: `u32` variable id, the name, `f64` time (NaN if unknown), `u8` tag, then by tag: 0 an
+ *   `f64`, 1 a `u8` boolean, 2 a 64 bit integer as a decimal string, 3 a string, 4 `u32` count
+ *   and bytes.
+ * - epoch closed: `u32` epoch id.
+ *
+ * A record that fails its check or does not decode at the end of the bytes is where a recording
+ * was cut short; anywhere else, it is skipped and reported.
  *
  * @module
  */
@@ -41,12 +60,20 @@ export const RECORDING_FORMAT_VERSION = 1;
 export const RECORDING_FORMAT = 'micras-monitor-recording';
 
 const MAGIC = new Uint8Array([0x89, 0x4d, 0x4d, 0x52, 0x45, 0x43, 0x0d, 0x0a]);
-const RECORD_HEADER_SIZE = 8;
+const RECORD_HEADER_SIZE = 12;
 
-const RECORD_KIND = { epoch: 1, block: 2, gap: 3, boundary: 4 } as const;
+const RECORD_KIND = {
+  epoch: 1,
+  block: 2,
+  gap: 3,
+  boundary: 4,
+  value: 5,
+  'epoch-closed': 6,
+} as const;
 const COLUMN_KINDS: readonly ColumnKind[] = ['f32', 'f64'];
 const GAP_KINDS: readonly RecordedGap['kind'][] = ['dropped', 'not-stored'];
-const BOUNDARY_KINDS: readonly BoundaryKind[] = ['reconnect', 'reboot'];
+const BOUNDARY_KINDS: readonly BoundaryKind[] = ['reconnect', 'reboot', 'schema'];
+const VALUE_TAG = { number: 0, boolean: 1, bigint: 2, string: 3, bytes: 4 } as const;
 
 /**
  * A variable of the robot's schema, as the recording remembers it.
@@ -81,41 +108,31 @@ export interface RecordingHeader {
   /** Whatever the link knows about the robot: its name, boot id, schema hash. */
   readonly robot: Readonly<Record<string, string | number | boolean | null>>;
 
-  /** The robot's schema. */
+  /** The robot's schema when recording started. */
   readonly schema: readonly RecordingVariable[];
-}
-
-/**
- * Samples missing inside an epoch, as recorded.
- */
-export interface RecordedGap {
-  /** The epoch. */
-  readonly epochId: number;
-
-  /** Whether the samples never arrived or were not kept. */
-  readonly kind: 'dropped' | 'not-stored';
-
-  /** The epoch sample index of the first stored sample after the gap. */
-  readonly index: number;
-
-  /** How many samples are missing. */
-  readonly count: number;
-
-  /** The time of the last sample before the gap, or NaN. */
-  readonly afterUs: number;
-
-  /** The time of the first sample after the gap, or NaN. */
-  readonly untilUs: number;
 }
 
 /**
  * One record of a recording.
  */
 export type RecordingRecord =
-  | { readonly kind: 'epoch'; readonly epoch: EpochSpec }
+  | { readonly kind: 'epoch'; readonly epoch: RecordedEpoch }
+  | { readonly kind: 'epoch-closed'; readonly epochId: number }
   | { readonly kind: 'block'; readonly block: PersistedBlock }
   | { readonly kind: 'gap'; readonly gap: RecordedGap }
-  | { readonly kind: 'boundary'; readonly boundary: Boundary };
+  | { readonly kind: 'boundary'; readonly boundary: Boundary }
+  | { readonly kind: 'value'; readonly value: RecordedValue };
+
+/**
+ * A record that was skipped because it was damaged.
+ */
+export interface RecordingDamage {
+  /** Where the record starts. */
+  readonly offset: number;
+
+  /** What was wrong with it. */
+  readonly reason: string;
+}
 
 /**
  * A whole recording.
@@ -132,18 +149,162 @@ export interface Recording {
    * closed in the middle of a write. The records before it are whole.
    */
   readonly truncatedAt?: number;
+
+  /** Records skipped in the middle of the recording because they were damaged. */
+  readonly damaged?: readonly RecordingDamage[];
 }
 
-function checkU32(value: number, what: string): number {
-  if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
-    throw new RangeError(`${what} must fit an unsigned 32 bit integer, got ${value}`);
+class ByteWriter {
+  private bytes: Uint8Array;
+  private view: DataView;
+  private offset = 0;
+
+  constructor(size = 64) {
+    this.bytes = new Uint8Array(size);
+    this.view = new DataView(this.bytes.buffer);
   }
 
-  return value;
+  u8(value: number): this {
+    this.reserve(1);
+    this.view.setUint8(this.offset, value);
+    this.offset += 1;
+    return this;
+  }
+
+  u32(value: number, what: string): this {
+    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+      throw new RangeError(`${what} must fit an unsigned 32 bit integer, got ${value}`);
+    }
+
+    this.reserve(4);
+    this.view.setUint32(this.offset, value, true);
+    this.offset += 4;
+    return this;
+  }
+
+  f32(value: number): this {
+    this.reserve(4);
+    this.view.setFloat32(this.offset, value, true);
+    this.offset += 4;
+    return this;
+  }
+
+  f64(value: number): this {
+    this.reserve(8);
+    this.view.setFloat64(this.offset, value, true);
+    this.offset += 8;
+    return this;
+  }
+
+  skip(count: number): this {
+    this.reserve(count);
+    this.offset += count;
+    return this;
+  }
+
+  raw(bytes: Uint8Array): this {
+    this.reserve(bytes.byteLength);
+    this.bytes.set(bytes, this.offset);
+    this.offset += bytes.byteLength;
+    return this;
+  }
+
+  text(value: string): this {
+    const encoded = new TextEncoder().encode(value);
+    return this.u32(encoded.byteLength, 'Text length').raw(encoded);
+  }
+
+  done(): Uint8Array {
+    return this.bytes.slice(0, this.offset);
+  }
+
+  private reserve(count: number): void {
+    if (this.offset + count <= this.bytes.byteLength) {
+      return;
+    }
+
+    const grown = new Uint8Array(Math.max(2 * this.bytes.byteLength, this.offset + count));
+    grown.set(this.bytes);
+    this.bytes = grown;
+    this.view = new DataView(grown.buffer);
+  }
 }
 
-function codeOf<T>(values: readonly T[], value: T): number {
-  return values.indexOf(value);
+class ByteReader {
+  private readonly view: DataView;
+  private offset = 0;
+
+  constructor(private readonly bytes: Uint8Array) {
+    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  }
+
+  get remaining(): number {
+    return this.bytes.byteLength - this.offset;
+  }
+
+  u8(): number {
+    this.need(1);
+    return this.view.getUint8(this.offset++);
+  }
+
+  u32(): number {
+    this.need(4);
+    const value = this.view.getUint32(this.offset, true);
+    this.offset += 4;
+    return value;
+  }
+
+  f32(): number {
+    this.need(4);
+    const value = this.view.getFloat32(this.offset, true);
+    this.offset += 4;
+    return value;
+  }
+
+  f64(): number {
+    this.need(8);
+    const value = this.view.getFloat64(this.offset, true);
+    this.offset += 8;
+    return value;
+  }
+
+  skip(count: number): void {
+    this.need(count);
+    this.offset += count;
+  }
+
+  raw(count: number): Uint8Array {
+    this.need(count);
+    const bytes = this.bytes.slice(this.offset, this.offset + count);
+    this.offset += count;
+    return bytes;
+  }
+
+  text(): string {
+    return new TextDecoder('utf-8', { fatal: true }).decode(this.raw(this.u32()));
+  }
+
+  end(what: string): void {
+    if (this.remaining !== 0) {
+      throw new Error(`${what} record has ${this.remaining} bytes left over`);
+    }
+  }
+
+  private need(count: number): void {
+    if (this.offset + count > this.bytes.byteLength) {
+      throw new Error(`Record ends ${this.offset + count - this.bytes.byteLength} bytes early`);
+    }
+  }
+}
+
+function codeOf<T>(values: readonly T[], value: T, what: string): number {
+  const code = values.indexOf(value);
+
+  if (code < 0) {
+    throw new RangeError(`Unknown ${what} ${String(value)}`);
+  }
+
+  return code;
 }
 
 function kindAt<T>(values: readonly T[], code: number, what: string): T {
@@ -208,29 +369,23 @@ function parseHeader(json: string): RecordingHeader {
   };
 }
 
-function blockPayloadSize(block: PersistedBlock): number {
-  let size = 20 + 8 * block.columns.length + 8 * block.time.length;
-
-  for (const column of block.columns) {
-    size += column.values.byteLength;
-  }
-
-  return size;
-}
-
 /**
  * Lay out the samples of a block, as the payload of a block record.
  */
 export function encodeBlock(block: PersistedBlock): Uint8Array {
   const length = block.time.length;
-  const bytes = new Uint8Array(blockPayloadSize(block));
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, checkU32(block.ref.epochId, 'Epoch id'), true);
-  view.setUint32(4, checkU32(block.ref.index, 'Block index'), true);
-  view.setUint32(8, checkU32(block.startSample, 'Start sample'), true);
-  view.setUint32(12, length, true);
-  view.setUint32(16, block.columns.length, true);
-  let offset = 20;
+  let size = 20 + 8 * block.columns.length + 8 * length;
+
+  for (const column of block.columns) {
+    size += column.values.byteLength;
+  }
+
+  const writer = new ByteWriter(size)
+    .u32(block.ref.epochId, 'Epoch id')
+    .u32(block.ref.index, 'Block index')
+    .u32(block.startSample, 'Start sample')
+    .u32(length, 'Block length')
+    .u32(block.columns.length, 'Column count');
 
   for (const column of block.columns) {
     if (column.values.length !== length) {
@@ -239,184 +394,284 @@ export function encodeBlock(block: PersistedBlock): Uint8Array {
       );
     }
 
-    view.setUint32(offset, checkU32(column.variableId, 'Variable id'), true);
-    view.setUint8(offset + 4, codeOf(COLUMN_KINDS, kindOfColumn(column.values)));
-    offset += 8;
+    writer
+      .u32(column.variableId, 'Variable id')
+      .u8(codeOf(COLUMN_KINDS, kindOfColumn(column.values), 'column kind'))
+      .skip(3);
   }
 
-  for (let index = 0; index < length; index++, offset += 8) {
-    view.setFloat64(offset, block.time[index], true);
+  for (let index = 0; index < length; index++) {
+    writer.f64(block.time[index]);
   }
 
   for (const column of block.columns) {
     const values = column.values;
 
-    if (values instanceof Float32Array) {
-      for (let index = 0; index < length; index++, offset += 4) {
-        view.setFloat32(offset, values[index], true);
-      }
-    } else {
-      for (let index = 0; index < length; index++, offset += 8) {
-        view.setFloat64(offset, values[index], true);
+    for (let index = 0; index < length; index++) {
+      if (values instanceof Float32Array) {
+        writer.f32(values[index]);
+      } else {
+        writer.f64(values[index]);
       }
     }
   }
 
-  return bytes;
+  return writer.done();
 }
 
 /**
- * Read back the payload of a block record.
+ * Read back the payload of a block record, into arrays of exactly its length.
  *
- * @throws If the payload is truncated or names an unknown column kind.
+ * @throws If the payload is truncated, too long or names an unknown column kind.
  */
 export function decodeBlock(bytes: Uint8Array): PersistedBlock {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const reader = new ByteReader(bytes);
+  const ref = { epochId: reader.u32(), index: reader.u32() };
+  const startSample = reader.u32();
+  const length = reader.u32();
+  const count = reader.u32();
 
-  if (bytes.byteLength < 20 || 20 + 8 * view.getUint32(16, true) > bytes.byteLength) {
-    throw new Error(`Block record of ${bytes.byteLength} bytes is too short for its layout`);
+  if (8 * count > reader.remaining) {
+    throw new Error(`Block record of ${bytes.byteLength} bytes cannot hold ${count} columns`);
   }
 
-  const length = view.getUint32(12, true);
-  const count = view.getUint32(16, true);
-  const layout: { variableId: number; kind: ColumnKind }[] = [];
-  let offset = 20;
+  const layout = Array.from({ length: count }, () => {
+    const variableId = reader.u32();
+    const kind = kindAt(COLUMN_KINDS, reader.u8(), 'column kind');
+    reader.skip(3);
+    return { variableId, kind };
+  });
+  const needed =
+    8 * length + layout.reduce((sum, { kind }) => sum + length * bytesPerValue(kind), 0);
 
-  for (let column = 0; column < count; column++, offset += 8) {
-    layout.push({
-      variableId: view.getUint32(offset, true),
-      kind: kindAt(COLUMN_KINDS, view.getUint8(offset + 4), 'column kind'),
-    });
-  }
-
-  const expected =
-    offset + 8 * length + layout.reduce((sum, { kind }) => sum + length * bytesPerValue(kind), 0);
-
-  if (expected !== bytes.byteLength) {
-    throw new Error(`Block record holds ${bytes.byteLength} bytes, its layout needs ${expected}`);
+  if (needed !== reader.remaining) {
+    throw new Error(
+      `Block record holds ${reader.remaining} bytes of samples, its layout needs ${needed}`
+    );
   }
 
   const time = new Float64Array(length);
 
-  for (let index = 0; index < length; index++, offset += 8) {
-    time[index] = view.getFloat64(offset, true);
+  for (let index = 0; index < length; index++) {
+    time[index] = reader.f64();
   }
 
   const columns: PersistedColumn[] = layout.map(({ variableId, kind }) => {
     const values = allocateColumn(kind, length);
-    const size = bytesPerValue(kind);
 
-    for (let index = 0; index < length; index++, offset += size) {
-      values[index] =
-        kind === 'f32' ? view.getFloat32(offset, true) : view.getFloat64(offset, true);
+    for (let index = 0; index < length; index++) {
+      values[index] = kind === 'f32' ? reader.f32() : reader.f64();
     }
 
     return { variableId, values };
   });
 
-  return {
-    ref: { epochId: view.getUint32(0, true), index: view.getUint32(4, true) },
-    startSample: view.getUint32(8, true),
-    time,
-    columns,
-  };
+  return { ref, startSample, time, columns };
 }
 
-function encodeEpoch(epoch: EpochSpec): Uint8Array {
-  const bytes = new Uint8Array(12 + 8 * epoch.variables.length);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, checkU32(epoch.epochId, 'Epoch id'), true);
-  view.setUint32(4, checkU32(epoch.groupId, 'Group id'), true);
-  view.setUint32(8, epoch.variables.length, true);
-
-  epoch.variables.forEach((variable, index) => {
-    view.setUint32(12 + 8 * index, checkU32(variable.id, 'Variable id'), true);
-    view.setUint32(16 + 8 * index, checkU32(variable.type, 'Type code'), true);
-  });
-
-  return bytes;
-}
-
-function decodeEpoch(view: DataView): EpochSpec {
-  const count = view.getUint32(8, true);
-
-  if (view.byteLength !== 12 + 8 * count) {
-    throw new Error(`Epoch record holds ${view.byteLength} bytes for ${count} variables`);
+function encodeValue(writer: ByteWriter, value: TelemetryValue): void {
+  if (typeof value === 'number') {
+    writer.u8(VALUE_TAG.number).f64(value);
+  } else if (typeof value === 'boolean') {
+    writer.u8(VALUE_TAG.boolean).u8(value ? 1 : 0);
+  } else if (typeof value === 'bigint') {
+    writer.u8(VALUE_TAG.bigint).text(value.toString());
+  } else if (typeof value === 'string') {
+    writer.u8(VALUE_TAG.string).text(value);
+  } else {
+    writer.u8(VALUE_TAG.bytes).u32(value.byteLength, 'Blob size').raw(value);
   }
-
-  return {
-    epochId: view.getUint32(0, true),
-    groupId: view.getUint32(4, true),
-    variables: Array.from({ length: count }, (_, index) => ({
-      id: view.getUint32(12 + 8 * index, true),
-      type: view.getUint32(16 + 8 * index, true) as TypeCode,
-    })),
-  };
 }
 
-function encodeGap(gap: RecordedGap): Uint8Array {
-  const bytes = new Uint8Array(32);
-  const view = new DataView(bytes.buffer);
-  view.setUint32(0, checkU32(gap.epochId, 'Epoch id'), true);
-  view.setUint8(4, codeOf(GAP_KINDS, gap.kind));
-  view.setUint32(8, checkU32(gap.index, 'Gap index'), true);
-  view.setUint32(12, checkU32(gap.count, 'Gap count'), true);
-  view.setFloat64(16, gap.afterUs, true);
-  view.setFloat64(24, gap.untilUs, true);
-  return bytes;
-}
+function decodeValue(reader: ByteReader): TelemetryValue {
+  const tag = reader.u8();
 
-function decodeGap(view: DataView): RecordedGap {
-  if (view.byteLength !== 32) {
-    throw new Error(`Gap record holds ${view.byteLength} bytes, not 32`);
+  switch (tag) {
+    case VALUE_TAG.number:
+      return reader.f64();
+    case VALUE_TAG.boolean:
+      return reader.u8() !== 0;
+    case VALUE_TAG.bigint:
+      return BigInt(reader.text());
+    case VALUE_TAG.string:
+      return reader.text();
+    case VALUE_TAG.bytes:
+      return reader.raw(reader.u32());
+    default:
+      throw new Error(`Unknown value tag ${tag} in recording`);
   }
-
-  return {
-    epochId: view.getUint32(0, true),
-    kind: kindAt(GAP_KINDS, view.getUint8(4), 'gap kind'),
-    index: view.getUint32(8, true),
-    count: view.getUint32(12, true),
-    afterUs: view.getFloat64(16, true),
-    untilUs: view.getFloat64(24, true),
-  };
-}
-
-function encodeBoundary(boundary: Boundary): Uint8Array {
-  const bytes = new Uint8Array(16);
-  const view = new DataView(bytes.buffer);
-  view.setUint8(0, codeOf(BOUNDARY_KINDS, boundary.kind));
-  view.setFloat64(8, boundary.timeUs, true);
-  return bytes;
-}
-
-function decodeBoundary(view: DataView): Boundary {
-  if (view.byteLength !== 16) {
-    throw new Error(`Boundary record holds ${view.byteLength} bytes, not 16`);
-  }
-
-  return {
-    kind: kindAt(BOUNDARY_KINDS, view.getUint8(0), 'boundary kind'),
-    timeUs: view.getFloat64(8, true),
-  };
 }
 
 function payloadOf(record: RecordingRecord): Uint8Array {
-  if (record.kind === 'epoch') {
-    return encodeEpoch(record.epoch);
-  }
-
   if (record.kind === 'block') {
     return encodeBlock(record.block);
   }
 
-  if (record.kind === 'gap') {
-    return encodeGap(record.gap);
+  const writer = new ByteWriter();
+
+  if (record.kind === 'epoch') {
+    const { epoch } = record;
+    writer
+      .u32(epoch.epochId, 'Epoch id')
+      .u32(epoch.groupId, 'Group id')
+      .u32(epoch.variables.length, 'Variable count');
+
+    for (const variable of epoch.variables) {
+      writer.u32(variable.id, 'Variable id').u32(variable.type, 'Type code').text(variable.name);
+    }
+  } else if (record.kind === 'epoch-closed') {
+    writer.u32(record.epochId, 'Epoch id');
+  } else if (record.kind === 'gap') {
+    const { gap } = record;
+    writer
+      .u32(gap.epochId, 'Epoch id')
+      .u8(codeOf(GAP_KINDS, gap.kind, 'gap kind'))
+      .skip(3)
+      .u32(gap.index, 'Gap index')
+      .u32(gap.count, 'Gap count')
+      .f64(gap.startUs)
+      .f64(gap.afterUs)
+      .f64(gap.untilUs);
+  } else if (record.kind === 'boundary') {
+    writer
+      .u8(codeOf(BOUNDARY_KINDS, record.boundary.kind, 'boundary kind'))
+      .skip(7)
+      .f64(record.boundary.timeUs);
+  } else {
+    const { value } = record;
+    writer.u32(value.variableId, 'Variable id').text(value.name).f64(value.timeUs);
+    encodeValue(writer, value.value);
   }
 
-  return encodeBoundary(record.boundary);
+  return writer.done();
 }
 
-function concat(parts: readonly Uint8Array[]): Uint8Array {
+function decodeRecord(kind: number, payload: Uint8Array): RecordingRecord | undefined {
+  if (kind === RECORD_KIND.block) {
+    return { kind: 'block', block: decodeBlock(payload) };
+  }
+
+  const reader = new ByteReader(payload);
+  let record: RecordingRecord;
+
+  switch (kind) {
+    case RECORD_KIND.epoch: {
+      const epochId = reader.u32();
+      const groupId = reader.u32();
+      const count = reader.u32();
+
+      if (12 * count > reader.remaining) {
+        throw new Error(`Epoch record cannot hold ${count} variables`);
+      }
+
+      const variables = Array.from({ length: count }, () => ({
+        id: reader.u32(),
+        type: reader.u32() as TypeCode,
+        name: reader.text(),
+      }));
+      record = { kind: 'epoch', epoch: { epochId, groupId, variables } };
+      break;
+    }
+    case RECORD_KIND['epoch-closed']:
+      record = { kind: 'epoch-closed', epochId: reader.u32() };
+      break;
+    case RECORD_KIND.gap: {
+      const epochId = reader.u32();
+      const gapKind = kindAt(GAP_KINDS, reader.u8(), 'gap kind');
+      reader.skip(3);
+      record = {
+        kind: 'gap',
+        gap: {
+          epochId,
+          kind: gapKind,
+          index: reader.u32(),
+          count: reader.u32(),
+          startUs: reader.f64(),
+          afterUs: reader.f64(),
+          untilUs: reader.f64(),
+        },
+      };
+      break;
+    }
+    case RECORD_KIND.boundary: {
+      const boundaryKind = kindAt(BOUNDARY_KINDS, reader.u8(), 'boundary kind');
+      reader.skip(7);
+      record = { kind: 'boundary', boundary: { kind: boundaryKind, timeUs: reader.f64() } };
+      break;
+    }
+    case RECORD_KIND.value: {
+      const variableId = reader.u32();
+      const name = reader.text();
+      const timeUs = reader.f64();
+      record = { kind: 'value', value: { variableId, name, timeUs, value: decodeValue(reader) } };
+      break;
+    }
+    default:
+      return undefined;
+  }
+
+  reader.end(record.kind);
+  return record;
+}
+
+/**
+ * The bytes a recording starts with: the magic, the header size and the header.
+ *
+ * @throws If the start time is not a finite number, which JSON could not carry.
+ */
+export function encodeRecordingHeader(header: RecordingHeader): Uint8Array {
+  if (!Number.isFinite(header.startedAtMs)) {
+    throw new RangeError(`Recording start must be a finite time, got ${header.startedAtMs}`);
+  }
+
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  return new ByteWriter(MAGIC.length + 4 + json.byteLength)
+    .raw(MAGIC)
+    .u32(json.byteLength, 'Header size')
+    .raw(json)
+    .done();
+}
+
+/**
+ * The bytes of one record, to append after the header.
+ */
+export function encodeRecordingRecord(record: RecordingRecord): Uint8Array {
+  const payload = payloadOf(record);
+  return new ByteWriter(RECORD_HEADER_SIZE + payload.byteLength)
+    .u8(RECORD_KIND[record.kind])
+    .skip(3)
+    .u32(payload.byteLength, 'Record size')
+    .u32(crc32(payload), 'Record check')
+    .raw(payload)
+    .done();
+}
+
+/**
+ * The record a recorder writes for an ingestion event.
+ */
+export function recordOf(event: IngestionEvent): RecordingRecord {
+  switch (event.type) {
+    case 'epoch-opened':
+      return { kind: 'epoch', epoch: event.epoch };
+    case 'epoch-closed':
+      return { kind: 'epoch-closed', epochId: event.epochId };
+    case 'gap':
+      return { kind: 'gap', gap: event.gap };
+    case 'boundary':
+      return { kind: 'boundary', boundary: event.boundary };
+    default:
+      return { kind: 'value', value: event.value };
+  }
+}
+
+/**
+ * Lay out a whole recording.
+ */
+export function serializeRecording(recording: Recording): Uint8Array {
+  const parts = [
+    encodeRecordingHeader(recording.header),
+    ...recording.records.map((record) => encodeRecordingRecord(record)),
+  ];
   const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
   let offset = 0;
 
@@ -426,45 +681,6 @@ function concat(parts: readonly Uint8Array[]): Uint8Array {
   }
 
   return bytes;
-}
-
-/**
- * The bytes a recording starts with: the magic, the header size and the header.
- */
-export function encodeRecordingHeader(header: RecordingHeader): Uint8Array {
-  if (!Number.isFinite(header.startedAtMs)) {
-    throw new RangeError(`Recording start must be a finite time, got ${header.startedAtMs}`);
-  }
-
-  const json = new TextEncoder().encode(JSON.stringify(header));
-  const bytes = new Uint8Array(MAGIC.length + 4 + json.byteLength);
-  bytes.set(MAGIC, 0);
-  new DataView(bytes.buffer).setUint32(MAGIC.length, json.byteLength, true);
-  bytes.set(json, MAGIC.length + 4);
-  return bytes;
-}
-
-/**
- * The bytes of one record, to append after the header.
- */
-export function encodeRecordingRecord(record: RecordingRecord): Uint8Array {
-  const payload = payloadOf(record);
-  const bytes = new Uint8Array(RECORD_HEADER_SIZE + payload.byteLength);
-  const view = new DataView(bytes.buffer);
-  view.setUint8(0, RECORD_KIND[record.kind]);
-  view.setUint32(4, payload.byteLength, true);
-  bytes.set(payload, RECORD_HEADER_SIZE);
-  return bytes;
-}
-
-/**
- * Lay out a whole recording.
- */
-export function serializeRecording(recording: Recording): Uint8Array {
-  return concat([
-    encodeRecordingHeader(recording.header),
-    ...recording.records.map((record) => encodeRecordingRecord(record)),
-  ]);
 }
 
 function decodeHeader(bytes: Uint8Array): { header: RecordingHeader; end: number } {
@@ -484,52 +700,69 @@ function decodeHeader(bytes: Uint8Array): { header: RecordingHeader; end: number
   return { header, end: start + size };
 }
 
-function decodeRecord(kind: number, payload: Uint8Array): RecordingRecord | undefined {
-  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+function damageOf(
+  kind: number,
+  payload: Uint8Array,
+  check: number
+): string | RecordingRecord | undefined {
+  if (crc32(payload) !== check) {
+    return 'check mismatch';
+  }
 
-  switch (kind) {
-    case RECORD_KIND.epoch:
-      return { kind: 'epoch', epoch: decodeEpoch(view) };
-    case RECORD_KIND.block:
-      return { kind: 'block', block: decodeBlock(payload) };
-    case RECORD_KIND.gap:
-      return { kind: 'gap', gap: decodeGap(view) };
-    case RECORD_KIND.boundary:
-      return { kind: 'boundary', boundary: decodeBoundary(view) };
-    default:
-      return undefined;
+  try {
+    return decodeRecord(kind, payload);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
   }
 }
 
 /**
- * Read a whole recording. A recording cut short in the middle of a record still gives the
- * records before it, with {@link Recording.truncatedAt} saying where it was cut.
+ * Read a whole recording. A recording cut short, or whose last record is damaged, still gives
+ * the records before, with {@link Recording.truncatedAt} saying where it ends; a damaged record
+ * in the middle is skipped and listed in {@link Recording.damaged}.
  *
- * @throws If the bytes are not a recording, the version is not 1, or a record is malformed.
+ * @throws If the bytes are not a recording, or its version is not 1.
  */
 export function deserializeRecording(bytes: Uint8Array): Recording {
   const { header, end } = decodeHeader(bytes);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const records: RecordingRecord[] = [];
-  let offset = end;
+  const damaged: RecordingDamage[] = [];
+  let truncatedAt: number | undefined;
 
-  while (offset < bytes.byteLength) {
+  for (let offset = end; offset < bytes.byteLength;) {
     const start = offset + RECORD_HEADER_SIZE;
-    const size = start > bytes.byteLength ? 0 : view.getUint32(offset + 4, true);
+    const stop = start > bytes.byteLength ? start : start + view.getUint32(offset + 4, true);
 
-    if (start + size > bytes.byteLength) {
-      return { header, records, truncatedAt: offset };
+    if (stop > bytes.byteLength) {
+      truncatedAt = offset;
+      break;
     }
 
-    const kind = view.getUint8(offset);
-    const record = decodeRecord(kind, bytes.subarray(start, start + size));
+    const result = damageOf(
+      view.getUint8(offset),
+      bytes.subarray(start, stop),
+      view.getUint32(offset + 8, true)
+    );
 
-    if (record) {
-      records.push(record);
+    if (typeof result === 'string') {
+      if (stop === bytes.byteLength) {
+        truncatedAt = offset;
+        break;
+      }
+
+      damaged.push({ offset, reason: result });
+    } else if (result) {
+      records.push(result);
     }
 
-    offset = start + size;
+    offset = stop;
   }
 
-  return { header, records };
+  return {
+    header,
+    records,
+    ...(truncatedAt === undefined ? {} : { truncatedAt }),
+    ...(damaged.length === 0 ? {} : { damaged }),
+  };
 }

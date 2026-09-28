@@ -1,12 +1,22 @@
 import type { Block, BlockLayout } from './block';
 import { type ColumnKind, columnKindOf, isWideInteger, toNumber } from './storage';
-import type { EpochSpec, TelemetryValue, VariableSpec } from './types';
+import type { RecordedEpoch, RecordedGap, SchemaEntry, TelemetryValue } from './types';
 
 /**
- * How many samples the first block of an epoch holds; each next block holds twice as many, up to
- * the store's block size, so that short epochs take little memory.
+ * How many samples the first block of an epoch holds. Each block that fills makes the next one
+ * twice as large, up to the store's block size, so that short epochs take little memory; a block
+ * sealed before it filled leaves the size as it is.
  */
 export const FIRST_BLOCK_SIZE = 1024;
+
+/** What one gap record is counted as against the memory cap. */
+export const GAP_BYTES = 64;
+
+/** {@link Epoch.receive}: the sample's time is before the previous one's. */
+export const RECEIVED_BACKWARDS = -2;
+
+/** {@link Epoch.receive}: the sample has the previous one's time, so it is the same sample. */
+export const RECEIVED_DUPLICATE = -1;
 
 /**
  * Samples missing inside an epoch, before the sample stored at {@link EpochGap.index}.
@@ -16,31 +26,36 @@ export interface EpochGap {
   readonly kind: 'dropped' | 'not-stored';
 
   /** The epoch sample index of the first stored sample after the gap. */
-  readonly index: number;
+  index: number;
 
   /** How many samples are missing. */
   count: number;
 
-  /** The time of the last stored sample before the gap, or NaN if there is none. */
+  /** Where the gap starts: the last sample before it, or the first sample not kept. */
+  readonly startUs: number;
+
+  /** The time of the last sample kept before the gap, or NaN if there is none. */
   readonly afterUs: number;
 
-  /** The time of the first stored sample after the gap, or NaN until it arrives. */
+  /** The time of the first sample kept after the gap, or NaN until it arrives. */
   untilUs: number;
 }
 
 /**
- * What an epoch needs from the store to hold its samples.
+ * What an epoch needs from the store around it.
  */
-export interface BlockSource {
-  /**
-   * A new block, or undefined if the memory cap does not allow one.
-   */
+export interface EpochHost {
+  /** A new block, or undefined if the memory cap does not allow one. */
   allocate(layout: BlockLayout): Block | undefined;
 
-  /**
-   * A block will take no more samples.
-   */
+  /** A block will take no more samples. */
   seal(block: Block): void;
+
+  /** A gap will not change any more. */
+  gapFinal(epoch: Epoch, gap: EpochGap): void;
+
+  /** Memory outside the blocks was taken, or given back when negative. */
+  account(bytes: number): void;
 }
 
 /**
@@ -48,7 +63,9 @@ export interface BlockSource {
  *
  * The robot restarts a group's sequence numbers whenever the group is defined, so each epoch
  * tracks them on its own: a jump in the sequence is a gap of dropped samples, which is different
- * from the time outside any epoch, when the variable was not streamed at all.
+ * from the time outside any epoch, when the variable was not streamed at all. Time never goes
+ * back inside an epoch, so a sample is a duplicate only when its time repeats; a sequence number
+ * that looks behind the expected one, with a later time, wrapped over dropped samples.
  */
 export class Epoch {
   /** The session's id for the epoch. */
@@ -57,8 +74,8 @@ export class Epoch {
   /** The robot's group slot. */
   readonly groupId: number;
 
-  /** The variables of each sample, in wire order. */
-  readonly variables: readonly VariableSpec[];
+  /** The variables of each sample, in wire order, with their names. */
+  readonly variables: readonly SchemaEntry[];
 
   /** For each variable, its column among the numeric ones, or -1 for a blob. */
   readonly columnOf: readonly number[];
@@ -66,14 +83,14 @@ export class Epoch {
   /** For each variable, whether its values may lose precision as floats. */
   readonly wide: readonly boolean[];
 
-  /** The blocks, oldest first. */
+  /** The blocks in memory or in the persistence layer, oldest first. */
   readonly blocks: Block[] = [];
 
-  /** Dropped and unstored samples, in the order they happened. */
+  /** Dropped and unstored samples, in sample order. */
   readonly gaps: EpochGap[] = [];
 
-  /** The time of the first stored sample, or NaN. */
-  firstTimeUs = Number.NaN;
+  /** The time of the first sample ever stored, or NaN. */
+  firstStoredUs = Number.NaN;
 
   /** The time of the last stored sample, or NaN. */
   lastTimeUs = Number.NaN;
@@ -81,33 +98,41 @@ export class Epoch {
   /** How many samples were stored. */
   storedCount = 0;
 
+  /** How many stored samples the memory cap later made the store let go of. */
+  trimmedCount = 0;
+
   /** How many samples the sequence numbers show as lost. */
   droppedCount = 0;
 
   private readonly numericIds: readonly number[];
   private readonly kinds: readonly ColumnKind[];
   private readonly row: Float64Array;
+  private readonly pending: EpochGap[] = [];
   private expectedSequence: number | undefined;
+  private capacity: number;
+  private nextBlockIndex = 0;
   private pendingUnstored = 0;
+  private unstoredFromUs = Number.NaN;
   private lastSeenUs = Number.NEGATIVE_INFINITY;
-  private unresolvedGap = 0;
   private isClosed = false;
 
   /**
-   * @param spec The group layout.
+   * @param spec The group layout, with names.
    * @param blockSize How many samples a block holds at most.
    * @param sequenceModulus Where the robot's sequence numbers wrap.
-   * @param source Where blocks come from.
+   * @param host Where blocks come from and where changes go.
    */
   constructor(
-    spec: EpochSpec,
+    spec: RecordedEpoch & { readonly firstSequence?: number },
     private readonly blockSize: number,
     private readonly sequenceModulus: number,
-    private readonly source: BlockSource
+    private readonly host: EpochHost
   ) {
     this.id = spec.epochId;
     this.groupId = spec.groupId;
     this.variables = [...spec.variables];
+    this.expectedSequence = spec.firstSequence;
+    this.capacity = Math.min(blockSize, FIRST_BLOCK_SIZE);
 
     const numericIds: number[] = [];
     const kinds: ColumnKind[] = [];
@@ -130,9 +155,19 @@ export class Epoch {
     this.row = new Float64Array(numericIds.length);
   }
 
-  /** Whether the group was redefined or the link lost the robot since. */
+  /** Whether the epoch takes no more samples. */
   get closed(): boolean {
     return this.isClosed;
+  }
+
+  /** The time of the first sample still kept, or NaN. */
+  get firstTimeUs(): number {
+    return this.blocks.find((block) => block.length > 0)?.firstTimeUs ?? Number.NaN;
+  }
+
+  /** How many samples are kept. */
+  get keptCount(): number {
+    return this.storedCount - this.trimmedCount;
   }
 
   /** How many samples arrived since the last stored one without being kept. */
@@ -140,56 +175,49 @@ export class Epoch {
     return this.pendingUnstored;
   }
 
+  /** The time of the first sample of the current unstored run, or NaN. */
+  get unstoredFrom(): number {
+    return this.unstoredFromUs;
+  }
+
+  /** The epoch as a recording remembers it. */
+  get recorded(): RecordedEpoch {
+    return { epochId: this.id, groupId: this.groupId, variables: this.variables };
+  }
+
   /**
-   * Account for an arriving sample before it is stored: its time and its sequence number.
-   *
-   * A sequence number up to half the modulus behind the expected one is a duplicate or a late
-   * sample, which the ordered link should never deliver; it is refused rather than counted as a
-   * wrap of dropped samples.
+   * Account for an arriving sample before it is stored: its time and its sequence number. A
+   * sample the memory cap then keeps out of the history still moves the sequence on, since it did
+   * arrive. A duplicate or a sample from the past moves it on only when it carries the expected
+   * number, so that a stale sample does not look like a wrap over dropped ones.
    *
    * @param sequence The sample's sequence number.
    * @param timeUs When it was taken.
-   * @returns How many samples before it never arrived, or -1 if it is to be ignored.
-   * @throws If the time is before the previous sample's.
+   * @returns How many samples before it never arrived, or {@link RECEIVED_DUPLICATE} or
+   *   {@link RECEIVED_BACKWARDS} for a sample to leave out of the history.
    */
   receive(sequence: number, timeUs: number): number {
-    if (timeUs < this.lastSeenUs) {
-      throw new RangeError(
-        `Epoch ${this.id} got a sample at ${timeUs} µs after one at ${this.lastSeenUs} µs`
-      );
-    }
-
-    const expected = this.expectedSequence;
     const modulus = this.sequenceModulus;
-    const missing = expected === undefined ? sequence : (sequence - expected + modulus) % modulus;
+    const expected = this.expectedSequence;
 
-    if (expected !== undefined && missing > modulus / 2) {
-      return -1;
+    if (timeUs <= this.lastSeenUs) {
+      if (sequence === expected) {
+        this.expectedSequence = (sequence + 1) % modulus;
+      }
+
+      return timeUs < this.lastSeenUs ? RECEIVED_BACKWARDS : RECEIVED_DUPLICATE;
     }
 
+    const missing = expected === undefined ? 0 : (sequence - expected + modulus) % modulus;
     this.expectedSequence = (sequence + 1) % modulus;
     this.lastSeenUs = timeUs;
 
     if (missing > 0) {
-      this.recordGap('dropped', missing);
+      this.droppedCount += missing;
+      this.addGap('dropped', missing, this.lastTimeUs, true);
     }
 
     return missing;
-  }
-
-  /**
-   * Account for samples known to be lost after the last one, so that the next sequence number is
-   * not counted against them again. The count must be exact: those sequence numbers are skipped.
-   *
-   * @param count How many samples were lost.
-   */
-  markDropped(count: number): void {
-    if (count <= 0) {
-      return;
-    }
-
-    this.expectedSequence = ((this.expectedSequence ?? 0) + count) % this.sequenceModulus;
-    this.recordGap('dropped', count);
   }
 
   /**
@@ -203,14 +231,15 @@ export class Epoch {
     const block = this.writableBlock();
 
     if (!block) {
+      if (this.pendingUnstored === 0) {
+        this.unstoredFromUs = timeUs;
+      }
+
       this.pendingUnstored++;
       return false;
     }
 
-    if (this.pendingUnstored > 0) {
-      this.recordGap('not-stored', this.pendingUnstored);
-      this.pendingUnstored = 0;
-    }
+    this.endUnstoredRun(timeUs);
 
     for (let variable = 0; variable < this.columnOf.length; variable++) {
       const column = this.columnOf[variable];
@@ -223,25 +252,35 @@ export class Epoch {
     block.append(timeUs, this.row);
 
     if (this.storedCount === 0) {
-      this.firstTimeUs = timeUs;
+      this.firstStoredUs = timeUs;
     }
 
     this.storedCount++;
     this.lastTimeUs = timeUs;
-
-    while (this.unresolvedGap < this.gaps.length) {
-      this.gaps[this.unresolvedGap++].untilUs = timeUs;
-    }
+    this.resolvePending(timeUs);
 
     if (block.full) {
-      this.source.seal(block);
+      this.capacity = Math.min(this.blockSize, this.capacity * 2);
+      this.host.seal(block);
     }
 
     return true;
   }
 
   /**
-   * Take no more samples: seal the last block and keep a trailing unstored run as a gap.
+   * Seal the block being filled, if it holds anything, so that it can be written away now. The
+   * next sample starts a new block.
+   */
+  sealOpenBlock(): void {
+    const last = this.blocks.at(-1);
+
+    if (last && !last.sealed && last.length > 0) {
+      this.host.seal(last);
+    }
+  }
+
+  /**
+   * Take no more samples: seal the last block, and make the gaps still open final.
    */
   close(): void {
     if (this.isClosed) {
@@ -249,16 +288,78 @@ export class Epoch {
     }
 
     this.isClosed = true;
-    const last = this.blocks.at(-1);
+    this.sealOpenBlock();
+    this.endUnstoredRun(Number.NaN);
+    this.resolvePending(Number.NaN);
+  }
 
-    if (last && !last.sealed) {
-      this.source.seal(last);
+  /**
+   * Let go of a sealed block to make room, keeping the stretch it covered as a gap of samples not
+   * stored.
+   */
+  dropBlock(block: Block): void {
+    const position = this.blocks.indexOf(block);
+
+    if (position < 0) {
+      return;
     }
 
-    if (this.pendingUnstored > 0) {
-      this.recordGap('not-stored', this.pendingUnstored);
-      this.pendingUnstored = 0;
+    this.blocks.splice(position, 1);
+    this.trimmedCount += block.length;
+    const start = block.startSample;
+    const end = start + block.length;
+    const inside = this.gaps.filter((gap) => gap.index > start && gap.index < end);
+
+    for (const gap of inside) {
+      this.gaps.splice(this.gaps.indexOf(gap), 1);
+      this.host.account(-GAP_BYTES);
     }
+
+    const next = this.blocks[position];
+    const previous = this.gaps.find((gap) => gap.kind === 'not-stored' && gap.index === start);
+
+    if (previous) {
+      previous.index = end;
+      previous.count += block.length;
+      previous.untilUs = next?.firstTimeUs ?? Number.NaN;
+      return;
+    }
+
+    const gap: EpochGap = {
+      kind: 'not-stored',
+      index: end,
+      count: block.length,
+      startUs: block.firstTimeUs,
+      afterUs: this.blocks[position - 1]?.lastTimeUs ?? Number.NaN,
+      untilUs: next?.firstTimeUs ?? Number.NaN,
+    };
+    const after = this.gaps.findIndex((other) => other.index > end);
+    this.gaps.splice(after < 0 ? this.gaps.length : after, 0, gap);
+    this.host.account(GAP_BYTES);
+  }
+
+  /**
+   * Forget every sample and gap, keeping the sequence, so that an open epoch carries on from
+   * nothing.
+   */
+  clearHistory(): void {
+    this.host.account(-GAP_BYTES * this.gaps.length);
+    this.blocks.length = 0;
+    this.gaps.length = 0;
+    this.pending.length = 0;
+    this.firstStoredUs = Number.NaN;
+    this.lastTimeUs = Number.NaN;
+    this.storedCount = 0;
+    this.trimmedCount = 0;
+    this.droppedCount = 0;
+    this.pendingUnstored = 0;
+    this.unstoredFromUs = Number.NaN;
+    this.capacity = Math.min(this.blockSize, FIRST_BLOCK_SIZE);
+  }
+
+  /** A gap as a recording remembers it. */
+  recordedGap(gap: EpochGap): RecordedGap {
+    return { epochId: this.id, ...gap };
   }
 
   private writableBlock(): Block | undefined {
@@ -268,39 +369,76 @@ export class Epoch {
       return last;
     }
 
-    const block = this.source.allocate({
-      ref: { epochId: this.id, index: this.blocks.length },
+    const block = this.host.allocate({
+      ref: { epochId: this.id, index: this.nextBlockIndex },
       startSample: this.storedCount,
-      capacity: Math.min(this.blockSize, FIRST_BLOCK_SIZE * 2 ** this.blocks.length),
+      capacity: this.capacity,
       variableIds: this.numericIds,
       kinds: this.kinds,
     });
 
     if (block) {
+      this.nextBlockIndex++;
       this.blocks.push(block);
     }
 
     return block;
   }
 
-  private recordGap(kind: EpochGap['kind'], count: number): void {
-    if (kind === 'dropped') {
-      this.droppedCount += count;
-    }
-
-    const last = this.gaps.at(-1);
-
-    if (last && last.kind === kind && last.index === this.storedCount) {
-      last.count += count;
+  private endUnstoredRun(untilUs: number): void {
+    if (this.pendingUnstored === 0) {
       return;
     }
 
-    this.gaps.push({
+    const gap = this.addGap('not-stored', this.pendingUnstored, this.unstoredFromUs, false);
+    gap.untilUs = untilUs;
+    this.pendingUnstored = 0;
+    this.unstoredFromUs = Number.NaN;
+    this.host.gapFinal(this, gap);
+  }
+
+  private resolvePending(untilUs: number): void {
+    for (const gap of this.pending) {
+      gap.untilUs = untilUs;
+      this.host.gapFinal(this, gap);
+    }
+
+    this.pending.length = 0;
+  }
+
+  private addGap(
+    kind: EpochGap['kind'],
+    count: number,
+    startUs: number,
+    pending: boolean
+  ): EpochGap {
+    const last = this.gaps.at(-1);
+
+    if (
+      last &&
+      last.kind === kind &&
+      last.index === this.storedCount &&
+      this.pending.includes(last)
+    ) {
+      last.count += count;
+      return last;
+    }
+
+    const gap: EpochGap = {
       kind,
       index: this.storedCount,
       count,
+      startUs,
       afterUs: this.lastTimeUs,
       untilUs: Number.NaN,
-    });
+    };
+    this.gaps.push(gap);
+    this.host.account(GAP_BYTES);
+
+    if (pending) {
+      this.pending.push(gap);
+    }
+
+    return gap;
   }
 }

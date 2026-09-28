@@ -13,7 +13,7 @@ export {
   COLUMN_BREAKS,
   COLUMN_HAS_DATA,
   COLUMN_HAS_NAN,
-  Decimation,
+  type Decimation,
   type DecimationStats,
 } from './decimation';
 export { MemoryBlockPersistence } from './memory-persistence';
@@ -26,9 +26,10 @@ export {
   encodeRecordingRecord,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
+  recordOf,
   serializeRecording,
-  type RecordedGap,
   type Recording,
+  type RecordingDamage,
   type RecordingHeader,
   type RecordingRecord,
   type RecordingVariable,
@@ -44,11 +45,11 @@ export {
 export type { ColumnKind } from './storage';
 export {
   DEFAULT_BLOCK_SIZE,
+  DEFAULT_FLUSH_INTERVAL_MS,
   DEFAULT_MEMORY_CAP_BYTES,
   TelemetryStore,
   type DecimateOptions,
   type TelemetryStoreOptions,
-  type TimeRange,
   type VariableInfo,
 } from './store';
 export type {
@@ -57,11 +58,21 @@ export type {
   EpochSpec,
   Gap,
   GapKind,
+  HistoryMark,
+  IngestionEvent,
   LatestValue,
   NumericColumn,
+  RecordedEpoch,
+  RecordedGap,
+  RecordedValue,
   SampleRun,
+  SampleValue,
+  SchemaEntry,
   StoreStatus,
   TelemetryEvent,
   TelemetryValue,
+  TimeRange,
+  VariableRef,
   VariableSpec,
 } from './types';
+export { historyWindow, liveWindow, nextUp } from './window';

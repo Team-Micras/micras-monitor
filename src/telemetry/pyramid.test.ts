@@ -19,9 +19,13 @@ function bruteForce(values: readonly number[], start: number, end: number) {
 
   return {
     nan: numbers.length !== slice.length,
-    min: Math.min(...numbers),
-    max: Math.max(...numbers),
+    min: numbers.reduce((min, value) => Math.min(min, value), Number.POSITIVE_INFINITY),
+    max: numbers.reduce((max, value) => Math.max(max, value), Number.NEGATIVE_INFINITY),
   };
+}
+
+function boundsOf(accumulator: MinMaxAccumulator) {
+  return { nan: accumulator.nan, min: accumulator.min, max: accumulator.max };
 }
 
 function signal(length: number, seed: number): number[] {
@@ -59,15 +63,14 @@ describe('MinMaxPyramid', () => {
       const bounds = new MinMaxAccumulator();
       pyramid.addSamples(Float64Array.from(values), start, end, bounds);
 
-      expect({ nan: bounds.nan, min: bounds.min, max: bounds.max }).toEqual(
-        bruteForce(values, start, end)
-      );
+      expect(boundsOf(bounds)).toEqual(bruteForce(values, start, end));
     }
   });
 
-  test('marks every range that holds a NaN and keeps the bounds of the rest', () => {
+  test('keeps the bounds of the numbers around a NaN and marks the NaN apart', () => {
     const values = signal(1024, 3);
     values[517] = Number.NaN;
+    values[3] = Number.NaN;
     const pyramid = filled(values, 1024);
     const raw = Float64Array.from(values);
 
@@ -77,11 +80,12 @@ describe('MinMaxPyramid', () => {
       [517, 518],
       [0, 517],
       [518, 1024],
+      [16, 1008],
     ]) {
       const bounds = new MinMaxAccumulator();
       pyramid.addSamples(raw, start, end, bounds);
 
-      expect(bounds.nan).toBe(start <= 517 && 517 < end);
+      expect(boundsOf(bounds)).toEqual(bruteForce(values, start, end));
     }
   });
 
@@ -89,6 +93,7 @@ describe('MinMaxPyramid', () => {
     const values = signal(700, 4);
     values[100] = 50;
     values[650] = -50;
+    values[333] = Number.NaN;
     const pyramid = filled(values, 1024);
     pyramid.seal();
     const leaves = Math.ceil(values.length / LEAF_SIZE);
@@ -97,12 +102,24 @@ describe('MinMaxPyramid', () => {
       for (let end = first + 1; end <= leaves; end += 5) {
         const bounds = new MinMaxAccumulator();
         pyramid.addLeaves(first, end, bounds);
-        const expected = bruteForce(values, first * LEAF_SIZE, end * LEAF_SIZE);
 
-        expect([bounds.min, bounds.max]).toEqual([expected.min, expected.max]);
+        expect(boundsOf(bounds)).toEqual(bruteForce(values, first * LEAF_SIZE, end * LEAF_SIZE));
         expect(bounds.rawSamples).toBe(0);
       }
     }
+  });
+
+  test('shrinks to the samples it holds once sealed and compacted, with the same answers', () => {
+    const values = signal(750, 6);
+    const pyramid = filled(values, 65_536);
+    pyramid.seal();
+    const before = pyramid.byteLength;
+    pyramid.compact();
+    const bounds = new MinMaxAccumulator();
+    pyramid.addLeaves(0, Math.ceil(750 / LEAF_SIZE), bounds);
+
+    expect(pyramid.byteLength).toBeLessThan(before / 50);
+    expect(boundsOf(bounds)).toEqual(bruteForce(values, 0, 750));
   });
 
   test('reads at most a few entries per level, however long the range', () => {
@@ -122,10 +139,7 @@ describe('MinMaxPyramid', () => {
 
       expect(bounds.pyramidEntries).toBeLessThanOrEqual(perLevel * pyramid.levels);
       expect(bounds.rawSamples).toBeLessThan(2 * LEAF_SIZE);
-      expect([bounds.min, bounds.max]).toEqual([
-        bruteForce(values, start, end).min,
-        bruteForce(values, start, end).max,
-      ]);
+      expect(boundsOf(bounds)).toEqual(bruteForce(values, start, end));
     }
   });
 });

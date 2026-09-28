@@ -2,17 +2,21 @@ import { describe, expect, test } from 'vitest';
 
 import { TypeCode } from '@/protocol';
 
+import { crc32 } from './crc32';
 import { MemoryBlockPersistence } from './memory-persistence';
 import {
   decodeBlock,
   deserializeRecording,
   encodeBlock,
   encodeRecordingHeader,
+  encodeRecordingRecord,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
+  recordOf,
   serializeRecording,
   type Recording,
   type RecordingHeader,
+  type RecordingRecord,
 } from './recording';
 
 const HEADER: RecordingHeader = {
@@ -27,57 +31,72 @@ const HEADER: RecordingHeader = {
   ],
 };
 
-const RECORDING: Recording = {
-  header: HEADER,
-  records: [
-    {
-      kind: 'epoch',
-      epoch: {
-        epochId: 1,
-        groupId: 0,
-        variables: [
-          { id: 0, type: TypeCode.F32 },
-          { id: 1, type: TypeCode.U32 },
-        ],
-      },
+const RECORDS: readonly RecordingRecord[] = [
+  {
+    kind: 'epoch',
+    epoch: {
+      epochId: 1,
+      groupId: 0,
+      variables: [
+        { id: 0, name: 'odometry/velocity', type: TypeCode.F32 },
+        { id: 1, name: 'localizer/accepted', type: TypeCode.U32 },
+      ],
     },
-    {
-      kind: 'block',
-      block: {
-        ref: { epochId: 1, index: 0 },
-        startSample: 0,
-        time: new Float64Array([0, 125, 250.5, 2 ** 40]),
-        columns: [
-          {
-            variableId: 0,
-            values: new Float32Array([1.5, Number.NaN, -0, Number.NEGATIVE_INFINITY]),
-          },
-          { variableId: 1, values: new Float64Array([4_294_967_295, 16_777_217, 0, 1]) },
-        ],
-      },
+  },
+  {
+    kind: 'block',
+    block: {
+      ref: { epochId: 1, index: 0 },
+      startSample: 0,
+      time: new Float64Array([0, 125, 250.5, 2 ** 40]),
+      columns: [
+        {
+          variableId: 0,
+          values: new Float32Array([1.5, Number.NaN, -0, Number.NEGATIVE_INFINITY]),
+        },
+        { variableId: 1, values: new Float64Array([4_294_967_295, 16_777_217, 0, 1]) },
+      ],
     },
-    {
-      kind: 'gap',
-      gap: {
-        epochId: 1,
-        kind: 'dropped',
-        index: 4,
-        count: 12,
-        afterUs: 2 ** 40,
-        untilUs: Number.NaN,
-      },
+  },
+  {
+    kind: 'gap',
+    gap: {
+      epochId: 1,
+      kind: 'dropped',
+      index: 4,
+      count: 12,
+      startUs: 2 ** 40,
+      afterUs: 2 ** 40,
+      untilUs: Number.NaN,
     },
-    { kind: 'boundary', boundary: { kind: 'reboot', timeUs: 2 ** 40 + 1 } },
-    {
-      kind: 'epoch',
-      epoch: { epochId: 2, groupId: 3, variables: [] },
+  },
+  { kind: 'boundary', boundary: { kind: 'reboot', timeUs: 2 ** 40 + 1 } },
+  { kind: 'boundary', boundary: { kind: 'schema', timeUs: 2 ** 40 + 2 } },
+  { kind: 'epoch-closed', epochId: 1 },
+  { kind: 'epoch', epoch: { epochId: 2, groupId: 3, variables: [] } },
+  {
+    kind: 'gap',
+    gap: {
+      epochId: 2,
+      kind: 'not-stored',
+      index: 0,
+      count: 1,
+      startUs: 3,
+      afterUs: Number.NaN,
+      untilUs: 7,
     },
-    {
-      kind: 'gap',
-      gap: { epochId: 2, kind: 'not-stored', index: 0, count: 1, afterUs: Number.NaN, untilUs: 7 },
-    },
-  ],
-};
+  },
+  {
+    kind: 'value',
+    value: { variableId: 2, name: 'maze', timeUs: 9, value: new Uint8Array([0xde, 0xad]) },
+  },
+  { kind: 'value', value: { variableId: 7, name: 'n', timeUs: Number.NaN, value: -(2n ** 63n) } },
+  { kind: 'value', value: { variableId: 8, name: 'ok', timeUs: 1, value: true } },
+  { kind: 'value', value: { variableId: 9, name: 'label', timeUs: 1, value: 'árvore' } },
+  { kind: 'value', value: { variableId: 10, name: 'x', timeUs: 1, value: -0.5 } },
+];
+
+const RECORDING: Recording = { header: HEADER, records: RECORDS };
 
 function withHeader(json: string): Uint8Array {
   const text = new TextEncoder().encode(json);
@@ -88,11 +107,21 @@ function withHeader(json: string): Uint8Array {
   return bytes;
 }
 
+function join(...parts: Uint8Array[]): Uint8Array {
+  const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
+  let offset = 0;
+
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.byteLength;
+  }
+
+  return bytes;
+}
+
 describe('recording format v1', () => {
   test('reads back exactly what it wrote', () => {
-    const bytes = serializeRecording(RECORDING);
-
-    expect(deserializeRecording(bytes)).toEqual(RECORDING);
+    expect(deserializeRecording(serializeRecording(RECORDING))).toEqual(RECORDING);
   });
 
   test('reads a recording at any offset of a larger buffer', () => {
@@ -103,20 +132,29 @@ describe('recording format v1', () => {
     expect(deserializeRecording(padded.subarray(3))).toEqual(RECORDING);
   });
 
-  test('starts with the magic and the JSON header', () => {
+  test('starts with the magic and the JSON header, and checks every record', () => {
     const bytes = encodeRecordingHeader(HEADER);
     const size = new DataView(bytes.buffer).getUint32(8, true);
+    const record = encodeRecordingRecord(RECORDS[5]);
+    const view = new DataView(record.buffer);
 
     expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x4d, 0x4d, 0x52, 0x45, 0x43, 0x0d, 0x0a]);
     expect(JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + size)))).toEqual(HEADER);
+    expect([view.getUint8(0), view.getUint32(4, true)]).toEqual([6, 4]);
+    expect(view.getUint32(8, true)).toBe(crc32(record.subarray(12)));
+    expect(crc32(new TextEncoder().encode('123456789'))).toBe(0xcbf43926);
   });
 
   test('skips records of kinds it does not know', () => {
-    const bytes = serializeRecording({ header: HEADER, records: [] });
-    const unknown = new Uint8Array([0x7f, 0, 0, 0, 3, 0, 0, 0, 1, 2, 3]);
-    const joined = new Uint8Array([...bytes, ...unknown]);
+    const payload = new Uint8Array([1, 2, 3]);
+    const unknown = new Uint8Array(12);
+    const view = new DataView(unknown.buffer);
+    view.setUint8(0, 0x7f);
+    view.setUint32(4, 3, true);
+    view.setUint32(8, crc32(payload), true);
+    const bytes = join(serializeRecording({ header: HEADER, records: [] }), unknown, payload);
 
-    expect(deserializeRecording(joined).records).toEqual([]);
+    expect(deserializeRecording(bytes)).toEqual({ header: HEADER, records: [] });
   });
 
   test('refuses what is not a version 1 recording', () => {
@@ -126,18 +164,43 @@ describe('recording format v1', () => {
     expect(() => deserializeRecording(new Uint8Array(20))).toThrow('Not a monitor recording');
     expect(() => deserializeRecording(future)).toThrow('version 2');
     expect(() => deserializeRecording(malformed)).toThrow('malformed');
+    expect(() => encodeRecordingHeader({ ...HEADER, startedAtMs: Number.NaN })).toThrow(RangeError);
   });
 
-  test('keeps the whole records of a recording cut short', () => {
+  test('keeps the whole records of a recording cut short or damaged at its end', () => {
     const bytes = serializeRecording(RECORDING);
-    const cut = deserializeRecording(bytes.subarray(0, bytes.byteLength - 5));
-    const torn = deserializeRecording(bytes.subarray(0, bytes.byteLength - 36));
+    const lastStart = bytes.byteLength - encodeRecordingRecord(RECORDS.at(-1) ?? RECORDS[0]).length;
+    const damaged = bytes.slice();
+    damaged[damaged.byteLength - 1] ^= 0xff;
 
-    expect(cut.records).toEqual(RECORDING.records.slice(0, -1));
-    expect(cut.truncatedAt).toBe(bytes.byteLength - 40);
-    expect(torn.records).toEqual(RECORDING.records.slice(0, -1));
-    expect(torn.truncatedAt).toBe(bytes.byteLength - 40);
+    for (const cut of [
+      bytes.subarray(0, bytes.byteLength - 5),
+      bytes.subarray(0, lastStart + 7),
+      damaged,
+    ]) {
+      const read = deserializeRecording(cut);
+
+      expect(read.records).toEqual(RECORDS.slice(0, -1));
+      expect(read.truncatedAt).toBe(lastStart);
+      expect(read.damaged).toBeUndefined();
+    }
+
     expect(deserializeRecording(bytes).truncatedAt).toBeUndefined();
+  });
+
+  test('skips a damaged record in the middle and says where', () => {
+    const header = encodeRecordingHeader(HEADER);
+    const records = RECORDS.map((record) => encodeRecordingRecord(record));
+    records[2][20] ^= 0x01;
+    const read = deserializeRecording(join(header, ...records));
+
+    expect(read.records).toEqual(RECORDS.filter((_, index) => index !== 2));
+    expect(read.damaged).toEqual([
+      {
+        offset: header.byteLength + records[0].byteLength + records[1].byteLength,
+        reason: 'check mismatch',
+      },
+    ]);
   });
 
   test('refuses values that do not fit the layout', () => {
@@ -149,10 +212,24 @@ describe('recording format v1', () => {
         columns: [],
       })
     ).toThrow(RangeError);
+    const bogus = JSON.parse('{"kind":"boundary","boundary":{"kind":"bogus","timeUs":0}}');
+
+    expect(() => encodeRecordingRecord(bogus)).toThrow('Unknown boundary kind');
+    expect(() => decodeBlock(new Uint8Array(12))).toThrow('early');
+  });
+
+  test('turns ingestion events into the records a recorder writes', () => {
+    expect(recordOf({ type: 'epoch-closed', epochId: 4 })).toEqual({
+      kind: 'epoch-closed',
+      epochId: 4,
+    });
+    expect(
+      recordOf({ type: 'boundary', boundary: { kind: 'reboot', timeUs: 2 ** 40 + 1 } })
+    ).toEqual(RECORDS[3]);
   });
 
   test('encodes blocks for the in-memory persistence layer as copies', async () => {
-    const block = RECORDING.records[1];
+    const block = RECORDS[1];
 
     if (block.kind !== 'block') {
       throw new Error('The second record is a block');

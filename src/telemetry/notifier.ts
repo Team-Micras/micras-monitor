@@ -1,5 +1,10 @@
 import type { Scheduler } from './scheduler';
 
+interface Subscription {
+  readonly callback: () => void;
+  active: boolean;
+}
+
 /**
  * Something readers can subscribe to, with a version that grows on every change.
  */
@@ -14,14 +19,11 @@ export class Channel {
   readonly subscriptions = new Set<Subscription>();
 }
 
-interface Subscription {
-  readonly callback: () => void;
-}
-
 /**
  * Tells subscribers about changes at most once per scheduler tick, however many changes happened
  * and however many of their channels they touched. A subscriber that throws does not keep the
- * others from hearing; its error is thrown again once all were called.
+ * others from hearing; its error is thrown again once all were called. A subscription ended
+ * during a tick is not called in it.
  */
 export class ChangeNotifier {
   private dirty: Channel[] = [];
@@ -59,13 +61,15 @@ export class ChangeNotifier {
    * @returns A function that ends the subscription.
    */
   subscribe(channels: readonly Channel[], callback: () => void): () => void {
-    const subscription: Subscription = { callback };
+    const subscription: Subscription = { callback, active: true };
 
     for (const channel of channels) {
       channel.subscriptions.add(subscription);
     }
 
     return () => {
+      subscription.active = false;
+
       for (const channel of channels) {
         channel.subscriptions.delete(subscription);
       }
@@ -89,6 +93,10 @@ export class ChangeNotifier {
     const errors: unknown[] = [];
 
     for (const subscription of due) {
+      if (!subscription.active) {
+        continue;
+      }
+
       try {
         subscription.callback();
       } catch (error) {
