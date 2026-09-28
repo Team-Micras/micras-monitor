@@ -9,8 +9,11 @@ import {
   leafIds,
   moveToWorkspace,
   moveWindow,
+  placeFloating,
   split,
+  swapWindows,
   switchWorkspace,
+  toggleFloating,
   toggleMaximize,
   workspaceOf,
 } from './index';
@@ -87,5 +90,25 @@ describe('switching workspaces', () => {
     const d = focusWindow(moveToWorkspace(overview(), 'maze', 1, METRICS, false), 'maze');
     expect(d.active).toBe(1);
     expect(leafIds(d.workspaces[1].root)).toEqual(['maze']);
+  });
+});
+
+describe('no-ops keep the same desktop', () => {
+  test('swapping a window with itself', () => {
+    const d = overview();
+    expect(swapWindows(d, 'maze', 'maze')).toBe(d);
+  });
+
+  test('placing a floating window where it already is', () => {
+    const d = toggleFloating(overview(), 'maze', METRICS);
+    const { rect } = d.workspaces[0].floating[0];
+    expect(placeFloating(d, 'maze', rect, METRICS)).toBe(d);
+  });
+
+  test('moving a window back to its place is equal, though not the same', () => {
+    const d = overview();
+    const back = moveWindow(d, 'robot', { target: 'track', side: 'bottom', share: 0.4 });
+    expect(back).not.toBe(d);
+    expect(back).toEqual(focusWindow(d, 'robot'));
   });
 });

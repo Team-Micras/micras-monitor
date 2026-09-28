@@ -35,6 +35,8 @@ export function leafIds(node: TileNode | null): WindowId[] {
 }
 
 /** The first window of a tree in depth-first order, or null for an empty tree. */
+export function firstLeafId(node: TileNode): WindowId;
+export function firstLeafId(node: TileNode | null): WindowId | null;
 export function firstLeafId(node: TileNode | null): WindowId | null {
   if (node === null) {
     return null;
@@ -117,7 +119,7 @@ export function orientationOf(side: Side): Orientation {
 }
 
 /** Tells whether a window placed against a side becomes the first child of the split. */
-function comesFirst(side: Side): boolean {
+export function comesFirst(side: Side): boolean {
   return side === 'left' || side === 'top';
 }
 

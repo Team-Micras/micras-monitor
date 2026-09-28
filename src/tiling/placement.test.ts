@@ -125,3 +125,32 @@ describe('opening windows', () => {
     );
   });
 });
+
+describe('a preferred share', () => {
+  test('sizes the new window beside its target', () => {
+    const d = openWindow(desktopOf([createWorkspace('W', leaf('a'))]), windowOf('b'), METRICS, {
+      target: 'a',
+      side: 'left',
+      share: 0.3,
+    });
+    expect(d.workspaces[0].root).toEqual(split('row', 0.3, leaf('b'), leaf('a')));
+    const after = openWindow(d, windowOf('c'), METRICS, {
+      target: 'a',
+      side: 'bottom',
+      share: 0.25,
+    });
+    expect(after.workspaces[0].root).toEqual(
+      split('row', 0.3, leaf('b'), split('column', 0.75, leaf('a'), leaf('c')))
+    );
+  });
+
+  test('stays strictly inside (0, 1)', () => {
+    const d = openWindow(desktopOf([createWorkspace('W', leaf('a'))]), windowOf('b'), METRICS, {
+      target: 'a',
+      side: 'right',
+      share: 1,
+    });
+    const root = d.workspaces[0].root;
+    expect(root?.type === 'split' && root.ratio).toBeGreaterThan(0);
+  });
+});

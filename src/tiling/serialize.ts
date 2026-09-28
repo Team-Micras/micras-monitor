@@ -18,17 +18,66 @@ import type {
   WindowId,
   Workspace,
 } from './types';
-import { validateDesktop } from './validate';
+import { firstRepeated, ORIENTATIONS, SIDES, validateDesktop } from './validate';
 
 /** The snapshot format this engine writes. Bump it, and add a migration, when the shape changes. */
 export const LAYOUT_VERSION = 1;
+
+/** A window in a snapshot; the payload is whatever the caller's writer made of it. */
+export interface WindowSnapshot {
+  readonly id: string;
+  readonly kind: string;
+  readonly payload: unknown;
+}
+
+/** A rect in a snapshot. */
+export interface RectSnapshot {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A split tree node in a snapshot. */
+export type NodeSnapshot =
+  | { readonly type: 'leaf'; readonly id: string }
+  | {
+      readonly type: 'split';
+      readonly orientation: Orientation;
+      readonly ratio: number;
+      readonly first: NodeSnapshot;
+      readonly second: NodeSnapshot;
+    };
+
+/** Where a floating window was tiled, in a snapshot. */
+export interface DockSnapshot {
+  readonly siblings: readonly string[];
+  readonly side: Side;
+  readonly ratio: number;
+}
+
+/** A floating window in a snapshot. */
+export interface FloatingSnapshot {
+  readonly id: string;
+  readonly rect: RectSnapshot;
+  readonly dock: DockSnapshot | null;
+}
+
+/** A workspace in a snapshot. */
+export interface WorkspaceSnapshot {
+  readonly name: string;
+  readonly root: NodeSnapshot | null;
+  readonly floating: readonly FloatingSnapshot[];
+  readonly focus: readonly string[];
+  readonly maximized: string | null;
+}
 
 /** A desktop as plain, versioned data, ready for `JSON.stringify`. */
 export interface DesktopSnapshot {
   readonly version: number;
   readonly active: number;
-  readonly windows: readonly TilingWindow[];
-  readonly workspaces: readonly Workspace[];
+  readonly windows: readonly WindowSnapshot[];
+  readonly workspaces: readonly WorkspaceSnapshot[];
 }
 
 /** Turns a snapshot of version `n` into one of version `n + 1`. */
@@ -48,11 +97,8 @@ export interface RestoreOptions<P> {
   readonly migrations?: Readonly<Record<number, Migration>>;
 }
 
-const SIDES: readonly Side[] = ['left', 'right', 'top', 'bottom'];
-const ORIENTATIONS: readonly Orientation[] = ['row', 'column'];
-
 /**
- * Turns a desktop into a snapshot.
+ * Turns a desktop into a snapshot of the current version.
  *
  * @param writePayload Converts a payload to JSON-ready data; the payload itself by default.
  */
@@ -68,7 +114,40 @@ export function serializeDesktop<P>(
       kind,
       payload: writePayload(payload),
     })),
-    workspaces: desktop.workspaces,
+    workspaces: desktop.workspaces.map(writeWorkspace),
+  };
+}
+
+function writeWorkspace(workspace: Workspace): WorkspaceSnapshot {
+  return {
+    name: workspace.name,
+    root: workspace.root === null ? null : writeNode(workspace.root),
+    floating: workspace.floating.map(writeFloating),
+    focus: [...workspace.focus],
+    maximized: workspace.maximized,
+  };
+}
+
+function writeNode(node: TileNode): NodeSnapshot {
+  if (node.type === 'leaf') {
+    return { type: 'leaf', id: node.id };
+  }
+
+  return {
+    type: 'split',
+    orientation: node.orientation,
+    ratio: node.ratio,
+    first: writeNode(node.first),
+    second: writeNode(node.second),
+  };
+}
+
+function writeFloating({ id, rect, dock }: FloatingWindow): FloatingSnapshot {
+  return {
+    id,
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    dock:
+      dock === null ? null : { siblings: [...dock.siblings], side: dock.side, ratio: dock.ratio },
   };
 }
 
@@ -77,7 +156,7 @@ export function serializeDesktop<P>(
  * field and checks the result with `validateDesktop`.
  *
  * @throws {LayoutError} Naming the first field that is missing, has the wrong type or breaks a
- *   rule, or the version when it is unknown or has no migration.
+ *   rule, or the version when it is unknown, has no migration or its migration fails.
  */
 export function restoreDesktop(
   value: unknown,
@@ -93,9 +172,7 @@ export function restoreDesktop(
   const windows = asArray(snapshot.windows, 'windows').map((window, index) =>
     readWindow(window, `windows[${index}]`, readPayload)
   );
-  const repeated = windows.findIndex((window, index) =>
-    windows.slice(0, index).some((other) => other.id === window.id)
-  );
+  const repeated = firstRepeated(windows.map((window) => window.id));
 
   if (repeated !== -1) {
     throw new LayoutError(`windows[${repeated}].id`, `repeats "${windows[repeated].id}"`);
@@ -139,7 +216,37 @@ function migrate(
     throw new LayoutError('version', `is ${version}, which has no migration to ${version + 1}`);
   }
 
-  return migrate({ ...migration(snapshot), version: version + 1 }, migrations);
+  return migrate({ ...upgrade(migration, snapshot, version), version: version + 1 }, migrations);
+}
+
+function upgrade(
+  migration: Migration,
+  snapshot: Readonly<Record<string, unknown>>,
+  version: number
+): Readonly<Record<string, unknown>> {
+  let upgraded: unknown;
+
+  try {
+    upgraded = migration(snapshot);
+  } catch (error) {
+    if (error instanceof LayoutError) {
+      throw error;
+    }
+
+    throw new LayoutError(
+      'version',
+      `is ${version}, and its migration to ${version + 1} failed: ${String(error)}`
+    );
+  }
+
+  if (!isRecord(upgraded)) {
+    throw new LayoutError(
+      'version',
+      `is ${version}, and its migration to ${version + 1} did not return an object`
+    );
+  }
+
+  return upgraded;
 }
 
 function readWindow<P>(
@@ -215,7 +322,7 @@ function readFloating(value: unknown, where: string): FloatingWindow {
 function readDock(value: unknown, where: string): DockMemory {
   const dock = asRecord(value, where);
   return {
-    sibling: readIds(dock.sibling, `${where}.sibling`),
+    siblings: readIds(dock.siblings, `${where}.siblings`),
     side: asOneOf(dock.side, SIDES, `${where}.side`),
     ratio: asNumber(dock.ratio, `${where}.ratio`),
   };
@@ -233,6 +340,10 @@ function readRect(value: unknown, where: string): Rect {
 
 function readIds(value: unknown, where: string): WindowId[] {
   return asArray(value, where).map((id, index) => asString(id, `${where}[${index}]`));
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function asRecord(value: unknown, where: string): Readonly<Record<string, unknown>> {

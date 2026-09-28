@@ -7,8 +7,9 @@
 import { activeWorkspace, focusWindow, moveToWorkspace, moveWindow, swapWindows } from './desktop';
 import { containsPoint } from './geometry';
 import { layoutTree, layoutWorkspace } from './layout';
+import { unreachable } from './layout-error';
 import type { Desktop, EdgePlacement, LayoutMetrics, Point, Rect, Side, WindowId } from './types';
-import { detach, tileBeside } from './workspace';
+import { detach, isTiled, tileBeside } from './workspace';
 
 /**
  * Where a drop lands. `center` swaps with a window, `edge` splits its tile and puts the dropped
@@ -31,8 +32,10 @@ const PREVIEW_ID: WindowId = '';
 
 /**
  * Hit-tests a point over the active workspace. The central box of a visible tile (44 % of its
- * width and height) means centre; anywhere else in the tile, the nearest edge. Floating windows
- * cover what is under them, and the dragged window's own tile and the gaps are not targets.
+ * width and height) means center; anywhere else in the tile, the nearest edge. Floating windows
+ * cover what is under them, and the dragged window's own tile and the gaps are not targets. The
+ * center only swaps two tiled windows, so it is no target for a floating window or one from
+ * another workspace; floating windows move with `placeFloating`.
  *
  * @param desktop The desktop being dragged over.
  * @param dragged The window being dragged, or null for something new, such as a variable dragged
@@ -65,7 +68,8 @@ export function hitTest(
   const zone = zoneAt(tile.rect, point);
 
   if (zone === 'center') {
-    return { kind: 'center', id: tile.id, preview: tile.rect };
+    const swappable = dragged === null || isTiled(workspace, dragged);
+    return swappable ? { kind: 'center', id: tile.id, preview: tile.rect } : null;
   }
 
   const at = { target: tile.id, side: zone };
@@ -74,8 +78,8 @@ export function hitTest(
 }
 
 function zoneAt(rect: Rect, point: Point): Side | 'center' {
-  const u = (point.x - rect.x) / rect.width;
-  const v = (point.y - rect.y) / rect.height;
+  const u = rect.width > 0 ? (point.x - rect.x) / rect.width : 0.5;
+  const v = rect.height > 0 ? (point.y - rect.y) / rect.height : 0.5;
   const half = CENTER_ZONE / 2;
 
   if (Math.abs(u - 0.5) < half && Math.abs(v - 0.5) < half) {
@@ -107,7 +111,9 @@ function edgePreview(
 /**
  * Applies a drop: `center` swaps the two tiled windows, `edge` moves the dragged window beside
  * the target, `workspace` moves it to that workspace without showing it. The dragged window ends
- * up focused in its new place and keeps its id.
+ * up focused in its new place and keeps its id. A drop that changes nothing returns the desktop
+ * unchanged, except an edge drop back onto the place the window had, which returns an equal but
+ * new desktop.
  */
 export function applyDrop<P>(
   desktop: Desktop<P>,
@@ -117,10 +123,17 @@ export function applyDrop<P>(
 ): Desktop<P> {
   switch (target.kind) {
     case 'center':
-      return focusWindow(swapWindows(desktop, dragged, target.id), dragged);
+      return swapAndFocus(desktop, dragged, target.id);
     case 'edge':
       return moveWindow(desktop, dragged, { target: target.id, side: target.side });
-    default:
+    case 'workspace':
       return moveToWorkspace(desktop, dragged, target.index, metrics, false);
+    default:
+      return unreachable(target);
   }
+}
+
+function swapAndFocus<P>(desktop: Desktop<P>, dragged: WindowId, target: WindowId): Desktop<P> {
+  const swapped = swapWindows(desktop, dragged, target);
+  return swapped === desktop ? desktop : focusWindow(swapped, dragged);
 }

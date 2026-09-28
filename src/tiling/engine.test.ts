@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { centreOf } from './geometry';
+import { centerOf } from './geometry';
 import { METRICS, desktopOf, overview, tileOf, windowOf } from './fixtures/desktops';
 import {
   applyDrop,
@@ -31,12 +31,12 @@ import {
 
 function edgeTarget(desktop: Desktop, dragged: string, id: string, side: Side): DropTarget {
   const tile = tileOf(desktop, id);
-  const centre = centreOf(tile);
+  const center = centerOf(tile);
   const points: Record<Side, { x: number; y: number }> = {
-    left: { x: tile.x + 4, y: centre.y },
-    right: { x: tile.x + tile.width - 4, y: centre.y },
-    top: { x: centre.x, y: tile.y + 4 },
-    bottom: { x: centre.x, y: tile.y + tile.height - 4 },
+    left: { x: tile.x + 4, y: center.y },
+    right: { x: tile.x + tile.width - 4, y: center.y },
+    top: { x: center.x, y: tile.y + 4 },
+    bottom: { x: center.x, y: tile.y + tile.height - 4 },
   };
   const target = hitTest(desktop, dragged, points[side], METRICS);
 
@@ -169,9 +169,9 @@ describe('drag and drop', () => {
     );
   });
 
-  test('dropping on the centre swaps', () => {
+  test('dropping on the center swaps', () => {
     const before = overview();
-    const target = hitTest(before, 'profile', centreOf(tileOf(before, 'track')), METRICS);
+    const target = hitTest(before, 'profile', centerOf(tileOf(before, 'track')), METRICS);
     expect(target?.kind).toBe('center');
     const d = target === null ? before : applyDrop(before, 'profile', target, METRICS);
     expect(leafIds(d.workspaces[0].root)).toEqual(['profile', 'robot', 'maze', 'track']);

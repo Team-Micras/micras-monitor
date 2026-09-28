@@ -73,10 +73,10 @@ export type TileNode = LeafNode | SplitNode;
 
 /**
  * Where a floating window was tiled before it was lifted: beside the subtree holding exactly the
- * `sibling` windows, on `side`, with `ratio` as the first child's share of that split.
+ * `siblings` windows, on `side`, with `ratio` as the first child's share of that split.
  */
 export interface DockMemory {
-  readonly sibling: readonly WindowId[];
+  readonly siblings: readonly WindowId[];
   readonly side: Side;
   readonly ratio: number;
 }
@@ -124,4 +124,6 @@ export interface LayoutMetrics {
 export interface EdgePlacement {
   readonly target: WindowId;
   readonly side: Side;
+  /** The new window's share of the split, 0.5 when omitted, kept strictly inside (0, 1). */
+  readonly share?: number;
 }

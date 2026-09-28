@@ -15,9 +15,17 @@
  * @module
  */
 
-import { clamp, extentAlong, keepInside, minimumAlong, usableBounds } from './geometry';
+import {
+  checkMetrics,
+  clamp,
+  extentAlong,
+  keepInside,
+  minimumAlong,
+  usableBounds,
+} from './geometry';
 import { firstLeafId } from './tree';
 import type {
+  Desktop,
   LayoutMetrics,
   NodePath,
   Orientation,
@@ -43,7 +51,7 @@ export interface Gutter {
   readonly minRatio: number;
   readonly maxRatio: number;
   /** The first window on each side, for accessible labels. */
-  readonly between: readonly [WindowId | null, WindowId | null];
+  readonly between: readonly [WindowId, WindowId];
 }
 
 /** The rects of a split tree's tiles and its gutters. */
@@ -92,6 +100,8 @@ interface Division {
 
 /** The smallest size a tree needs; an empty tree needs nothing. */
 export function minimumSize(node: TileNode | null, metrics: LayoutMetrics): MinimumSize {
+  checkMetrics(metrics);
+
   if (node === null) {
     return { width: 0, height: 0 };
   }
@@ -168,6 +178,7 @@ function collapsedExtent(first: AxisNeed, second: AxisNeed, available: number): 
 
 /** Lays out a split tree in the viewport's usable bounds. */
 export function layoutTree(root: TileNode | null, metrics: LayoutMetrics): TreeLayout {
+  checkMetrics(metrics);
   const tiles = new Map<WindowId, Rect>();
   const gutters: Gutter[] = [];
 
@@ -275,8 +286,33 @@ export function layoutWorkspace(workspace: Workspace, metrics: LayoutMetrics): W
   return { bounds, windows: [...tiled, ...floating], gutters: maximized === null ? gutters : [] };
 }
 
+/** A window of any workspace, where it is drawn and whether it is on screen. */
+export interface DesktopWindow extends PlacedWindow {
+  /** The index of the workspace holding it. */
+  readonly workspace: number;
+}
+
 /**
- * The ratio that puts a gutter's centre under a pointer, clamped to the gutter's range.
+ * Lays out every workspace at once, so the app can render one flat list keyed by window id and
+ * keep a view mounted when its window changes workspace. Windows of inactive workspaces keep
+ * their rect and are not visible.
+ */
+export function layoutDesktop(desktop: Desktop, metrics: LayoutMetrics): DesktopWindow[] {
+  return desktop.workspaces.flatMap((workspace, index) =>
+    layoutWorkspace(workspace, metrics).windows.map(
+      ({ id, rect, floating, visible }): DesktopWindow => ({
+        id,
+        rect,
+        floating,
+        visible: visible && index === desktop.active,
+        workspace: index,
+      })
+    )
+  );
+}
+
+/**
+ * The ratio that puts a gutter's center under a pointer, clamped to the gutter's range.
  */
 export function ratioAtPoint(gutter: Gutter, point: Point): number {
   const { orientation, span, rect } = gutter;

@@ -4,13 +4,13 @@ import { METRICS, desktopOf, overview } from './fixtures/desktops';
 import {
   closeWindow,
   createWorkspace,
-  findNeighbour,
+  findNeighbor,
   focusDirection,
   focusedWindow,
   focusWindow,
   layoutWorkspace,
   leaf,
-  neighbourOf,
+  neighborOf,
   readingOrder,
   split,
   toggleMaximize,
@@ -30,7 +30,7 @@ function floating(id: string, rect: Rect): PlacedWindow {
 }
 
 function focusFrom(desktop: Desktop, from: string, direction: Direction): string | null {
-  return neighbourOf(focusWindow(desktop, from), direction, METRICS);
+  return neighborOf(focusWindow(desktop, from), direction, METRICS);
 }
 
 /**
@@ -70,29 +70,29 @@ describe('the edge rule between tiled windows', () => {
       tiled('near', { x: 110, y: 200, width: 100, height: 100 }),
       tiled('far', { x: 300, y: 50, width: 100, height: 100 }),
     ];
-    expect(findNeighbour(windows, 'O', 'right')).toBe('far');
+    expect(findNeighbor(windows, 'O', 'right')).toBe('far');
   });
 
-  test('among overlapping candidates the nearest edge wins over the closest centre', () => {
+  test('among overlapping candidates the nearest edge wins over the closest center', () => {
     const windows = [
       tiled('O', { x: 0, y: 0, width: 100, height: 100 }),
       tiled('near', { x: 110, y: 80, width: 100, height: 100 }),
       tiled('aligned', { x: 300, y: 0, width: 100, height: 100 }),
     ];
-    expect(findNeighbour(windows, 'O', 'right')).toBe('near');
+    expect(findNeighbor(windows, 'O', 'right')).toBe('near');
   });
 
-  test('among equally near edges the closest centre wins', () => {
+  test('among equally near edges the closest center wins', () => {
     const windows = [
       tiled('O', { x: 0, y: 100, width: 100, height: 100 }),
       tiled('high', { x: 110, y: 0, width: 100, height: 120 }),
       tiled('level', { x: 110, y: 130, width: 100, height: 100 }),
     ];
-    expect(findNeighbour(windows, 'O', 'right')).toBe('level');
-    expect(findNeighbour(windows, 'O', 'left')).toBeNull();
+    expect(findNeighbor(windows, 'O', 'right')).toBe('level');
+    expect(findNeighbor(windows, 'O', 'left')).toBeNull();
   });
 
-  test('when centres tie, the most recently focused window wins', () => {
+  test('when centers tie, the most recently focused window wins', () => {
     const top = split('row', 0.5, leaf('A'), leaf('B'));
     const d = desktopOf([createWorkspace('W', split('column', 0.5, top, leaf('D')))]);
     const viaA = focusWindow(focusWindow(d, 'A'), 'D');
@@ -101,17 +101,17 @@ describe('the edge rule between tiled windows', () => {
     expect(focusedWindow(focusDirection(viaB, 'up', METRICS).workspaces[0])).toBe('B');
   });
 
-  test('windows hidden behind a maximized one are not neighbours', () => {
+  test('windows hidden behind a maximized one are not neighbors', () => {
     const d = toggleMaximize(overview());
     expect(focusDirection(d, 'right', METRICS)).toBe(d);
   });
 });
 
-describe('the centre rule for floating windows', () => {
+describe('the center rule for floating windows', () => {
   const pair = createWorkspace('W', split('row', 0.5, leaf('a'), leaf('b')), 'a');
   const low = { x: 600, y: 560, width: 400, height: 200 };
 
-  test('a tiled window prefers a tiled neighbour over a closer floating one', () => {
+  test('a tiled window prefers a tiled neighbor over a closer floating one', () => {
     const d = withFloating(pair, [['f', { x: 600, y: 300, width: 400, height: 200 }]]);
     expect(focusFrom(d, 'a', 'right')).toBe('b');
   });
@@ -122,7 +122,7 @@ describe('the centre rule for floating windows', () => {
     expect(focusFrom(d, 'a', 'up')).toBeNull();
   });
 
-  test('from a floating window, centres inside the cone come first, then the closest', () => {
+  test('from a floating window, centers inside the cone come first, then the closest', () => {
     const d = withFloating(pair, [['f', low]]);
     expect(focusFrom(d, 'f', 'left')).toBe('a');
     expect(focusFrom(d, 'f', 'right')).toBe('b');
@@ -130,16 +130,16 @@ describe('the centre rule for floating windows', () => {
     expect(focusFrom(d, 'f', 'down')).toBeNull();
   });
 
-  test('floating windows reach each other by their centres even when they overlap', () => {
+  test('floating windows reach each other by their centers even when they overlap', () => {
     const windows = [
       tiled('t', { x: 0, y: 0, width: 1000, height: 400 }),
       floating('f', { x: 100, y: 100, width: 300, height: 300 }),
       floating('g', { x: 250, y: 150, width: 300, height: 300 }),
       floating('h', { x: 150, y: 600, width: 300, height: 300 }),
     ];
-    expect(findNeighbour(windows, 'f', 'right')).toBe('g');
-    expect(findNeighbour(windows, 'g', 'left')).toBe('f');
-    expect(findNeighbour(windows, 'f', 'down')).toBe('h');
+    expect(findNeighbor(windows, 'f', 'right')).toBe('g');
+    expect(findNeighbor(windows, 'g', 'left')).toBe('f');
+    expect(findNeighbor(windows, 'f', 'down')).toBe('h');
   });
 });
 

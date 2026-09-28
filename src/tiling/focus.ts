@@ -5,15 +5,15 @@
  * that side (within 1 px), and candidates are ranked by, in order:
  * 1. overlap on the other axis: a candidate sharing a band with the origin beats one that does not;
  * 2. the nearest edge;
- * 3. the closest centre on the other axis;
+ * 3. the closest center on the other axis;
  * 4. the most recently focused, then tree order.
  *
- * Floating windows overlap everything, so edges say nothing about them and the centre rule
- * applies instead. A candidate's centre must lie beyond the origin's centre in that direction, and
+ * Floating windows overlap everything, so edges say nothing about them and the center rule
+ * applies instead. A candidate's center must lie beyond the origin's center in that direction, and
  * candidates are ranked by: inside the 90° cone around the direction first, then the closest
- * centre, then the most recently focused. From a floating window the centre rule covers every
+ * center, then the most recently focused. From a floating window the center rule covers every
  * visible window. From a tiled window the tiled windows are searched first by the edge rule, and
- * the floating ones by the centre rule only when no tiled window qualifies.
+ * the floating ones by the center rule only when no tiled window qualifies.
  *
  * @module
  */
@@ -32,9 +32,9 @@ const TOLERANCE = 1;
  * @param from The window to start from; it must be visible.
  * @param direction Where to look.
  * @param recency Focus history, most recent first, used to break ties.
- * @returns The neighbour, or null when nothing lies that way.
+ * @returns The neighbor, or null when nothing lies that way.
  */
-export function findNeighbour(
+export function findNeighbor(
   windows: readonly PlacedWindow[],
   from: WindowId,
   direction: Direction,
@@ -50,7 +50,7 @@ export function findNeighbour(
   const others = visible.filter((window) => window.id !== from);
 
   if (origin.floating) {
-    return best(others, origin.rect, direction, centreScore, recency);
+    return best(others, origin.rect, direction, centerScore, recency);
   }
 
   return (
@@ -65,7 +65,7 @@ export function findNeighbour(
       others.filter((window) => window.floating),
       origin.rect,
       direction,
-      centreScore,
+      centerScore,
       recency
     )
   );
@@ -94,23 +94,23 @@ function edgeScore(origin: Rect, candidate: Rect, direction: Direction): readonl
   }
 
   const overlaps = overlapAcross(origin, candidate, direction) > 0;
-  const offset = Math.abs(centreAcross(candidate, direction) - centreAcross(origin, direction));
+  const offset = Math.abs(centerAcross(candidate, direction) - centerAcross(origin, direction));
   return [overlaps ? 0 : 1, Math.max(0, distance), offset];
 }
 
-function centreScore(
+function centerScore(
   origin: Rect,
   candidate: Rect,
   direction: Direction
 ): readonly number[] | null {
   const along =
-    signOf(direction) * (centreAlong(candidate, direction) - centreAlong(origin, direction));
+    signOf(direction) * (centerAlong(candidate, direction) - centerAlong(origin, direction));
 
   if (along <= TOLERANCE) {
     return null;
   }
 
-  const across = Math.abs(centreAcross(candidate, direction) - centreAcross(origin, direction));
+  const across = Math.abs(centerAcross(candidate, direction) - centerAcross(origin, direction));
   return [across <= along ? 0 : 1, Math.hypot(along, across)];
 }
 
@@ -135,11 +135,11 @@ function overlapAcross(a: Rect, b: Rect, direction: Direction): number {
   return Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
 }
 
-function centreAlong(rect: Rect, direction: Direction): number {
+function centerAlong(rect: Rect, direction: Direction): number {
   return isHorizontal(direction) ? rect.x + rect.width / 2 : rect.y + rect.height / 2;
 }
 
-function centreAcross(rect: Rect, direction: Direction): number {
+function centerAcross(rect: Rect, direction: Direction): number {
   return isHorizontal(direction) ? rect.y + rect.height / 2 : rect.x + rect.width / 2;
 }
 

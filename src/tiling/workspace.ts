@@ -7,16 +7,18 @@
 
 import {
   areaOf,
-  centreOf,
+  centerOf,
   clamp,
   containsPoint,
   extentAlong,
   keepInside,
   minimumAlong,
+  openRatio,
   usableBounds,
 } from './geometry';
 import { fitFloating, layoutTree } from './layout';
 import {
+  comesFirst,
   containsLeaf,
   findSubtree,
   firstLeafId,
@@ -262,12 +264,19 @@ export function tileByDwindle(
 }
 
 /**
- * Tiles a window beside a tile and focuses it. Returns the workspace unchanged when the target is
- * not tiled in it.
+ * Tiles a window beside a tile, with the share `at` asks for, and focuses it. Returns the
+ * workspace unchanged when the target is not tiled in it.
  */
 export function tileBeside(workspace: Workspace, id: WindowId, at: EdgePlacement): Workspace {
   const path = pathOf(workspace.root, at.target);
-  return path === null ? workspace : tileIn(workspace, id, { path, side: at.side, ratio: 0.5 });
+
+  if (path === null) {
+    return workspace;
+  }
+
+  const share = openRatio(at.share ?? 0.5);
+  const ratio = comesFirst(at.side) ? share : 1 - share;
+  return tileIn(workspace, id, { path, side: at.side, ratio });
 }
 
 function tileIn(workspace: Workspace, id: WindowId, slot: Slot | null): Workspace {
@@ -278,13 +287,31 @@ function tileIn(workspace: Workspace, id: WindowId, slot: Slot | null): Workspac
   return withFocus({ ...workspace, root, maximized: null }, id);
 }
 
+/**
+ * Moves every window of `source` into `target`: tiled windows one by one by the dwindle rule, in
+ * tree order, then floating windows on top with their rects. The target's focus history comes
+ * first, then the source's.
+ */
+export function absorb(target: Workspace, source: Workspace, metrics: LayoutMetrics): Workspace {
+  const tiled = leafIds(source.root).reduce(
+    (workspace, id) => tileByDwindle(workspace, id, metrics),
+    target
+  );
+  const merged = source.floating.reduce(
+    (workspace, entry) => addFloating(workspace, { id: entry.id, rect: entry.rect, dock: null }),
+    tiled
+  );
+  const focus = [...new Set([...target.focus, ...source.focus, ...merged.focus])];
+  return settleMaximized({ ...merged, focus });
+}
+
 /** Adds a window to the floating layer, on top, and focuses it. */
 export function addFloating(workspace: Workspace, entry: FloatingWindow): Workspace {
   return withFocus({ ...workspace, floating: [...workspace.floating, entry] }, entry.id);
 }
 
 /**
- * Lifts a tiled window into the floating layer, centred on its tile at three quarters of its
+ * Lifts a tiled window into the floating layer, centered on its tile at three quarters of its
  * size (capped at 60 % of the usable bounds), and remembers where it was tiled.
  */
 export function lift(workspace: Workspace, id: WindowId, metrics: LayoutMetrics): Workspace {
@@ -314,7 +341,7 @@ function dockMemoryOf(root: TileNode | null, id: WindowId): DockMemory | null {
 
   const first = path.endsWith('0');
   return {
-    sibling: leafIds(first ? parent.second : parent.first),
+    siblings: leafIds(first ? parent.second : parent.first),
     side: sideOf(parent.orientation, first),
     ratio: parent.ratio,
   };
@@ -340,7 +367,7 @@ function floatingRectFor(tile: Rect, metrics: LayoutMetrics): Rect {
 /**
  * Docks a floating window back into the tiling: beside the subtree it was lifted from when that
  * subtree still exists with exactly the same windows, with the old ratio; otherwise by the dwindle
- * rule, anchored on the tile under the window's centre.
+ * rule, anchored on the tile under the window's center.
  */
 export function dock(workspace: Workspace, id: WindowId, metrics: LayoutMetrics): Workspace {
   const { workspace: detached, floating } = detach(workspace, id);
@@ -349,7 +376,7 @@ export function dock(workspace: Workspace, id: WindowId, metrics: LayoutMetrics)
     return workspace;
   }
 
-  const path = floating.dock === null ? null : findSubtree(detached.root, floating.dock.sibling);
+  const path = floating.dock === null ? null : findSubtree(detached.root, floating.dock.siblings);
 
   if (path !== null && floating.dock !== null) {
     return tileIn(detached, id, { path, side: floating.dock.side, ratio: floating.dock.ratio });
@@ -359,7 +386,7 @@ export function dock(workspace: Workspace, id: WindowId, metrics: LayoutMetrics)
 }
 
 function tileUnder(workspace: Workspace, rect: Rect, metrics: LayoutMetrics): WindowId | null {
-  const centre = centreOf(fitFloating(rect, metrics));
+  const center = centerOf(fitFloating(rect, metrics));
   const tiles = [...layoutTree(workspace.root, metrics).tiles];
-  return tiles.find(([, tile]) => containsPoint(tile, centre))?.[0] ?? null;
+  return tiles.find(([, tile]) => containsPoint(tile, center))?.[0] ?? null;
 }

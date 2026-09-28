@@ -8,7 +8,7 @@
 import { usableBounds } from '../geometry';
 import { LayoutError } from '../layout-error';
 import { layoutTree, layoutWorkspace, minimumSize } from '../layout';
-import type { Desktop, LayoutMetrics, Rect } from '../types';
+import type { Desktop, LayoutMetrics, Orientation, Rect, TileNode } from '../types';
 import { validateDesktop } from '../validate';
 import { focusedWindow, windowIds } from '../workspace';
 
@@ -49,7 +49,8 @@ export function tooCloseOf(rects: readonly Rect[], gap: number): string[] {
 /**
  * Checks a desktop and its layout: the structural rules of `validateDesktop`; every window in
  * exactly one workspace; the focused window visible; tiles and floating windows inside the usable
- * bounds; tiles a gap apart; and tiles at the minimum size whenever the tree's minimum fits.
+ * bounds; tiles a gap apart when the gaps fit, and never overlapping; and tiles at the minimum
+ * size whenever the tree's minimum fits.
  */
 export function violationsOf(desktop: Desktop, metrics: LayoutMetrics): string[] {
   const structural = structuralViolationsOf(desktop);
@@ -78,10 +79,42 @@ export function violationsOf(desktop: Desktop, metrics: LayoutMetrics): string[]
         layout.windows.map((w) => w.rect),
         bounds
       ),
-      ...tooCloseOf(tiles, metrics.gap),
+      ...tooCloseOf(tiles, gapsFit(workspace.root, metrics) ? metrics.gap : 0),
       ...small.map((t) => `${JSON.stringify(t)} is below the minimum size`),
     ].map((problem) => `workspaces[${index}]: ${problem}`);
   });
+}
+
+/** Tells whether the viewport holds every gap of a tree along both axes. */
+export function gapsFit(root: TileNode | null, metrics: LayoutMetrics): boolean {
+  const bounds = usableBounds(metrics);
+  return (
+    root === null ||
+    (gapCount(root, 'row') * metrics.gap <= bounds.width &&
+      gapCount(root, 'column') * metrics.gap <= bounds.height)
+  );
+}
+
+function gapCount(node: TileNode, orientation: Orientation): number {
+  if (node.type === 'leaf') {
+    return 0;
+  }
+
+  const first = gapCount(node.first, orientation);
+  const second = gapCount(node.second, orientation);
+  return node.orientation === orientation ? first + second + 1 : Math.max(first, second);
+}
+
+/** Freezes a value and everything it holds, map values included, so any mutation throws. */
+export function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
+    return value;
+  }
+
+  const children = value instanceof Map ? [...value.values()] : Object.values(value);
+  Object.freeze(value);
+  children.forEach(deepFreeze);
+  return value;
 }
 
 function structuralViolationsOf(desktop: Desktop): string[] {

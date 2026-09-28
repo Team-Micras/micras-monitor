@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'vitest';
 
 import { desktopOf, windowOf } from './fixtures/desktops';
-import { violationsOf } from './fixtures/invariants';
+import { deepFreeze, violationsOf } from './fixtures/invariants';
 import {
   activeWorkspace,
+  addWorkspace,
   applyDrop,
   closeWindow,
   createWorkspace,
   execute,
+  fitFloating,
   focusDirection,
   focusWindow,
   hitTest,
@@ -16,17 +18,22 @@ import {
   leafIds,
   moveToWorkspace,
   moveWindow,
+  moveWorkspace,
   nudgeSplit,
   openWindow,
   placeFloating,
+  removeWorkspace,
+  renameWorkspace,
   resetSplit,
   resizeSplit,
   restoreDesktop,
   serializeDesktop,
   swapDirection,
+  swapWindows,
   switchWorkspace,
   toggleFloating,
   toggleMaximize,
+  workspaceOf,
   type Command,
   type Desktop,
   type Direction,
@@ -37,7 +44,9 @@ import {
 
 const SEEDS = 200;
 const STEPS = 80;
+const NO_OP_SEEDS = 60;
 const MAX_WINDOWS = 14;
+const MAX_WORKSPACES = 5;
 const DIRECTIONS: readonly Direction[] = ['left', 'right', 'up', 'down'];
 const SIDES: readonly Side[] = ['left', 'right', 'top', 'bottom'];
 
@@ -73,14 +82,23 @@ function pick<T>(random: Random, items: readonly T[]): T | undefined {
 }
 
 function randomMetrics(random: Random): LayoutMetrics {
+  const tiny = random() < 0.3;
   return {
-    width: between(random, 700, 1900),
-    height: between(random, 450, 1100),
+    width: tiny ? between(random, 10, 120) : between(random, 700, 1900),
+    height: tiny ? between(random, 10, 90) : between(random, 450, 1100),
     gap: pick(random, [0, 8, 14]) ?? 14,
     outerGap: pick(random, [0, 14, 20]) ?? 14,
-    minWidth: between(random, 120, 260),
-    minHeight: between(random, 80, 160),
+    minWidth: random() < 0.1 ? 1 : between(random, 120, 260),
+    minHeight: random() < 0.1 ? 1 : between(random, 80, 160),
   };
+}
+
+function anyIndex(world: World): number {
+  return between(world.random, 0, world.desktop.workspaces.length);
+}
+
+function anyDirection(world: World): Direction {
+  return pick(world.random, DIRECTIONS) ?? 'up';
 }
 
 function anyWindow(world: World): WindowId | undefined {
@@ -111,7 +129,8 @@ const open: Operation = (world) => {
 
   const target = world.random() < 0.3 ? anyTiled(world) : undefined;
   const side = pick(world.random, SIDES) ?? 'left';
-  const at = target === undefined ? undefined : { target, side };
+  const share = world.random() < 0.5 ? world.random() : undefined;
+  const at = target === undefined ? undefined : { target, side, share };
   return openWindow(world.desktop, newWindow(world), world.metrics, at);
 };
 
@@ -138,7 +157,7 @@ const resize: Operation = (world) => {
 
 const drop: Operation = (world) => {
   const visible = layoutWorkspace(activeWorkspace(world.desktop), world.metrics)
-    .windows.filter((window) => window.visible && !window.floating)
+    .windows.filter((window) => window.visible)
     .map((window) => window.id);
   const dragged = world.random() < 0.2 ? null : (pick(world.random, visible) ?? null);
   const point = {
@@ -147,15 +166,15 @@ const drop: Operation = (world) => {
   };
   const target = hitTest(world.desktop, dragged, point, world.metrics);
 
-  if (target === null) {
+  if (target === null || target.kind === 'workspace') {
     return world.desktop;
   }
 
   if (dragged !== null) {
     const next = applyDrop(world.desktop, dragged, target, world.metrics);
-    const landed = layoutTree(activeWorkspace(next).root, world.metrics).tiles.get(dragged);
-    expect(target.kind === 'workspace' ? null : landed).toEqual(
-      target.kind === 'workspace' ? null : target.preview
+    expect(next).not.toBe(world.desktop);
+    expect(layoutTree(activeWorkspace(next).root, world.metrics).tiles.get(dragged)).toEqual(
+      target.preview
     );
     return next;
   }
@@ -169,8 +188,9 @@ const drop: Operation = (world) => {
     target: target.id,
     side: target.side,
   });
-  const landed = layoutTree(activeWorkspace(next).root, world.metrics).tiles.get(window.id);
-  expect(landed).toEqual(target.preview);
+  expect(layoutTree(activeWorkspace(next).root, world.metrics).tiles.get(window.id)).toEqual(
+    target.preview
+  );
   return next;
 };
 
@@ -183,17 +203,49 @@ const roundTrip: Operation = (world) => {
 };
 
 const command: Operation = (world) => {
+  const focusTarget = anyWindow(world);
   const commands: readonly Command<string>[] = [
-    { type: 'focusDirection', direction: pick(world.random, DIRECTIONS) ?? 'up' },
-    { type: 'swapDirection', direction: pick(world.random, DIRECTIONS) ?? 'up' },
+    { type: 'focusDirection', direction: anyDirection(world) },
+    { type: 'focusNext' },
+    { type: 'focusPrevious' },
+    ...(focusTarget === undefined ? [] : [{ type: 'focusWindow', id: focusTarget } as const]),
+    { type: 'swapDirection', direction: anyDirection(world) },
+    { type: 'resize', direction: anyDirection(world), step: world.random() * 0.2 },
+    { type: 'resetSplit', path: pick(world.random, ['', '0', '1', '01']) ?? '' },
     { type: 'toggleFloating' },
     { type: 'toggleMaximize' },
     { type: 'close' },
-    { type: 'moveToWorkspace', index: between(world.random, 0, 2), follow: world.random() < 0.5 },
-    { type: 'switchWorkspace', index: between(world.random, 0, 2) },
+    { type: 'moveToWorkspace', index: anyIndex(world), follow: world.random() < 0.5 },
+    { type: 'switchWorkspace', index: anyIndex(world) },
   ];
   const chosen = pick(world.random, commands) ?? { type: 'toggleMaximize' };
   return execute(world.desktop, chosen, world.metrics);
+};
+
+const lifecycle: Operation = (world) => {
+  const choice = world.random();
+  const count = world.desktop.workspaces.length;
+
+  if (choice < 0.3) {
+    return count >= MAX_WORKSPACES
+      ? world.desktop
+      : addWorkspace(world.desktop, `Workspace ${count + 1}`, anyIndex(world));
+  }
+
+  if (choice < 0.5) {
+    return renameWorkspace(
+      world.desktop,
+      anyIndex(world),
+      `Renamed ${between(world.random, 1, 3)}`
+    );
+  }
+
+  if (choice < 0.7) {
+    return moveWorkspace(world.desktop, anyIndex(world), anyIndex(world));
+  }
+
+  const policy = world.random() < 0.5 ? 'closeWindows' : 'mergeIntoNeighbor';
+  return removeWorkspace(world.desktop, anyIndex(world), policy, world.metrics);
 };
 
 const OPERATIONS: Readonly<Record<string, Operation>> = {
@@ -202,21 +254,14 @@ const OPERATIONS: Readonly<Record<string, Operation>> = {
   drop,
   roundTrip,
   command,
+  lifecycle,
   close: (world) => withWindow(world, (id) => closeWindow(world.desktop, id)),
   focus: (world) => withWindow(world, (id) => focusWindow(world.desktop, id)),
-  focusDirection: (world) =>
-    focusDirection(world.desktop, pick(world.random, DIRECTIONS) ?? 'up', world.metrics),
-  swapDirection: (world) =>
-    swapDirection(world.desktop, pick(world.random, DIRECTIONS) ?? 'up', world.metrics),
+  focusDirection: (world) => focusDirection(world.desktop, anyDirection(world), world.metrics),
+  swapDirection: (world) => swapDirection(world.desktop, anyDirection(world), world.metrics),
   moveToWorkspace: (world) =>
     withWindow(world, (id) =>
-      moveToWorkspace(
-        world.desktop,
-        id,
-        between(world.random, 0, 2),
-        world.metrics,
-        world.random() < 0.5
-      )
+      moveToWorkspace(world.desktop, id, anyIndex(world), world.metrics, world.random() < 0.5)
     ),
   moveWindow: (world) => {
     const target = anyTiled(world);
@@ -242,7 +287,7 @@ const OPERATIONS: Readonly<Record<string, Operation>> = {
         world.metrics
       )
     ),
-  switchWorkspace: (world) => switchWorkspace(world.desktop, between(world.random, 0, 2)),
+  switchWorkspace: (world) => switchWorkspace(world.desktop, anyIndex(world)),
   resizeViewport: (world) => {
     world.metrics = randomMetrics(world.random);
     return world.desktop;
@@ -258,7 +303,103 @@ function initialWorld(seed: number): World {
     createWorkspace('Two'),
     createWorkspace('Three'),
   ]);
-  return { desktop, metrics: randomMetrics(random), opened: 0, random };
+  return { desktop: deepFreeze(desktop), metrics: randomMetrics(random), opened: 0, random };
+}
+
+function step(world: World): string {
+  const name = pick(world.random, NAMES) ?? 'open';
+  const before = world.desktop;
+  const known = [...before.windows.keys()].join();
+  world.desktop = deepFreeze(OPERATIONS[name](world));
+  expect([...before.windows.keys()].join(), `${name} changed the map it was given`).toBe(known);
+  return name;
+}
+
+type NoOp = readonly [string, () => boolean];
+
+function sameAfter(desktop: Desktop<string>, run: (d: Desktop<string>) => Desktop<string>) {
+  return () => run(desktop) === desktop;
+}
+
+function idempotent(desktop: Desktop<string>, run: (d: Desktop<string>) => Desktop<string>) {
+  return () => {
+    const once = run(desktop);
+    return run(once) === once;
+  };
+}
+
+/**
+ * Operations that must hand back the very desktop they were given, because they ask for what is
+ * already there or for something that does not apply, as names of the ones that did not.
+ */
+function brokenNoOps(world: World): string[] {
+  const { desktop, metrics, random } = world;
+  const id = anyWindow(world);
+  const index = between(random, 0, desktop.workspaces.length - 1);
+  const count = desktop.workspaces.length;
+  const gutter = pick(random, layoutTree(activeWorkspace(desktop).root, metrics).gutters);
+  const floating = pick(random, activeWorkspace(desktop).floating);
+  const ratio = random();
+  const always: readonly NoOp[] = [
+    ['switchWorkspace to the active one', sameAfter(desktop, (d) => switchWorkspace(d, d.active))],
+    ['switchWorkspace past the end', sameAfter(desktop, (d) => switchWorkspace(d, count))],
+    ['moveWorkspace onto itself', sameAfter(desktop, (d) => moveWorkspace(d, index, index))],
+    [
+      'renameWorkspace to its name',
+      sameAfter(desktop, (d) => renameWorkspace(d, index, d.workspaces[index].name)),
+    ],
+    ['closeWindow of a stranger', sameAfter(desktop, (d) => closeWindow(d, 'missing'))],
+    [
+      'toggleFloating of a stranger',
+      sameAfter(desktop, (d) => toggleFloating(d, 'missing', metrics)),
+    ],
+    [
+      'removeWorkspace of the last one',
+      sameAfter(desktop, (d) => (count === 1 ? removeWorkspace(d, 0, 'closeWindows', metrics) : d)),
+    ],
+  ];
+  const forWindow: readonly NoOp[] =
+    id === undefined
+      ? []
+      : [
+          ['swapWindows with itself', sameAfter(desktop, (d) => swapWindows(d, id, id))],
+          [
+            'moveToWorkspace past the end',
+            sameAfter(desktop, (d) => moveToWorkspace(d, id, count, metrics)),
+          ],
+          [
+            'moveToWorkspace to its own',
+            sameAfter(desktop, (d) => moveToWorkspace(d, id, workspaceOf(d, id), metrics)),
+          ],
+          ['focusWindow twice', idempotent(desktop, (d) => focusWindow(d, id))],
+        ];
+  const forGutter: readonly NoOp[] =
+    gutter === undefined
+      ? []
+      : [
+          [
+            'nudgeSplit by nothing',
+            sameAfter(desktop, (d) => nudgeSplit(d, gutter.path, 0, metrics)),
+          ],
+          [
+            'resizeSplit twice',
+            idempotent(desktop, (d) => resizeSplit(d, gutter.path, ratio, metrics)),
+          ],
+        ];
+  const forFloating: readonly NoOp[] =
+    floating === undefined
+      ? []
+      : [
+          [
+            'placeFloating twice',
+            idempotent(desktop, (d) =>
+              placeFloating(d, floating.id, fitFloating(floating.rect, metrics), metrics)
+            ),
+          ],
+        ];
+  return [...always, ...forWindow, ...forGutter, ...forFloating]
+    .filter(([, holds]) => !holds())
+    .map(([name]) => name);
 }
 
 describe('after any sequence of operations', () => {
@@ -268,14 +409,24 @@ describe('after any sequence of operations', () => {
       const world = initialWorld(seed);
       const trail: string[] = [];
 
-      for (let step = 0; step < STEPS; step++) {
-        const name = pick(world.random, NAMES) ?? 'open';
-        trail.push(name);
-        world.desktop = OPERATIONS[name](world);
+      for (let index = 0; index < STEPS; index++) {
+        trail.push(step(world));
         expect(
           violationsOf(world.desktop, world.metrics),
-          `step ${step}: ${trail.join(', ')}`
+          `step ${index}: ${trail.join(', ')}`
         ).toEqual([]);
+      }
+    }
+  );
+
+  test.each(Array.from({ length: NO_OP_SEEDS }, (_, seed) => seed + 1))(
+    'seed %i returns the same desktop for every no-op',
+    (seed) => {
+      const world = initialWorld(seed);
+
+      for (let index = 0; index < STEPS; index++) {
+        const name = step(world);
+        expect({ after: name, broken: brokenNoOps(world) }).toEqual({ after: name, broken: [] });
       }
     }
   );

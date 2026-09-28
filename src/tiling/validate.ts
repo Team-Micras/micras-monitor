@@ -6,15 +6,48 @@
 
 import { LayoutError } from './layout-error';
 import { leafIds } from './tree';
-import type { Desktop, FloatingWindow, Rect, TileNode, WindowId, Workspace } from './types';
+import type {
+  Desktop,
+  FloatingWindow,
+  Orientation,
+  Rect,
+  Side,
+  TileNode,
+  WindowId,
+  Workspace,
+} from './types';
 import { windowIds } from './workspace';
 
 type Placed = Map<WindowId, string>;
 
+/** The sides a window can take against a tile. */
+export const SIDES: readonly Side[] = ['left', 'right', 'top', 'bottom'];
+
+/** The ways a split lays out its children. */
+export const ORIENTATIONS: readonly Orientation[] = ['row', 'column'];
+
+const NODE_TYPES: readonly string[] = ['leaf', 'split'];
+
+/** The index of the first id that already appeared earlier in the list, or -1. */
+export function firstRepeated(ids: readonly WindowId[]): number {
+  const seen = new Set<WindowId>();
+
+  for (const [index, id] of ids.entries()) {
+    if (seen.has(id)) {
+      return index;
+    }
+
+    seen.add(id);
+  }
+
+  return -1;
+}
+
 /**
  * Checks that a desktop is well formed: at least one workspace and a valid active index; every
  * window of `windows` placed exactly once, in one tree or floating layer; nothing placed that
- * `windows` does not know; ratios strictly between 0 and 1; finite rects; a focus history of
+ * `windows` does not know; known node types, orientations and sides; ratios strictly between 0
+ * and 1; finite rects; dock memories naming distinct windows; a focus history of
  * distinct windows of its own workspace, not empty while the workspace has windows; and a
  * maximized window tiled in its own workspace.
  *
@@ -84,11 +117,14 @@ function checkNode(
   windows: Desktop['windows'],
   placed: Placed
 ): void {
+  checkOneOf(node.type, NODE_TYPES, `${where}.type`);
+
   if (node.type === 'leaf') {
     checkPlacement(node.id, `${where}.id`, windows, placed);
     return;
   }
 
+  checkOneOf(node.orientation, ORIENTATIONS, `${where}.orientation`);
   checkRatio(node.ratio, `${where}.ratio`);
   checkNode(node.first, `${where}.first`, windows, placed);
   checkNode(node.second, `${where}.second`, windows, placed);
@@ -107,13 +143,23 @@ function checkFloating(
     return;
   }
 
-  if (entry.dock.sibling.length === 0) {
-    throw new LayoutError(`${where}.dock.sibling`, 'must name at least one window');
+  if (entry.dock.siblings.length === 0) {
+    throw new LayoutError(`${where}.dock.siblings`, 'must name at least one window');
   }
 
-  entry.dock.sibling.forEach((id, index) => {
-    checkId(id, `${where}.dock.sibling[${index}]`);
+  entry.dock.siblings.forEach((id, index) => {
+    checkId(id, `${where}.dock.siblings[${index}]`);
   });
+  const repeated = firstRepeated(entry.dock.siblings);
+
+  if (repeated !== -1) {
+    throw new LayoutError(
+      `${where}.dock.siblings[${repeated}]`,
+      `"${entry.dock.siblings[repeated]}" is listed twice`
+    );
+  }
+
+  checkOneOf(entry.dock.side, SIDES, `${where}.dock.side`);
   checkRatio(entry.dock.ratio, `${where}.dock.ratio`);
 }
 
@@ -167,6 +213,12 @@ function checkPlacement(
   }
 
   placed.set(id, where);
+}
+
+function checkOneOf(value: string, options: readonly string[], where: string): void {
+  if (!options.includes(value)) {
+    throw new LayoutError(where, `must be one of ${options.map((o) => `"${o}"`).join(', ')}`);
+  }
 }
 
 function checkId(id: WindowId, where: string): void {

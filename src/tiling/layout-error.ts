@@ -18,3 +18,13 @@ export class LayoutError extends Error {
     this.path = path;
   }
 }
+
+/**
+ * Marks a branch the type checker has proven unreachable, so a switch over a union fails to
+ * compile when a new member is added.
+ *
+ * @throws {Error} Always; reaching it means a value escaped its declared type.
+ */
+export function unreachable(value: never): never {
+  throw new Error(`Unexpected value: ${JSON.stringify(value)}`);
+}

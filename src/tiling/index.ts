@@ -11,20 +11,22 @@
 export type * from './types';
 export { LayoutError } from './layout-error';
 export { containsLeaf, firstLeafId, leaf, leafIds, nodeAt, pathOf, split } from './tree';
-export { centreOf, containsPoint, usableBounds } from './geometry';
+export { centerOf, checkMetrics, containsPoint, MIN_RATIO, usableBounds } from './geometry';
 export {
   fitFloating,
+  layoutDesktop,
   layoutTree,
   layoutWorkspace,
   minimumSize,
   ratioAtPoint,
+  type DesktopWindow,
   type Gutter,
   type MinimumSize,
   type PlacedWindow,
   type TreeLayout,
   type WorkspaceLayout,
 } from './layout';
-export { findNeighbour, readingOrder } from './focus';
+export { findNeighbor, readingOrder } from './focus';
 export {
   createWorkspace,
   dwindlePlacement,
@@ -38,14 +40,17 @@ export {
   closeWindow,
   createDesktop,
   focusDirection,
+  focusNext,
+  focusPrevious,
   focusWindow,
   moveToWorkspace,
   moveWindow,
-  neighbourOf,
+  neighborOf,
   nudgeSplit,
   openWindow,
   placeFloating,
   resetSplit,
+  resizeFocused,
   resizeSplit,
   swapDirection,
   swapWindows,
@@ -54,6 +59,13 @@ export {
   toggleMaximize,
   workspaceOf,
 } from './desktop';
+export {
+  addWorkspace,
+  moveWorkspace,
+  removeWorkspace,
+  renameWorkspace,
+  type RemovePolicy,
+} from './lifecycle';
 export { applyDrop, hitTest, type DropTarget } from './hit-test';
 export { execute, type Command } from './commands';
 export {
@@ -62,7 +74,13 @@ export {
   restoreDesktop,
   serializeDesktop,
   type DesktopSnapshot,
+  type DockSnapshot,
+  type FloatingSnapshot,
   type Migration,
+  type NodeSnapshot,
+  type RectSnapshot,
   type RestoreOptions,
+  type WindowSnapshot,
+  type WorkspaceSnapshot,
 } from './serialize';
 export { validateDesktop } from './validate';

@@ -1,15 +1,18 @@
 /**
- * Operations on the whole desktop. Each takes a desktop and returns the next one; an operation
- * that does not apply returns the desktop it was given, so callers can compare by identity.
+ * Operations on the whole desktop. Each takes a desktop and returns the next one. An operation
+ * that does not apply, or that asks for the state already in place, returns the desktop it was
+ * given, so callers can skip work by comparing identities. Moves and drops are the exception:
+ * one that puts a window back where it already was rebuilds the tree and returns an equal but
+ * new desktop.
  *
  * @module
  */
 
-import { clamp } from './geometry';
-import { findNeighbour } from './focus';
+import { findNeighbor, readingOrder } from './focus';
+import { clamp, openRatio } from './geometry';
 import { fitFloating, layoutTree, layoutWorkspace } from './layout';
 import { LayoutError } from './layout-error';
-import { setRatioAt, swapLeaves } from './tree';
+import { nodeAt, pathOf, setRatioAt, swapLeaves } from './tree';
 import type {
   Desktop,
   Direction,
@@ -21,7 +24,7 @@ import type {
   WindowId,
   Workspace,
 } from './types';
-import { validateDesktop } from './validate';
+import { firstRepeated, validateDesktop } from './validate';
 import {
   addFloating,
   detach,
@@ -48,9 +51,7 @@ export function createDesktop<P>(
   active = 0
 ): Desktop<P> {
   const list = [...windows];
-  const repeated = list.findIndex((window, index) =>
-    list.slice(0, index).some((other) => other.id === window.id)
-  );
+  const repeated = firstRepeated(list.map((window) => window.id));
 
   if (repeated !== -1) {
     throw new LayoutError(`windows[${repeated}].id`, `repeats "${list[repeated].id}"`);
@@ -168,8 +169,8 @@ export function focusWindow<P>(desktop: Desktop<P>, id: WindowId): Desktop<P> {
   return updateWorkspace(switchWorkspace(desktop, index), index, (ws) => withFocus(ws, id));
 }
 
-/** The visible window physically on one side of the focused one, as `findNeighbour` ranks it. */
-export function neighbourOf(
+/** The visible window physically on one side of the focused one, as `findNeighbor` ranks it. */
+export function neighborOf(
   desktop: Desktop,
   direction: Direction,
   metrics: LayoutMetrics
@@ -182,7 +183,7 @@ export function neighbourOf(
   }
 
   const { windows } = layoutWorkspace(workspace, metrics);
-  return findNeighbour(windows, focused, direction, workspace.focus);
+  return findNeighbor(windows, focused, direction, workspace.focus);
 }
 
 /** Moves the focus to the window physically on one side of the focused one. */
@@ -191,21 +192,49 @@ export function focusDirection<P>(
   direction: Direction,
   metrics: LayoutMetrics
 ): Desktop<P> {
-  const target = neighbourOf(desktop, direction, metrics);
+  const target = neighborOf(desktop, direction, metrics);
   return target === null ? desktop : focusWindow(desktop, target);
+}
+
+/** Moves the focus to the next visible window of the active workspace in reading order. */
+export function focusNext<P>(desktop: Desktop<P>, metrics: LayoutMetrics): Desktop<P> {
+  return focusInReadingOrder(desktop, 1, metrics);
+}
+
+/** Moves the focus to the previous visible window of the active workspace in reading order. */
+export function focusPrevious<P>(desktop: Desktop<P>, metrics: LayoutMetrics): Desktop<P> {
+  return focusInReadingOrder(desktop, -1, metrics);
+}
+
+function focusInReadingOrder<P>(
+  desktop: Desktop<P>,
+  offset: number,
+  metrics: LayoutMetrics
+): Desktop<P> {
+  const workspace = activeWorkspace(desktop);
+  const order = readingOrder(layoutWorkspace(workspace, metrics));
+
+  if (order.length === 0) {
+    return desktop;
+  }
+
+  const index = order.indexOf(focusedWindow(workspace) ?? '');
+  const next = index === -1 ? order[0] : order[(index + offset + order.length) % order.length];
+  return focusWindow(desktop, next);
 }
 
 /** Exchanges the tiles of two windows tiled in the same workspace; the focus does not move. */
 export function swapWindows<P>(desktop: Desktop<P>, a: WindowId, b: WindowId): Desktop<P> {
   const index = tiledWorkspaceOf(desktop, a);
 
-  if (index === -1 || index !== tiledWorkspaceOf(desktop, b)) {
+  if (a === b || index === -1 || index !== tiledWorkspaceOf(desktop, b)) {
     return desktop;
   }
 
-  return updateWorkspace(desktop, index, (ws) =>
-    ws.root === null ? ws : { ...ws, root: swapLeaves(ws.root, a, b) }
-  );
+  return updateWorkspace(desktop, index, (ws) => {
+    const root = ws.root === null ? null : swapLeaves(ws.root, a, b);
+    return root === ws.root ? ws : { ...ws, root };
+  });
 }
 
 /**
@@ -225,13 +254,14 @@ export function swapDirection<P>(
   }
 
   const tiled = layoutWorkspace(workspace, metrics).windows.filter((window) => !window.floating);
-  const target = findNeighbour(tiled, focused, direction, workspace.focus);
+  const target = findNeighbor(tiled, focused, direction, workspace.focus);
   return target === null ? desktop : swapWindows(desktop, focused, target);
 }
 
 /**
  * Moves a window, tiled or floating, beside a tiled window, splitting that tile, and focuses it.
- * The target's workspace is shown. The window keeps its id, so views keyed by it stay mounted.
+ * The target's workspace is shown. The window keeps its id, so views keyed by it stay mounted. A
+ * move back to the place the window already had returns an equal but new desktop.
  */
 export function moveWindow<P>(desktop: Desktop<P>, id: WindowId, at: EdgePlacement): Desktop<P> {
   const from = workspaceOf(desktop, id);
@@ -249,6 +279,10 @@ export function moveWindow<P>(desktop: Desktop<P>, id: WindowId, at: EdgePlaceme
  * Moves a window to another workspace, where it takes the focus. A tiled window is placed by the
  * dwindle rule; a floating one keeps its rect and forgets where it was tiled. The window keeps
  * its id.
+ *
+ * Unlike Hyprland, an index past the last workspace changes nothing instead of creating one:
+ * workspaces here are named tabs the user creates, and a gap such as index 7 of 4 would need
+ * placeholder names the engine has no business inventing. Call `addWorkspace` first.
  *
  * @param follow Whether to show the destination workspace.
  */
@@ -327,16 +361,25 @@ export function placeFloating<P>(
   }
 
   const fitted = fitFloating(rect, metrics);
-  return updateWorkspace(desktop, index, (ws) =>
-    isFloating(ws, id)
-      ? { ...ws, floating: ws.floating.map((f) => (f.id === id ? { ...f, rect: fitted } : f)) }
-      : ws
-  );
+  return updateWorkspace(desktop, index, (ws) => {
+    const entry = ws.floating.find((f) => f.id === id);
+
+    if (entry === undefined || sameRect(entry.rect, fitted)) {
+      return ws;
+    }
+
+    return { ...ws, floating: ws.floating.map((f) => (f === entry ? { ...f, rect: fitted } : f)) };
+  });
+}
+
+function sameRect(a: Rect, b: Rect): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
 /**
  * Sets the ratio of a split on the active workspace, clamped so both sides keep their nested
- * minimum size in this viewport. A split whose minimums leave no room to move keeps its ratio.
+ * minimum size in this viewport, and strictly inside (0, 1). A split whose minimums leave no room
+ * to move keeps its ratio.
  */
 export function resizeSplit<P>(
   desktop: Desktop<P>,
@@ -356,22 +399,63 @@ export function resizeSplit<P>(
     return desktop;
   }
 
-  const root = setRatioAt(workspace.root, path, clamp(ratio, gutter.minRatio, gutter.maxRatio));
+  const clamped = openRatio(clamp(ratio, gutter.minRatio, gutter.maxRatio));
+  const root = setRatioAt(workspace.root, path, clamped);
   return updateWorkspace(desktop, desktop.active, (ws) =>
     root === ws.root ? ws : { ...ws, root }
   );
 }
 
-/** Changes a split's ratio by a step, for keyboard resizing, within the minimum sizes. */
+/**
+ * Changes a split's ratio by a step, for keyboard resizing, within the minimum sizes. The step
+ * starts from the stored ratio as the viewport clamps it, so repeated steps do not drift.
+ */
 export function nudgeSplit<P>(
   desktop: Desktop<P>,
   path: NodePath,
   delta: number,
   metrics: LayoutMetrics
 ): Desktop<P> {
-  const { gutters } = layoutTree(activeWorkspace(desktop).root, metrics);
-  const gutter = gutters.find((g) => g.path === path);
-  return gutter === undefined ? desktop : resizeSplit(desktop, path, gutter.ratio + delta, metrics);
+  const { root } = activeWorkspace(desktop);
+  const node = nodeAt(root, path);
+  const gutter = layoutTree(root, metrics).gutters.find((g) => g.path === path);
+
+  if (delta === 0 || node === null || node.type !== 'split' || gutter === undefined) {
+    return desktop;
+  }
+
+  const from = clamp(node.ratio, gutter.minRatio, gutter.maxRatio);
+  return resizeSplit(desktop, path, from + delta, metrics);
+}
+
+/**
+ * Resizes the focused tiled window from the keyboard: the nearest split above it that divides
+ * the axis of `direction` moves its gutter toward `direction` by `step`, a share of that split.
+ * Right and down grow the split's first side; left and up grow its second side.
+ */
+export function resizeFocused<P>(
+  desktop: Desktop<P>,
+  direction: Direction,
+  step: number,
+  metrics: LayoutMetrics
+): Desktop<P> {
+  const { root, focus } = activeWorkspace(desktop);
+  const path = focus[0] === undefined ? null : pathOf(root, focus[0]);
+
+  if (path === null) {
+    return desktop;
+  }
+
+  const orientation = direction === 'left' || direction === 'right' ? 'row' : 'column';
+  const ancestors = Array.from({ length: path.length }, (_, i) =>
+    path.slice(0, path.length - 1 - i)
+  );
+  const split = ancestors.find((ancestor) => {
+    const node = nodeAt(root, ancestor);
+    return node !== null && node.type === 'split' && node.orientation === orientation;
+  });
+  const sign = direction === 'right' || direction === 'down' ? 1 : -1;
+  return split === undefined ? desktop : nudgeSplit(desktop, split, sign * step, metrics);
 }
 
 /** Resets a split to 50/50, or as close as the minimum sizes allow. */

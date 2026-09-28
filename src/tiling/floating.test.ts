@@ -17,13 +17,13 @@ import {
 } from './index';
 
 describe('lifting a window', () => {
-  test('centres it on its tile at three quarters of the size and remembers the place', () => {
+  test('centers it on its tile at three quarters of the size and remembers the place', () => {
     const d = overview();
     const tile = tileOf(d, 'robot');
     const [entry] = toggleFloating(d, 'robot', METRICS).workspaces[0].floating;
     expect(entry.rect.width).toBe(Math.round(tile.width * 0.75));
     expect(entry.rect.x + entry.rect.width / 2).toBeCloseTo(tile.x + tile.width / 2, 0);
-    expect(entry.dock).toEqual({ sibling: ['track'], side: 'bottom', ratio: 0.6 });
+    expect(entry.dock).toEqual({ siblings: ['track'], side: 'bottom', ratio: 0.6 });
   });
 
   test('restores the tiling when the maximized window is lifted', () => {

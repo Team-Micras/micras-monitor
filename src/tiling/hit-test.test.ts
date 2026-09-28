@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'vitest';
 
-import { centreOf } from './geometry';
-import { METRICS, overview, tileOf } from './fixtures/desktops';
+import { centerOf } from './geometry';
+import { METRICS, desktopOf, overview, tileOf } from './fixtures/desktops';
 import {
   applyDrop,
   focusedWindow,
   hitTest,
   leafIds,
+  createWorkspace,
+  leaf,
+  moveToWorkspace,
   placeFloating,
+  split,
   toggleFloating,
   toggleMaximize,
   type Desktop,
@@ -15,8 +19,8 @@ import {
 } from './index';
 
 function edgeOf(desktop: Desktop, dragged: string | null, id: string, dx: number, dy: number) {
-  const centre = centreOf(tileOf(desktop, id));
-  return hitTest(desktop, dragged, { x: centre.x + dx, y: centre.y + dy }, METRICS);
+  const center = centerOf(tileOf(desktop, id));
+  return hitTest(desktop, dragged, { x: center.x + dx, y: center.y + dy }, METRICS);
 }
 
 function expectEdge(target: DropTarget | null): Extract<DropTarget, { kind: 'edge' }> {
@@ -30,9 +34,9 @@ function expectEdge(target: DropTarget | null): Extract<DropTarget, { kind: 'edg
 }
 
 describe('hit testing', () => {
-  test('the centre of a tile means swap, previewed as that tile', () => {
+  test('the center of a tile means swap, previewed as that tile', () => {
     const d = overview();
-    const target = hitTest(d, 'profile', centreOf(tileOf(d, 'track')), METRICS);
+    const target = hitTest(d, 'profile', centerOf(tileOf(d, 'track')), METRICS);
     expect(target).toEqual({ kind: 'center', id: 'track', preview: tileOf(d, 'track') });
   });
 
@@ -78,7 +82,7 @@ describe('hit testing', () => {
   test('the dragged tile, the gaps and floating windows are not targets', () => {
     let d = overview();
     const track = tileOf(d, 'track');
-    expect(hitTest(d, 'track', centreOf(track), METRICS)).toBeNull();
+    expect(hitTest(d, 'track', centerOf(track), METRICS)).toBeNull();
     expect(hitTest(d, 'robot', { x: track.x + track.width + 7, y: 200 }, METRICS)).toBeNull();
     d = toggleFloating(d, 'profile', METRICS);
     d = placeFloating(d, 'profile', { ...track, width: 300, height: 300 }, METRICS);
@@ -100,11 +104,57 @@ describe('applying a drop', () => {
     expect(focusedWindow(d.workspaces[1])).toBe('maze');
   });
 
-  test('on a centre swaps and focuses the dragged window', () => {
+  test('on a center swaps and focuses the dragged window', () => {
     const before = overview();
-    const target = hitTest(before, 'profile', centreOf(tileOf(before, 'track')), METRICS);
+    const target = hitTest(before, 'profile', centerOf(tileOf(before, 'track')), METRICS);
     const d = target === null ? before : applyDrop(before, 'profile', target, METRICS);
     expect(tileOf(d, 'profile')).toEqual(tileOf(before, 'track'));
     expect(focusedWindow(d.workspaces[0])).toBe('profile');
+  });
+});
+
+function withFloatingProfile(): Desktop {
+  return toggleFloating(overview(), 'profile', METRICS);
+}
+
+describe('dragging a floating window', () => {
+  test('a center is no target, since floating windows move by placeFloating', () => {
+    const d = withFloatingProfile();
+    expect(hitTest(d, 'profile', centerOf(tileOf(d, 'track')), METRICS)).toBeNull();
+  });
+
+  test('an edge docks it there, where the preview showed', () => {
+    const d = withFloatingProfile();
+    const target = expectEdge(edgeOf(d, 'profile', 'track', 0, tileOf(d, 'track').height / 2 - 5));
+    const dropped = applyDrop(d, 'profile', target, METRICS);
+    expect(dropped.workspaces[0].floating).toEqual([]);
+    expect(tileOf(dropped, 'profile')).toEqual(target.preview);
+  });
+
+  test('a window of another workspace cannot swap, but can split an edge', () => {
+    const d = moveToWorkspace(overview(), 'maze', 1, METRICS, false);
+    expect(hitTest(d, 'maze', centerOf(tileOf(d, 'track')), METRICS)).toBeNull();
+    const target = expectEdge(edgeOf(d, 'maze', 'track', -tileOf(d, 'track').width / 2 + 5, 0));
+    expect(applyDrop(d, 'maze', target, METRICS).workspaces[1].root).toBeNull();
+  });
+
+  test('a center drop that cannot swap changes nothing', () => {
+    const d = withFloatingProfile();
+    const center = { kind: 'center', id: 'track', preview: tileOf(d, 'track') } as const;
+    expect(applyDrop(d, 'profile', center, METRICS)).toBe(d);
+  });
+});
+
+describe('zero-sized tiles', () => {
+  test('count as their center instead of yielding a NaN zone', () => {
+    const row = split('row', 0.5, leaf('a'), split('row', 0.5, leaf('b'), leaf('c')));
+    const d = desktopOf([createWorkspace('W', row)]);
+    const metrics = { ...METRICS, width: 28, height: 100, outerGap: 0 };
+    expect(tileOf(d, 'a', metrics).width).toBe(0);
+    expect(hitTest(d, null, { x: 0, y: 50 }, metrics)).toEqual({
+      kind: 'center',
+      id: 'a',
+      preview: tileOf(d, 'a', metrics),
+    });
   });
 });

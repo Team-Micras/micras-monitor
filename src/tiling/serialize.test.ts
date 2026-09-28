@@ -15,6 +15,7 @@ import {
   toggleFloating,
   toggleMaximize,
   type Migration,
+  type Workspace,
 } from './index';
 
 interface PlotPayload {
@@ -234,6 +235,157 @@ describe('migrations', () => {
   test('a version without a migration is rejected', () => {
     expect(() => restoreDesktop(versionZero())).toThrow(
       'version is 0, which has no migration to 1'
+    );
+  });
+});
+
+function goldenDesktop() {
+  const spare: Workspace = {
+    name: 'Spare',
+    root: leaf('log'),
+    floating: [
+      {
+        id: 'note',
+        rect: { x: 10, y: 20, width: 300, height: 200 },
+        dock: { siblings: ['log'], side: 'left', ratio: 0.5 },
+      },
+    ],
+    focus: ['note', 'log'],
+    maximized: 'log',
+  };
+  return createDesktop<unknown>(
+    [createWorkspace('Main', split('row', 0.25, leaf('plot'), leaf('maze'))), spare],
+    [
+      { id: 'plot', kind: 'plot', payload: { series: ['x'] } },
+      { id: 'maze', kind: 'maze', payload: null },
+      { id: 'log', kind: 'log', payload: null },
+      { id: 'note', kind: 'note', payload: 'hi' },
+    ],
+    1
+  );
+}
+
+function versionZeroOf(migration: Migration) {
+  return () => restoreDesktop({ ...snapshotOf(), version: 0 }, { migrations: { 0: migration } });
+}
+
+const boom: Migration = () => {
+  throw new Error('boom');
+};
+
+const list: Migration = () => JSON.parse('[]');
+
+function withDock(dock: unknown): Workspace {
+  return {
+    ...createWorkspace('W', leaf('a')),
+    floating: [
+      {
+        id: 'f',
+        rect: { x: 0, y: 0, width: 10, height: 10 },
+        dock: JSON.parse(JSON.stringify(dock)),
+      },
+    ],
+  };
+}
+
+describe('format version 1', () => {
+  const golden = {
+    version: 1,
+    active: 1,
+    windows: [
+      { id: 'plot', kind: 'plot', payload: { series: ['x'] } },
+      { id: 'maze', kind: 'maze', payload: null },
+      { id: 'log', kind: 'log', payload: null },
+      { id: 'note', kind: 'note', payload: 'hi' },
+    ],
+    workspaces: [
+      {
+        name: 'Main',
+        root: {
+          type: 'split',
+          orientation: 'row',
+          ratio: 0.25,
+          first: { type: 'leaf', id: 'plot' },
+          second: { type: 'leaf', id: 'maze' },
+        },
+        floating: [],
+        focus: ['plot'],
+        maximized: null,
+      },
+      {
+        name: 'Spare',
+        root: { type: 'leaf', id: 'log' },
+        floating: [
+          {
+            id: 'note',
+            rect: { x: 10, y: 20, width: 300, height: 200 },
+            dock: { siblings: ['log'], side: 'left', ratio: 0.5 },
+          },
+        ],
+        focus: ['note', 'log'],
+        maximized: 'log',
+      },
+    ],
+  };
+
+  test('is written field for field, in this order', () => {
+    expect(JSON.stringify(serializeDesktop(goldenDesktop()))).toBe(JSON.stringify(golden));
+  });
+
+  test('is read back into the same desktop', () => {
+    expect(restoreDesktop(golden)).toEqual(goldenDesktop());
+  });
+});
+
+describe('failing migrations', () => {
+  test('report the version when they throw', () => {
+    expect(versionZeroOf(boom)).toThrow(
+      new LayoutError('version', 'is 0, and its migration to 1 failed: Error: boom')
+    );
+  });
+
+  test('report the version when they return something other than an object', () => {
+    expect(versionZeroOf(list)).toThrow(
+      new LayoutError('version', 'is 0, and its migration to 1 did not return an object')
+    );
+  });
+});
+
+describe('validating a desktop built in code', () => {
+  test('rejects unknown node types and orientations as layout errors', () => {
+    const tab: Workspace = { ...createWorkspace('W'), root: JSON.parse('{"type":"tab"}') };
+    expect(() => createDesktop([tab])).toThrow(
+      new LayoutError('workspaces[0].root.type', 'must be one of "leaf", "split"')
+    );
+    const diagonal: Workspace = {
+      ...createWorkspace('W', split('row', 0.5, leaf('a'), leaf('b'))),
+      root: JSON.parse(
+        '{"type":"split","orientation":"diagonal","ratio":0.5,"first":{"type":"leaf","id":"a"},"second":{"type":"leaf","id":"b"}}'
+      ),
+    };
+    expect(() =>
+      createDesktop(
+        [diagonal],
+        [
+          { id: 'a', kind: 'k', payload: null },
+          { id: 'b', kind: 'k', payload: null },
+        ]
+      )
+    ).toThrow('workspaces[0].root.orientation must be one of "row", "column"');
+  });
+
+  test('rejects dock memories with a repeated window or an unknown side', () => {
+    const windows = [
+      { id: 'a', kind: 'k', payload: null },
+      { id: 'f', kind: 'k', payload: null },
+    ];
+    expect(() =>
+      createDesktop([withDock({ siblings: ['a', 'a'], side: 'left', ratio: 0.5 })], windows)
+    ).toThrow('workspaces[0].floating[0].dock.siblings[1] "a" is listed twice');
+    expect(() =>
+      createDesktop([withDock({ siblings: ['a'], side: 'middle', ratio: 0.5 })], windows)
+    ).toThrow(
+      'workspaces[0].floating[0].dock.side must be one of "left", "right", "top", "bottom"'
     );
   });
 });

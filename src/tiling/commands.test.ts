@@ -6,7 +6,9 @@ import {
   execute,
   focusedWindow,
   isFloating,
+  leaf,
   leafIds,
+  split,
   type Command,
   type Desktop,
 } from './index';
@@ -69,5 +71,47 @@ describe('commands', () => {
     ] satisfies Command[]) {
       expect(execute(empty, command, METRICS)).toBe(empty);
     }
+  });
+});
+
+describe('pointer and accessibility commands', () => {
+  test('focus a window by id, and the next and previous in reading order', () => {
+    let d = run(overview(), { type: 'focusWindow', id: 'profile' });
+    expect(focusedWindow(d.workspaces[0])).toBe('profile');
+    d = run(d, { type: 'focusNext' });
+    expect(focusedWindow(d.workspaces[0])).toBe('track');
+    d = run(d, { type: 'focusPrevious' }, { type: 'focusPrevious' });
+    expect(focusedWindow(d.workspaces[0])).toBe('robot');
+  });
+
+  test('resize moves the nearest split along the direction and reset brings it back', () => {
+    const root = split('row', 0.5, leaf('a'), split('column', 0.5, leaf('b'), leaf('c')));
+    const d = desktopOf([createWorkspace('W', root, 'b')]);
+    const wider = run(d, { type: 'resize', direction: 'left', step: 0.1 });
+    expect(wider.workspaces[0].root).toMatchObject({ ratio: 0.4, second: { ratio: 0.5 } });
+    const taller = run(d, { type: 'resize', direction: 'down', step: 0.1 });
+    expect(taller.workspaces[0].root).toMatchObject({ ratio: 0.5, second: { ratio: 0.6 } });
+    expect(run(wider, { type: 'resetSplit', path: '' }).workspaces[0].root).toEqual(root);
+  });
+
+  test('resize without a split along that axis changes nothing', () => {
+    const d = desktopOf([createWorkspace('W', split('row', 0.5, leaf('a'), leaf('b')))]);
+    expect(execute(d, { type: 'resize', direction: 'up', step: 0.1 }, METRICS)).toBe(d);
+  });
+});
+
+describe('workspace commands', () => {
+  test('add, rename, move and remove workspaces', () => {
+    let d = run(
+      overview(),
+      { type: 'addWorkspace', name: 'Sensors', at: 0 },
+      { type: 'renameWorkspace', index: 2, name: 'Plots' },
+      { type: 'moveWorkspace', from: 0, to: 2 }
+    );
+    expect(d.workspaces.map((w) => w.name)).toEqual(['Overview', 'Plots', 'Sensors']);
+    expect(d.active).toBe(0);
+    d = run(d, { type: 'removeWorkspace', index: 0, policy: 'mergeIntoNeighbor' });
+    expect(d.workspaces.map((w) => w.name)).toEqual(['Plots', 'Sensors']);
+    expect(leafIds(d.workspaces[0].root)).toHaveLength(4);
   });
 });

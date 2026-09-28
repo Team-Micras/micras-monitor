@@ -1,9 +1,18 @@
 import { describe, expect, test } from 'vitest';
 
-import { METRICS, desktopOf, tileOf } from './fixtures/desktops';
+import { METRICS, desktopOf, overview, tileOf } from './fixtures/desktops';
 import { outsideOf, tooCloseOf } from './fixtures/invariants';
 import {
+  checkMetrics,
   createWorkspace,
+  layoutDesktop,
+  LayoutError,
+  MIN_RATIO,
+  moveToWorkspace,
+  nudgeSplit,
+  restoreDesktop,
+  serializeDesktop,
+  toggleMaximize,
   layoutTree,
   layoutWorkspace,
   leaf,
@@ -107,8 +116,8 @@ describe('geometry', () => {
   test('a pointer on a gutter maps to its ratio and is clamped to the minimums', () => {
     const { gutters } = layoutTree(split('column', 0.3, leaf('a'), leaf('b')), METRICS);
     const [gutter] = gutters;
-    const centre = gutter.rect.y + gutter.rect.height / 2;
-    expect(ratioAtPoint(gutter, { x: 100, y: centre })).toBeCloseTo(gutter.ratio, 2);
+    const center = gutter.rect.y + gutter.rect.height / 2;
+    expect(ratioAtPoint(gutter, { x: 100, y: center })).toBeCloseTo(gutter.ratio, 2);
     expect(ratioAtPoint(gutter, { x: 100, y: 0 })).toBe(gutter.minRatio);
     expect(ratioAtPoint(gutter, { x: 100, y: METRICS.height })).toBe(gutter.maxRatio);
   });
@@ -133,5 +142,56 @@ describe('geometry', () => {
     const f = layoutWorkspace(workspace, small).windows.find((w) => w.id === 'f');
     expect(f?.rect).toEqual({ x: 186, y: 86, width: 600, height: 400 });
     expect(workspace.floating[0].rect.x).toBe(1400);
+  });
+});
+
+describe('metrics', () => {
+  test.each([
+    [{ minWidth: 0 }, 'metrics.minWidth is 0; it must be at least 1'],
+    [{ minHeight: 0.5 }, 'metrics.minHeight is 0.5; it must be at least 1'],
+    [{ gap: -1 }, 'metrics.gap is -1; it must be at least 0'],
+    [{ outerGap: Number.NaN }, 'metrics.outerGap is NaN; it must be at least 0'],
+    [{ width: Number.POSITIVE_INFINITY }, 'metrics.width is Infinity; it must be at least 0'],
+  ])('rejects %o', (change, message) => {
+    expect(() => checkMetrics({ ...METRICS, ...change })).toThrow(LayoutError);
+    expect(() => layoutTree(leaf('a'), { ...METRICS, ...change })).toThrow(message);
+  });
+
+  test('accepts one-pixel minimums, and resizing then keeps ratios strictly inside (0, 1)', () => {
+    const metrics = { ...METRICS, minWidth: 1, minHeight: 1 };
+    const d = resizeSplit(overview(), '', 0, metrics);
+    const root = d.workspaces[0].root;
+    expect(root?.type === 'split' && root.ratio).toBe(MIN_RATIO);
+    expect(restoreDesktop(JSON.parse(JSON.stringify(serializeDesktop(d))))).toEqual(d);
+  });
+});
+
+describe('keyboard steps', () => {
+  test('a zero step changes nothing', () => {
+    const d = overview();
+    expect(nudgeSplit(d, '', 0, METRICS)).toBe(d);
+  });
+
+  test('steps start from the stored ratio, so they do not drift with rounding', () => {
+    let d = overview();
+    for (let i = 0; i < 5; i++) {
+      d = nudgeSplit(d, '', 0.01, METRICS);
+    }
+    const root = d.workspaces[0].root;
+    expect(root?.type === 'split' && root.ratio).toBeCloseTo(0.65, 10);
+  });
+});
+
+describe('the whole desktop', () => {
+  test('lists every window with its workspace, visible only on the active one', () => {
+    const d = toggleMaximize(moveToWorkspace(overview(), 'maze', 1, METRICS, false));
+    const windows = layoutDesktop(d, METRICS);
+    expect(windows.map((w) => [w.id, w.workspace, w.visible])).toEqual([
+      ['track', 0, true],
+      ['robot', 0, false],
+      ['profile', 0, false],
+      ['maze', 1, false],
+    ]);
+    expect(windows[3].rect).toEqual(usableBounds(METRICS));
   });
 });
