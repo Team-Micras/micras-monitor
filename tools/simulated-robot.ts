@@ -6,27 +6,38 @@
  * at whatever period is asked for, the credit window, writes with their acknowledgements, commands
  * and a full rate capture. The signals are made up; everything around them is not.
  *
- * Run with `npm run simulate`, then connect the application to ws://localhost:8080.
+ * Run with `bun run simulate`, then connect the application to ws://localhost:8080.
  */
 
-import { WebSocketServer, WebSocket } from 'ws';
+import { type WebSocket, WebSocketServer } from 'ws';
 
-import { encodeFrame, FrameReader, Reader, Writer } from '../src/lib/comm/Frame';
 import {
+  encodeFrame,
+  FrameReader,
   MAX_GROUPS,
   MAX_GROUP_VARIABLES,
   MAX_PAYLOAD_SIZE,
   MessageType,
   PROTOCOL_VERSION,
+  Reader,
+  TYPE_SIZE,
   TypeCode,
+  Writer,
   WriteStatus,
-} from '../src/lib/comm/Protocol';
-import { TYPE_SIZE, writeValue } from '../src/lib/comm/TypeCodec';
+  writeValue,
+} from '../src/protocol';
 
 const LOOP_TIME_US = 125;
 const INITIAL_CREDIT = 256;
 const SAMPLE_HEADER_SIZE = 7;
 const PORT = Number(process.env.MICRAS_SIM_PORT ?? 8080);
+
+/**
+ * One batch of loop iterations per millisecond stands in for the 8 kHz loop, which is fast enough
+ * for the application to see and slow enough for a socket.
+ */
+const BATCH_INTERVAL_MS = 1;
+const TICKS_PER_BATCH = (BATCH_INTERVAL_MS * 1000) / LOOP_TIME_US;
 
 /** One registered variable, the way the firmware's pool holds it. */
 interface Variable {
@@ -224,7 +235,7 @@ interface Group {
 
 class Robot {
   private reader = new FrameReader();
-  private groups: (Group | undefined)[] = new Array(MAX_GROUPS).fill(undefined);
+  private groups: (Group | undefined)[] = Array.from({ length: MAX_GROUPS }, () => undefined);
   private credit = INITIAL_CREDIT;
   private schemaIndex = variables.length;
   private iteration = 0;
@@ -277,7 +288,7 @@ class Robot {
     for (const id of group.ids) {
       const variable = variables[id];
       const value = variable.sample ? variable.sample(t) : variable.value;
-      bytes.push(...writeValue(value as number, variable.type));
+      bytes.push(...writeValue(value, variable.type));
     }
 
     return new Uint8Array(bytes);
@@ -358,19 +369,12 @@ class Robot {
       ids.push(reader.u16());
     }
 
-    if (
-      index >= MAX_GROUPS ||
-      count > MAX_GROUP_VARIABLES ||
-      ids.some((id) => !variables[id])
-    ) {
+    if (index >= MAX_GROUPS || count > MAX_GROUP_VARIABLES || ids.some((id) => !variables[id])) {
       this.send(MessageType.ERROR, new Writer().u8(2).u16(index).done());
       return;
     }
 
-    const sampleSize = ids.reduce(
-      (total, id) => total + TYPE_SIZE[variables[id].type],
-      0
-    );
+    const sampleSize = ids.reduce((total, id) => total + TYPE_SIZE[variables[id].type], 0);
 
     if (sampleSize + SAMPLE_HEADER_SIZE > MAX_PAYLOAD_SIZE) {
       this.send(MessageType.ERROR, new Writer().u8(3).u16(sampleSize).done());
@@ -385,10 +389,7 @@ class Robot {
       counter: 0,
       sequence: 0,
     };
-    this.send(
-      MessageType.GROUP_ACK,
-      new Writer().u8(index).u16(period).u16(sampleSize).done()
-    );
+    this.send(MessageType.GROUP_ACK, new Writer().u8(index).u16(period).u16(sampleSize).done());
   }
 
   private onGroupEnable(reader: Reader): void {
@@ -425,8 +426,7 @@ class Robot {
       status = WriteStatus.WRONG_SIZE;
     } else {
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      variable.value =
-        variable.type === TypeCode.F32 ? view.getFloat32(0, true) : view.getUint8(0);
+      variable.value = variable.type === TypeCode.F32 ? view.getFloat32(0, true) : view.getUint8(0);
       console.log(`write ${variable.name} = ${variable.value}`);
     }
 
@@ -443,13 +443,7 @@ class Robot {
     }
 
     const value = variable.sample ? variable.sample(this.now()) : variable.value;
-    this.send(
-      MessageType.VALUE,
-      new Writer()
-        .u16(id)
-        .raw(writeValue(value as number, variable.type))
-        .done()
-    );
+    this.send(MessageType.VALUE, new Writer().u16(id).raw(writeValue(value, variable.type)).done());
   }
 
   private onCommand(reader: Reader): void {
@@ -475,11 +469,7 @@ class Robot {
       return;
     }
 
-    const writer = new Writer()
-      .u32(schemaHash())
-      .u16(this.schemaIndex)
-      .u16(variables.length)
-      .u8(0);
+    const writer = new Writer().u32(schemaHash()).u16(this.schemaIndex).u16(variables.length).u8(0);
 
     const header = writer.done();
     const entries: number[] = [];
@@ -535,34 +525,37 @@ class Robot {
   }
 }
 
-const server = new WebSocketServer({ port: PORT });
-
-// Without this a port already in use is an unhandled event, and anything driving this would
-// quietly end up talking to whatever is already listening there
-server.on('error', (error) => {
+/**
+ * Without this a port already in use is an unhandled event, and anything driving this would
+ * quietly end up talking to whatever is already listening there.
+ */
+function exitOnListenError(error: Error): never {
   console.error(`could not listen on ${PORT}:`, error.message);
   process.exit(1);
-});
+}
 
-server.on('connection', (socket) => {
+function runRobot(socket: WebSocket): void {
   console.log('application connected');
 
   const robot = new Robot(socket);
   const timer = setInterval(() => {
-    // One batch per millisecond stands in for the 8 kHz loop, which is fast enough for the
-    // application to see and slow enough for a socket
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < TICKS_PER_BATCH; i++) {
       robot.tick();
     }
 
     robot.sendSchemaPage();
-  }, 1);
+  }, BATCH_INTERVAL_MS);
 
   socket.on('close', () => {
     console.log('application disconnected');
     clearInterval(timer);
   });
-});
+}
+
+const server = new WebSocketServer({ port: PORT });
+
+server.on('error', exitOnListenError);
+server.on('connection', runRobot);
 
 console.log(`simulated robot listening on ws://localhost:${PORT}`);
 console.log(`${variables.length} variables, schema hash ${schemaHash().toString(16)}`);

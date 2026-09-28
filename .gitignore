@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Test artifacts
+coverage
+test-results
+playwright-report
+__screenshots__
+.vitest-attachments
+
+# oh-my-claudecode state
+.omc/

@@ -1,0 +1,140 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "react", "jsx-a11y", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn"
+  },
+  "options": {
+    "typeAware": true,
+    "denyWarnings": true
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**", ".omc/**"],
+  "rules": {
+    "import/no-cycle": "error",
+    "import/no-unassigned-import": [
+      "error",
+      {
+        "allow": ["**/*.css"]
+      }
+    ],
+    "vitest/expect-expect": [
+      "error",
+      {
+        "assertFunctionNames": ["expect", "expect*"]
+      }
+    ],
+    "react/react-in-jsx-scope": "off",
+    "react/only-export-components": [
+      "error",
+      {
+        "allowConstantExport": true
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/**", "robots/**"],
+      "env": {
+        "browser": true
+      }
+    },
+    {
+      "files": ["src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
+                "message": "Nothing in src/ imports a robot package; robots register through the app."
+              },
+              {
+                "regex": "^(@/app(/|$)|(\\.\\./)+app(/|$))",
+                "message": "Layers below the app must not depend on it."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/app/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
+                "message": "Nothing in src/ imports a robot package; robots register through the app."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/protocol/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@/(link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(link|telemetry|tiling|robot-kit|app|robots))(/|$)",
+                "message": "src/protocol depends on nothing else in the monitor."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/main.tsx"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["tools/**", "*.config.ts"],
+      "env": {
+        "node": true
+      }
+    },
+    {
+      "files": ["tools/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@/(link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|telemetry|tiling|robot-kit|app)|robots))(/|$)",
+                "message": "Tools may only depend on src/protocol."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Tools are Node scripts; no React."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

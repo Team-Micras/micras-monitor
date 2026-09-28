@@ -1,0 +1,132 @@
+import { describe, expect, test } from 'vitest';
+
+import { FRAME_VECTORS, type FrameVector } from './fixtures/frame-vectors';
+import { encodeFrame, FrameReader, Reader, Writer } from './frame';
+import { MAX_PAYLOAD_SIZE, MessageType } from './protocol';
+
+function encodeVector(vector: FrameVector): Uint8Array {
+  return encodeFrame(vector.type, new Uint8Array(vector.payload));
+}
+
+function vectorNamed(name: string): FrameVector {
+  const vector = FRAME_VECTORS.find((candidate) => candidate.name === name);
+
+  if (!vector) {
+    throw new Error(`No frame vector named ${name}`);
+  }
+
+  return vector;
+}
+
+describe('frames against the firmware', () => {
+  test.each(FRAME_VECTORS)('$name encodes to the bytes the firmware produces', (vector) => {
+    expect([...encodeVector(vector)]).toEqual(vector.frame);
+  });
+
+  test.each(FRAME_VECTORS)('$name decodes the firmware bytes to one message', (vector) => {
+    const frames = new FrameReader().push(new Uint8Array(vector.frame));
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0].type).toBe(vector.type);
+    expect([...frames[0].payload]).toEqual(vector.payload);
+  });
+});
+
+describe('FrameReader', () => {
+  test('discards a truncated frame on its own and still delivers the next one', () => {
+    const good = encodeVector(vectorNamed('group_define'));
+    const torn = good.slice(0, good.length - 3);
+    const reader = new FrameReader();
+
+    const frames = reader.push(new Uint8Array([...torn, 0x00, ...good]));
+
+    expect(frames).toHaveLength(1);
+    expect(reader.discarded).toBe(1);
+  });
+
+  test('discards a frame whose check does not match', () => {
+    const corrupted = encodeVector(vectorNamed('write'));
+    corrupted[6] ^= 0x10;
+    const reader = new FrameReader();
+
+    expect(reader.push(corrupted)).toEqual([]);
+    expect(reader.discarded).toBe(1);
+  });
+
+  test('discards a frame too short to hold a type and a check', () => {
+    const reader = new FrameReader();
+
+    expect(reader.push(new Uint8Array([0x02, 0x01, 0x00]))).toEqual([]);
+    expect(reader.discarded).toBe(1);
+  });
+
+  test('ignores empty frames between delimiters', () => {
+    const reader = new FrameReader();
+
+    expect(reader.push(new Uint8Array([0x00, 0x00, 0x00]))).toEqual([]);
+    expect(reader.discarded).toBe(0);
+  });
+
+  test('joins a frame split across pushes', () => {
+    const frame = encodeVector(vectorNamed('hello_ack'));
+    const reader = new FrameReader();
+
+    expect(reader.push(frame.subarray(0, 5))).toEqual([]);
+    expect(reader.push(frame.subarray(5))).toHaveLength(1);
+  });
+
+  test('forgets a partial frame when cleared', () => {
+    const frame = encodeVector(vectorNamed('credit'));
+    const reader = new FrameReader();
+
+    reader.push(frame.subarray(0, 3));
+    reader.clear();
+
+    expect(reader.push(frame)).toHaveLength(1);
+    expect(reader.discarded).toBe(0);
+  });
+});
+
+describe('encodeFrame', () => {
+  test('refuses a payload larger than the protocol allows', () => {
+    expect(() => encodeFrame(MessageType.SAMPLE, new Uint8Array(MAX_PAYLOAD_SIZE + 1))).toThrow(
+      /exceeds/
+    );
+  });
+
+  test('round trips a payload of the largest size', () => {
+    const payload = new Uint8Array(MAX_PAYLOAD_SIZE).map((_, index) => index % 7);
+    const frames = new FrameReader().push(encodeFrame(MessageType.SAMPLE, payload));
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0].payload).toEqual(payload);
+  });
+});
+
+describe('Writer and Reader', () => {
+  test('read back what was written, little endian', () => {
+    const payload = new Writer()
+      .u8(0xab)
+      .u16(0x1234)
+      .u32(0xdeadbeef)
+      .f32(1.5)
+      .raw(new TextEncoder().encode('ok'))
+      .done();
+    const reader = new Reader(payload);
+
+    expect([...payload.subarray(1, 3)]).toEqual([0x34, 0x12]);
+    expect(reader.u8()).toBe(0xab);
+    expect(reader.u16()).toBe(0x1234);
+    expect(reader.u32()).toBe(0xdeadbeef);
+    expect(new DataView(reader.bytes(4).slice().buffer).getFloat32(0, true)).toBe(1.5);
+    expect(reader.left).toBe(2);
+    expect(reader.text(2)).toBe('ok');
+    expect(reader.rest()).toHaveLength(0);
+  });
+
+  test('reads from a view into a larger buffer', () => {
+    const buffer = new Uint8Array([0xff, 0x01, 0x02, 0xff]);
+
+    expect(new Reader(buffer.subarray(1, 3)).u16()).toBe(0x0201);
+  });
+});
