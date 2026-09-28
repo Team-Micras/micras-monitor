@@ -172,26 +172,6 @@
       }
     },
     {
-      "files": ["tools/bench-telemetry.ts"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^(@/(link|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|tiling|robot-kit|app)|robots))(/|$)",
-                "message": "The telemetry benchmark may only depend on src/protocol and src/telemetry."
-              },
-              {
-                "regex": "^react(-dom)?(/.*)?$",
-                "message": "Tools are Node scripts; no React."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "files": ["src/main.tsx"],
       "rules": {
         "no-restricted-imports": "off"
@@ -234,6 +214,26 @@
               {
                 "regex": "^(@/(link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|telemetry|tiling|robot-kit|app)|robots))(/|$)",
                 "message": "The simulated robot stands in for the firmware and speaks only src/protocol."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Tools are Node scripts; no React."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["tools/bench-telemetry.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@/(link|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|tiling|robot-kit|app)|robots))(/|$)",
+                "message": "The telemetry benchmark may only depend on src/protocol and src/telemetry."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
