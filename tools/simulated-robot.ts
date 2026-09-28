@@ -1,561 +1,99 @@
 /**
- * A robot that speaks the protocol over a socket, so that the whole application can be developed
- * and debugged before a radio module is plugged into anything.
+ * Run the simulated robot on a WebSocket, so the application can connect to it as it would to the
+ * simulation's bridge.
  *
- * It implements the same session as `micras_comm`: the handshake, a paged schema, coherent groups
- * at whatever period is asked for, the credit window, writes with their acknowledgements, commands
- * and a full rate capture. The signals are made up; everything around them is not.
+ * `bun run simulate` listens on ws://localhost:8080 (or `MICRAS_SIM_PORT`) over a perfect link.
+ * Flags shape the link and inject faults:
  *
- * Run with `bun run simulate`, then connect the application to ws://localhost:8080.
+ * ```
+ * --port <n>                 port to listen on
+ * --throughput <bytes/s>     cap what the radio carries
+ * --latency <ms>             delay each direction
+ * --drop-schema-page <n>     lose schema page n (from 0), once
+ * --drop-credits <n>         ignore n CREDIT frames once samples flow
+ * --corrupt <rate>           corrupt this share (0 to 1) of outgoing frames
+ * --reboot-after <s>         reset the robot once, s seconds after connecting
+ * --seed <n>                 seed for which frames get corrupted
+ * ```
+ *
+ * @module
  */
 
-import { type WebSocket, WebSocketServer } from 'ws';
+import { parseArgs } from 'node:util';
 
-import {
-  encodeFrame,
-  FrameReader,
-  MAX_GROUPS,
-  MAX_GROUP_VARIABLES,
-  MAX_PAYLOAD_SIZE,
-  MessageType,
-  PROTOCOL_VERSION,
-  Reader,
-  TYPE_SIZE,
-  TypeCode,
-  Writer,
-  WriteStatus,
-  writeValue,
-} from '../src/protocol';
+import { NO_FAULTS, type FaultOptions } from './simulated-robot/faults';
+import { startSimulatedRobot, type SimulatedRobotOptions } from './simulated-robot/server';
+import { createVariables, schemaHash } from './simulated-robot/variables';
 
-const LOOP_TIME_US = 125;
-const INITIAL_CREDIT = 256;
-const SAMPLE_HEADER_SIZE = 7;
-const PORT = Number(process.env.MICRAS_SIM_PORT ?? 8080);
+type NumericOption = keyof FaultOptions | 'port';
 
-/**
- * One batch of loop iterations per millisecond stands in for the 8 kHz loop, which is fast enough
- * for the application to see and slow enough for a socket.
- */
-const BATCH_INTERVAL_MS = 1;
-const TICKS_PER_BATCH = (BATCH_INTERVAL_MS * 1000) / LOOP_TIME_US;
-
-/** One registered variable, the way the firmware's pool holds it. */
-interface Variable {
-  name: string;
-  type: TypeCode;
-  access: number;
-  value: number | boolean;
-  sample?: (t: number) => number;
-}
-
-const ACCESS_STREAM = 0x01;
-const ACCESS_WRITE = 0x02;
-const ACCESS_IDLE = 0x04;
-const ACCESS_PERSIST = 0x08;
-
-const variables: Variable[] = [
-  {
-    name: 'imu/gyro_x',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.sin(t * 3),
-  },
-  {
-    name: 'imu/gyro_y',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.cos(t * 3),
-  },
-  {
-    name: 'imu/gyro_z',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.sin(t * 11) * 0.3,
-  },
-  {
-    name: 'imu/accel_x',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.sin(t) * 2,
-  },
-  {
-    name: 'imu/accel_y',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.cos(t) * 2,
-  },
-  {
-    name: 'imu/accel_z',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: () => 9.81,
-  },
-  {
-    name: 'wall/0',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => 0.5 + Math.sin(t * 0.7) * 0.4,
-  },
-  {
-    name: 'wall/1',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => 0.5 + Math.cos(t * 0.7) * 0.4,
-  },
-  {
-    name: 'wall/2',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => 0.5 + Math.sin(t * 1.3) * 0.3,
-  },
-  {
-    name: 'wall/3',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => 0.5 + Math.cos(t * 1.3) * 0.3,
-  },
-  {
-    name: 'loop/elapsed_time',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: () => 0.000125,
-  },
-  {
-    name: 'loop/worst_time_us',
-    type: TypeCode.U32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: () => 91,
-  },
-  {
-    name: 'cmd/linear',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.min(t % 4, 1.5),
-  },
-  {
-    name: 'cmd/angular',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.sin(t * 2) * 4,
-  },
-  {
-    name: 'response/left',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.sin(t * 2 + 0.1) * 30,
-  },
-  {
-    name: 'response/right',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.sin(t * 2 - 0.1) * 30,
-  },
-  {
-    name: 'feed_forward/left',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.min(t % 4, 1.5) * 20,
-  },
-  {
-    name: 'feed_forward/right',
-    type: TypeCode.F32,
-    access: ACCESS_STREAM,
-    value: 0,
-    sample: (t) => Math.min(t % 4, 1.5) * 20,
-  },
-  {
-    name: 'objective',
-    type: TypeCode.U8,
-    access: ACCESS_STREAM | ACCESS_WRITE | ACCESS_IDLE,
-    value: 0,
-  },
-  {
-    name: 'run_profile',
-    type: TypeCode.U8,
-    access: ACCESS_STREAM | ACCESS_WRITE | ACCESS_PERSIST,
-    value: 0,
-  },
-  { name: 'link/dropped_samples', type: TypeCode.U32, access: ACCESS_STREAM, value: 0 },
-  { name: 'link/dropped_logs', type: TypeCode.U32, access: ACCESS_STREAM, value: 0 },
-  {
-    name: 'link/credit',
-    type: TypeCode.I32,
-    access: ACCESS_STREAM,
-    value: INITIAL_CREDIT,
-  },
+const FLAGS: readonly (readonly [flag: string, option: NumericOption])[] = [
+  ['port', 'port'],
+  ['throughput', 'throughputBytesPerSecond'],
+  ['latency', 'latencyMs'],
+  ['drop-schema-page', 'dropSchemaPage'],
+  ['drop-credits', 'dropCredits'],
+  ['corrupt', 'corruptRate'],
+  ['reboot-after', 'rebootAfterSeconds'],
+  ['seed', 'seed'],
 ];
 
-/** The same FNV-1a the firmware hashes its schema with, so the hash matches a real robot's. */
-function mix(hash: number, bytes: Uint8Array): number {
-  let mixed = hash;
+const DEFAULTS: Record<NumericOption, number | null> = { ...NO_FAULTS, port: 8080 };
 
-  for (const byte of bytes) {
-    mixed = Math.imul(mixed ^ byte, 16777619) >>> 0;
+function parseOptions(): Partial<SimulatedRobotOptions> {
+  const { values } = parseArgs({
+    options: Object.fromEntries(FLAGS.map(([flag]) => [flag, { type: 'string' as const }])),
+  });
+  const options: Partial<Record<NumericOption, number>> = {
+    port: Number(process.env.MICRAS_SIM_PORT ?? DEFAULTS.port),
+  };
+
+  for (const [flag, option] of FLAGS) {
+    const text = values[flag];
+
+    if (typeof text === 'string') {
+      options[option] = parseNumber(flag, text);
+    }
   }
 
-  return mixed;
+  return options;
 }
 
-function schemaHash(): number {
-  let hash = 2166136261;
+function parseNumber(flag: string, text: string): number {
+  const value = Number(text);
 
-  for (const variable of variables) {
-    hash = mix(hash, new TextEncoder().encode(variable.name));
-    hash = mix(hash, new Uint8Array([variable.type, variable.access]));
+  if (!Number.isFinite(value) || value < 0) {
+    console.error(`--${flag} takes a non-negative number, got ${text}`);
+    process.exit(2);
   }
 
-  return hash;
+  return value;
 }
 
-interface Group {
-  ids: number[];
-  period: number;
-  sampleSize: number;
-  enabled: boolean;
-  counter: number;
-  sequence: number;
+function describeLink(options: Partial<SimulatedRobotOptions>): string {
+  const changed = FLAGS.filter(
+    ([, option]) =>
+      option !== 'port' && options[option] !== undefined && options[option] !== DEFAULTS[option]
+  );
+
+  return changed.length === 0
+    ? 'a perfect link'
+    : changed.map(([flag, option]) => `--${flag} ${String(options[option])}`).join(' ');
 }
 
-class Robot {
-  private reader = new FrameReader();
-  private groups: (Group | undefined)[] = Array.from({ length: MAX_GROUPS }, () => undefined);
-  private credit = INITIAL_CREDIT;
-  private schemaIndex = variables.length;
-  private iteration = 0;
-  private droppedSamples = 0;
-  private idle = true;
+const options = parseOptions();
+const variables = createVariables();
 
-  constructor(private readonly socket: WebSocket) {
-    socket.on('message', (data: Buffer) => this.onData(new Uint8Array(data)));
-  }
-
-  /** One control loop iteration. */
-  tick(): void {
-    this.iteration++;
-
-    for (let index = 0; index < MAX_GROUPS; index++) {
-      const group = this.groups[index];
-
-      if (!group?.enabled) {
-        continue;
-      }
-
-      if (group.counter > 0) {
-        group.counter--;
-        continue;
-      }
-
-      group.counter = group.period - 1;
-
-      const writer = new Writer()
-        .u8(index)
-        .u16(group.sequence++ & 0xffff)
-        .u32((this.iteration * LOOP_TIME_US) >>> 0)
-        .raw(this.sampleGroup(group));
-
-      if (!this.sendMetered(MessageType.SAMPLE, writer.done())) {
-        this.droppedSamples++;
-        variables[20].value = this.droppedSamples;
-      }
-    }
-  }
-
-  private now(): number {
-    return (this.iteration * LOOP_TIME_US) / 1e6;
-  }
-
-  private sampleGroup(group: Group): Uint8Array {
-    const bytes: number[] = [];
-    const t = this.now();
-
-    for (const id of group.ids) {
-      const variable = variables[id];
-      const value = variable.sample ? variable.sample(t) : variable.value;
-      bytes.push(...writeValue(value, variable.type));
-    }
-
-    return new Uint8Array(bytes);
-  }
-
-  private onData(data: Uint8Array): void {
-    for (const frame of this.reader.push(data)) {
-      this.consume(frame.type, frame.payload);
-    }
-  }
-
-  private consume(type: MessageType, payload: Uint8Array): void {
-    const reader = new Reader(payload);
-
-    switch (type) {
-      case MessageType.PING:
-        this.send(MessageType.PONG, new Uint8Array(0));
-        break;
-
-      case MessageType.HELLO:
-        this.groups.fill(undefined);
-        this.credit = INITIAL_CREDIT;
-        this.schemaIndex = variables.length;
-        this.send(
-          MessageType.HELLO_ACK,
-          new Writer()
-            .u8(PROTOCOL_VERSION)
-            .u32(schemaHash())
-            .u16(variables.length)
-            .u32(LOOP_TIME_US)
-            .u16(INITIAL_CREDIT)
-            .done()
-        );
-        break;
-
-      case MessageType.SCHEMA_REQUEST:
-        this.schemaIndex = reader.u16();
-        break;
-
-      case MessageType.GROUP_DEFINE:
-        this.onGroupDefine(reader);
-        break;
-
-      case MessageType.GROUP_ENABLE:
-        this.onGroupEnable(reader);
-        break;
-
-      case MessageType.CREDIT:
-        this.credit = Math.min(this.credit + reader.u16(), INITIAL_CREDIT);
-        variables[22].value = this.credit;
-        break;
-
-      case MessageType.WRITE:
-        this.onWrite(reader);
-        break;
-
-      case MessageType.READ:
-        this.onRead(reader);
-        break;
-
-      case MessageType.COMMAND:
-        this.onCommand(reader);
-        break;
-
-      default:
-        console.warn('Unknown message type:', type);
-        break;
-    }
-  }
-
-  private onGroupDefine(reader: Reader): void {
-    const index = reader.u8();
-    const period = Math.max(1, reader.u16());
-    const count = reader.u8();
-    const ids: number[] = [];
-
-    for (let i = 0; i < count; i++) {
-      ids.push(reader.u16());
-    }
-
-    if (index >= MAX_GROUPS || count > MAX_GROUP_VARIABLES || ids.some((id) => !variables[id])) {
-      this.send(MessageType.ERROR, new Writer().u8(2).u16(index).done());
-      return;
-    }
-
-    const sampleSize = ids.reduce((total, id) => total + TYPE_SIZE[variables[id].type], 0);
-
-    if (sampleSize + SAMPLE_HEADER_SIZE > MAX_PAYLOAD_SIZE) {
-      this.send(MessageType.ERROR, new Writer().u8(3).u16(sampleSize).done());
-      return;
-    }
-
-    this.groups[index] = {
-      ids,
-      period,
-      sampleSize,
-      enabled: false,
-      counter: 0,
-      sequence: 0,
-    };
-    this.send(MessageType.GROUP_ACK, new Writer().u8(index).u16(period).u16(sampleSize).done());
-  }
-
-  private onGroupEnable(reader: Reader): void {
-    const index = reader.u8();
-    const enable = reader.u8() !== 0;
-    const group = this.groups[index];
-
-    if (!group) {
-      this.send(MessageType.ERROR, new Writer().u8(2).u16(index).done());
-      return;
-    }
-
-    group.enabled = enable;
-    group.counter = 0;
-    this.send(
-      MessageType.GROUP_ACK,
-      new Writer().u8(index).u16(group.period).u16(group.sampleSize).done()
-    );
-  }
-
-  private onWrite(reader: Reader): void {
-    const id = reader.u16();
-    const bytes = reader.rest();
-    const variable = variables[id];
-    let status = WriteStatus.OK;
-
-    if (!variable) {
-      status = WriteStatus.NO_SUCH_ID;
-    } else if ((variable.access & ACCESS_WRITE) === 0) {
-      status = WriteStatus.READ_ONLY;
-    } else if ((variable.access & ACCESS_IDLE) !== 0 && !this.idle) {
-      status = WriteStatus.NEEDS_IDLE;
-    } else if (bytes.length !== TYPE_SIZE[variable.type]) {
-      status = WriteStatus.WRONG_SIZE;
-    } else {
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      variable.value = variable.type === TypeCode.F32 ? view.getFloat32(0, true) : view.getUint8(0);
-      console.log(`write ${variable.name} = ${variable.value}`);
-    }
-
-    this.send(MessageType.WRITE_ACK, new Writer().u16(id).u8(status).done());
-  }
-
-  private onRead(reader: Reader): void {
-    const id = reader.u16();
-    const variable = variables[id];
-
-    if (!variable) {
-      this.send(MessageType.ERROR, new Writer().u8(5).u16(id).done());
-      return;
-    }
-
-    const value = variable.sample ? variable.sample(this.now()) : variable.value;
-    this.send(MessageType.VALUE, new Writer().u16(id).raw(writeValue(value, variable.type)).done());
-  }
-
-  private onCommand(reader: Reader): void {
-    const code = reader.u8();
-    const argument = reader.u32();
-
-    console.log(`command ${code} (${argument})`);
-
-    this.idle = code !== 0 && code !== 1;
-    this.send(MessageType.COMMAND_ACK, new Writer().u8(code).u8(0).done());
-    this.send(
-      MessageType.LOG,
-      new Writer()
-        .u8(1)
-        .raw(new TextEncoder().encode(`ran command ${code}`))
-        .done()
-    );
-  }
-
-  /** The schema is paged, because a kilobyte is half a second of a link this slow. */
-  sendSchemaPage(): void {
-    if (this.schemaIndex >= variables.length) {
-      return;
-    }
-
-    const writer = new Writer().u32(schemaHash()).u16(this.schemaIndex).u16(variables.length).u8(0);
-
-    const header = writer.done();
-    const entries: number[] = [];
-    let index = this.schemaIndex;
-    let count = 0;
-
-    while (index < variables.length) {
-      const name = new TextEncoder().encode(variables[index].name);
-
-      if (header.length + entries.length + name.length + 3 > MAX_PAYLOAD_SIZE) {
-        break;
-      }
-
-      entries.push(variables[index].type, variables[index].access, name.length, ...name);
-      index++;
-      count++;
-    }
-
-    if (count === 0) {
-      this.schemaIndex = variables.length;
-      return;
-    }
-
-    const payload = new Uint8Array(header.length + entries.length);
-    payload.set(header, 0);
-    payload.set(entries, header.length);
-    payload[8] = count;
-
-    if (this.sendMetered(MessageType.SCHEMA_PAGE, payload)) {
-      this.schemaIndex = index;
-    }
-  }
-
-  /**
-   * What the robot sends on its own initiative has to fit in the window the application has
-   * opened; what it sends in reply is already bounded by the rate of the requests.
-   */
-  private sendMetered(type: MessageType, payload: Uint8Array): boolean {
-    const frame = encodeFrame(type, payload);
-
-    if (this.credit < frame.length) {
-      return false;
-    }
-
-    this.credit -= frame.length;
-    variables[22].value = this.credit;
-    this.socket.send(frame);
-    return true;
-  }
-
-  private send(type: MessageType, payload: Uint8Array): void {
-    this.socket.send(encodeFrame(type, payload));
-  }
-}
-
-/**
- * Without this a port already in use is an unhandled event, and anything driving this would
- * quietly end up talking to whatever is already listening there.
- */
-function exitOnListenError(error: Error): never {
-  console.error(`could not listen on ${PORT}:`, error.message);
+try {
+  const robot = await startSimulatedRobot({ ...options, log: (message) => console.log(message) });
+  console.log(
+    `simulated robot listening on ws://localhost:${robot.port} over ${describeLink(options)}`
+  );
+  console.log(`${variables.length} variables, schema hash ${schemaHash(variables).toString(16)}`);
+} catch (error) {
+  console.error(
+    `could not listen on ${options.port}:`,
+    error instanceof Error ? error.message : error
+  );
   process.exit(1);
 }
-
-function runRobot(socket: WebSocket): void {
-  console.log('application connected');
-
-  const robot = new Robot(socket);
-  const timer = setInterval(() => {
-    for (let i = 0; i < TICKS_PER_BATCH; i++) {
-      robot.tick();
-    }
-
-    robot.sendSchemaPage();
-  }, BATCH_INTERVAL_MS);
-
-  socket.on('close', () => {
-    console.log('application disconnected');
-    clearInterval(timer);
-  });
-}
-
-const server = new WebSocketServer({ port: PORT });
-
-server.on('error', exitOnListenError);
-server.on('connection', runRobot);
-
-console.log(`simulated robot listening on ws://localhost:${PORT}`);
-console.log(`${variables.length} variables, schema hash ${schemaHash().toString(16)}`);
