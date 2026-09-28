@@ -1,0 +1,48 @@
+/** How the wait between two reconnection attempts grows. */
+export interface BackoffOptions {
+  /** The wait before the first retry, in milliseconds. */
+  initialMs: number;
+
+  /** The longest wait, in milliseconds, no matter how many attempts failed. */
+  maxMs: number;
+
+  /** How much longer each wait is than the one before. */
+  factor: number;
+}
+
+/**
+ * Quick at first, for a robot that is only being reset, and settling at a few seconds for one that
+ * is switched off.
+ */
+export const DEFAULT_BACKOFF: BackoffOptions = { initialMs: 250, maxMs: 5000, factor: 2 };
+
+/**
+ * Capped exponential backoff: each failed attempt waits longer than the last, up to a ceiling,
+ * and a success starts over from the shortest wait.
+ */
+export class Backoff {
+  private failures = 0;
+
+  constructor(private readonly options: BackoffOptions = DEFAULT_BACKOFF) {}
+
+  /**
+   * Count one more failure.
+   *
+   * @returns How long to wait before the next attempt, in milliseconds.
+   */
+  next(): number {
+    const delay = this.options.initialMs * this.options.factor ** this.failures;
+    this.failures++;
+    return Math.min(delay, this.options.maxMs);
+  }
+
+  /** Start over after a success. */
+  reset(): void {
+    this.failures = 0;
+  }
+
+  /** How many attempts failed in a row. */
+  get attempts(): number {
+    return this.failures;
+  }
+}
