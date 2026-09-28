@@ -1,21 +1,22 @@
 /**
- * An in-memory robot behind the app's ports, for development and tests until the link and the
- * telemetry store are wired in. It goes through the same statuses a session does, streams
- * synthetic values ten times a second and answers commands through a callback.
+ * An in-memory robot behind the app's ports, for development and tests until the link is wired
+ * in. It goes through the same statuses a session does, feeds a real telemetry store with
+ * synthetic samples ten times a second and answers commands through a callback.
  *
  * @module
  */
 
 import { TypeCode, type Access } from '@/protocol';
+import { TelemetryStore, type Scheduler, type TelemetryValue } from '@/telemetry';
 
 import type {
   CommandOutcome,
   ConnectionStatus,
   ConnectionTarget,
-  LiveValue,
+  LinkPhase,
   MonitorPorts,
+  RobotVariable,
   Transport,
-  VariableInfo,
 } from '../ports';
 
 /** A variable of the fake robot. */
@@ -24,7 +25,7 @@ export interface FakeVariable {
   readonly type: TypeCode;
   readonly access: Access;
   readonly typeTag?: string | null;
-  /** Its value at a time in seconds since streaming began; a gentle wave when omitted. */
+  /** Its value at a time in seconds since the link came up; a gentle wave when omitted. */
   readonly signal?: (seconds: number) => number;
 }
 
@@ -46,40 +47,63 @@ export interface FakeRobotOptions {
   readonly variables: readonly FakeVariable[];
   /** Milliseconds to open the transport. */
   readonly connectMs?: number;
-  /** Milliseconds from HELLO to streaming. */
+  /** Milliseconds from HELLO to HELLO_ACK, and again to load the schema. */
   readonly handshakeMs?: number;
-  /** Milliseconds between two updates of the values. */
+  /** Milliseconds to configure the stream groups. */
+  readonly configureMs?: number;
+  /** Milliseconds between two samples. */
   readonly tickMs?: number;
   /** Milliseconds to answer a command. */
   readonly commandMs?: number;
   /** Whether the Bluetooth transport is offered. */
   readonly bluetooth?: boolean;
+  /** When the store tells its readers about new samples; the next animation frame by default. */
+  readonly scheduler?: Scheduler;
   /** Answers a command; every command is accepted when omitted. */
   readonly answer?: (code: number, argument: number, robot: FakeRobotControl) => CommandOutcome;
 }
 
 const OK: CommandOutcome = { status: 'ok', reason: 0 };
+const GROUP = 0;
+
+const FRAME_SCHEDULER: Scheduler = {
+  schedule: (task) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => task());
+    } else {
+      setTimeout(task, 16);
+    }
+  },
+};
+
+function isStreamed(variable: FakeVariable): boolean {
+  return variable.access.stream && variable.type !== TypeCode.BLOB;
+}
 
 /** A robot that exists only in memory and serves every port of the app. */
 export class FakeRobot {
   /** The ports the app needs, all served by this robot. */
   readonly ports: MonitorPorts;
+  /** The store the values live in, as the session would feed it. */
+  readonly store: TelemetryStore;
   readonly #options: FakeRobotOptions;
-  readonly #entries: readonly VariableInfo[];
+  readonly #entries: readonly RobotVariable[];
+  readonly #streamed: readonly RobotVariable[];
   readonly #statusListeners = new Set<() => void>();
   readonly #schemaListeners = new Set<() => void>();
-  readonly #valueListeners = new Set<() => void>();
-  readonly #values = new Map<number, LiveValue>();
   readonly #held = new Map<string, number>();
   #status: ConnectionStatus = { kind: 'disconnected' };
-  #variables: readonly VariableInfo[] = [];
+  #variables: readonly RobotVariable[] = [];
   #timers: ReturnType<typeof setTimeout>[] = [];
   #ticker: ReturnType<typeof setInterval> | null = null;
+  readonly #origin = Date.now();
   #startedAt = 0;
-  #version = 0;
+  #epoch = 0;
+  #sequence = 0;
 
   constructor(options: FakeRobotOptions) {
     this.#options = options;
+    this.store = new TelemetryStore({ scheduler: options.scheduler ?? FRAME_SCHEDULER });
     this.ports = {
       connection: {
         status: () => this.#status,
@@ -92,11 +116,7 @@ export class FakeRobot {
         variables: () => this.#variables,
         subscribe: (listener) => this.#listen(this.#schemaListeners, listener),
       },
-      values: {
-        latest: (id) => this.#values.get(id),
-        version: () => this.#version,
-        subscribe: (listener) => this.#listen(this.#valueListeners, listener),
-      },
+      values: this.store,
       commands: { send: (code, argument) => this.send(code, argument) },
     };
     this.#entries = options.variables.map((variable, id) => ({
@@ -106,6 +126,7 @@ export class FakeRobot {
       access: variable.access,
       typeTag: variable.typeTag ?? null,
     }));
+    this.#streamed = this.#entries.filter((_, id) => isStreamed(options.variables[id]));
   }
 
   /** Tells whether a transport is offered. */
@@ -131,10 +152,14 @@ export class FakeRobot {
       return;
     }
 
+    const handshakeMs = this.#options.handshakeMs ?? 450;
     this.#setStatus({ kind: 'connecting', target });
     this.#later(this.#options.connectMs ?? 250, () => {
       this.#setStatus({ kind: 'handshaking', target });
-      this.#later(this.#options.handshakeMs ?? 450, () => this.#stream(target));
+      this.#later(handshakeMs / 2, () => {
+        this.#link(target);
+        this.#later(handshakeMs / 2, () => this.#adoptSchema());
+      });
     });
   }
 
@@ -144,9 +169,23 @@ export class FakeRobot {
     this.#setStatus({ kind: 'disconnected' });
   }
 
-  /** Answers a command as `CommandPort.send` does. */
+  /**
+   * Stops streaming to configure the groups again, as a session does when the windows ask for
+   * other variables, and streams again once configured.
+   */
+  reconfigure(): void {
+    if (this.#status.kind !== 'linked' || this.#status.phase === 'schema') {
+      return;
+    }
+
+    this.#closeEpoch();
+    this.#setPhase('configuring');
+    this.#later(this.#options.configureMs ?? 150, () => this.#openEpoch());
+  }
+
+  /** Answers a command as `CommandPort.send` does: while the link is up, in any phase. */
   send(code: number, argument = 0): Promise<CommandOutcome> {
-    if (this.#status.kind !== 'streaming') {
+    if (this.#status.kind !== 'linked') {
       return Promise.resolve({ status: 'failed', message: 'Not connected to a robot.' });
     }
 
@@ -158,30 +197,70 @@ export class FakeRobot {
     });
   }
 
-  #stream(target: ConnectionTarget): void {
+  #link(target: ConnectionTarget): void {
     this.#startedAt = Date.now();
-    this.#variables = this.#entries;
-    this.#tick();
-    this.#ticker = setInterval(() => this.#tick(), this.#options.tickMs ?? 100);
     this.#setStatus({
-      kind: 'streaming',
+      kind: 'linked',
       target,
       robot: { name: this.#options.name, schemaHash: this.#options.schemaHash },
+      phase: 'schema',
       since: this.#startedAt,
     });
+  }
+
+  #adoptSchema(): void {
+    this.#variables = this.#entries;
+    this.store.setSchema(this.#entries);
+    this.#options.variables.forEach((variable, id) => {
+      if (!isStreamed(variable)) {
+        this.store.setLatestValue(id, this.#valueOf(variable, id, 0));
+      }
+    });
     this.#emit(this.#schemaListeners);
+    this.#setPhase('configuring');
+    this.#later(this.#options.configureMs ?? 150, () => this.#openEpoch());
+  }
+
+  #openEpoch(): void {
+    this.#epoch += 1;
+    this.#sequence = 0;
+    this.store.openEpoch({
+      epochId: this.#epoch,
+      groupId: GROUP,
+      variables: this.#streamed.map(({ id, type }) => ({ id, type })),
+      firstSequence: 0,
+    });
+    this.#setPhase('streaming');
+    this.#tick();
+    this.#ticker = setInterval(() => this.#tick(), this.#options.tickMs ?? 100);
+  }
+
+  #closeEpoch(): void {
+    if (this.#ticker !== null) {
+      clearInterval(this.#ticker);
+      this.#ticker = null;
+      this.store.closeEpoch(this.#epoch);
+    }
   }
 
   #tick(): void {
+    if (this.#ticker === null) {
+      return;
+    }
+
     const seconds = (Date.now() - this.#startedAt) / 1000;
-    this.#options.variables.forEach((variable, id) => {
-      this.#values.set(id, this.#valueOf(variable, id, seconds));
-    });
-    this.#version += 1;
-    this.#emit(this.#valueListeners);
+    const values = this.#streamed.map((entry) =>
+      this.#valueOf(this.#options.variables[entry.id], entry.id, seconds)
+    );
+    this.store.append(this.#epoch, this.#sequence, this.#timeUs(), values);
+    this.#sequence += 1;
   }
 
-  #valueOf(variable: FakeVariable, id: number, seconds: number): LiveValue {
+  #timeUs(): number {
+    return (Date.now() - this.#origin) * 1000;
+  }
+
+  #valueOf(variable: FakeVariable, id: number, seconds: number): TelemetryValue {
     if (variable.type === TypeCode.BLOB) {
       return new Uint8Array(8).fill(id);
     }
@@ -190,6 +269,11 @@ export class FakeRobot {
       this.#held.get(variable.name) ??
       variable.signal?.(seconds) ??
       Math.sin(seconds * (0.3 + (id % 7) * 0.11) + id);
+
+    if (variable.type === TypeCode.BOOL) {
+      return value !== 0;
+    }
+
     return variable.type === TypeCode.F32 || variable.type === TypeCode.F64
       ? value
       : Math.round(value);
@@ -200,11 +284,16 @@ export class FakeRobot {
       hold: (name, value) => this.#held.set(name, value),
       release: (name) => this.#held.delete(name),
       valueOf: (name) => {
-        const entry = this.#entries.find((variable) => variable.name === name);
-        const value = entry === undefined ? undefined : this.#values.get(entry.id);
+        const value = this.store.latest(name)?.value;
         return typeof value === 'number' ? value : undefined;
       },
     };
+  }
+
+  #setPhase(phase: LinkPhase): void {
+    if (this.#status.kind === 'linked') {
+      this.#setStatus({ ...this.#status, phase });
+    }
   }
 
   #listen(listeners: Set<() => void>, listener: () => void): () => void {
@@ -219,15 +308,15 @@ export class FakeRobot {
   #stop(): void {
     this.#timers.forEach(clearTimeout);
     this.#timers = [];
+    const streaming = this.#ticker !== null;
+    this.#closeEpoch();
 
-    if (this.#ticker !== null) {
-      clearInterval(this.#ticker);
-      this.#ticker = null;
+    if (streaming || this.#status.kind === 'linked') {
+      this.store.markBoundary('reconnect', this.#timeUs());
     }
 
     if (this.#variables.length > 0) {
       this.#variables = [];
-      this.#values.clear();
       this.#emit(this.#schemaListeners);
     }
   }

@@ -13,7 +13,7 @@ export type ConnectionTarget =
   | { readonly transport: 'websocket'; readonly url: string }
   | { readonly transport: 'bluetooth' };
 
-/** What the robot told about itself in the handshake. */
+/** What the robot told about itself in HELLO_ACK. */
 export interface RobotIdentity {
   /** The name HELLO_ACK announces (protocol v2), or null for firmware that sends none. */
   readonly name: string | null;
@@ -21,19 +21,27 @@ export interface RobotIdentity {
 }
 
 /**
- * Where the connection is. `connecting` opens the transport, `handshaking` covers everything
- * from HELLO to the first configured stream (schema included), and `failed` is a connection
- * that ended with an error the user has to act on.
+ * How far a link that is up got: reading the schema, configuring the stream groups, or
+ * streaming them. The robot takes commands in all three; a link goes back to `configuring`
+ * whenever the groups change.
+ */
+export type LinkPhase = 'schema' | 'configuring' | 'streaming';
+
+/**
+ * Where the connection is. `connecting` opens the transport, `handshaking` waits for HELLO_ACK,
+ * and `linked` is a link that is up: the robot said who it is and takes commands, whatever its
+ * `phase`. `failed` is a connection that ended with an error the user has to act on.
  */
 export type ConnectionStatus =
   | { readonly kind: 'disconnected' }
   | { readonly kind: 'connecting'; readonly target: ConnectionTarget }
   | { readonly kind: 'handshaking'; readonly target: ConnectionTarget }
   | {
-      readonly kind: 'streaming';
+      readonly kind: 'linked';
       readonly target: ConnectionTarget;
       readonly robot: RobotIdentity;
-      /** When streaming started, in `Date.now()` milliseconds. */
+      readonly phase: LinkPhase;
+      /** When the link came up, in `Date.now()` milliseconds. */
       readonly since: number;
     }
   | { readonly kind: 'failed'; readonly target: ConnectionTarget; readonly message: string };

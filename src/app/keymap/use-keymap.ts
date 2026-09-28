@@ -40,43 +40,63 @@ export function isTextField(target: EventTarget | null): boolean {
   );
 }
 
+/** Tells whether a key event types a character, Space aside, with no Ctrl, Alt or Meta held. */
+export function typesCharacter(event: KeyboardEvent): boolean {
+  return (
+    event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.altKey && !event.metaKey
+  );
+}
+
 /**
  * Listens to the keyboard for the whole window. It listens in the capture phase so that the
  * STOP key is handled before anything else: its keydown and keyup are both swallowed, so the
- * same press never also presses a focused button, and a held key stops only once.
+ * same press never also presses a focused button, and a held key stops only once. Space is
+ * swallowed the same way outside text fields even when STOP is bound elsewhere, so it never
+ * presses a button.
  *
  * @param bindings The chords of every action.
  * @param onAction Runs the action a key triggered.
+ * @param onType Offered every key that types a character outside a text field before the
+ *   keymap sees it; returning true claims the key, as the variables drawer does to send it to
+ *   its search field.
  */
-export function useKeymap(bindings: KeyBindings, onAction: (action: KeyAction) => void): void {
+export function useKeymap(
+  bindings: KeyBindings,
+  onAction: (action: KeyAction) => void,
+  onType?: (event: KeyboardEvent) => boolean
+): void {
   const act = useEffectEvent(onAction);
+  const type = useEffectEvent((event: KeyboardEvent) => onType?.(event) ?? false);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const action = actionForEvent(bindings, event, isTextField(event.target));
+    const swallow = (event: KeyboardEvent, action: KeyAction | null, inText: boolean) => {
+      if (action === 'stop' || (!inText && event.key === ' ')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
 
-      if (action === null) {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const inText = isTextField(event.target);
+
+      if (!inText && typesCharacter(event) && type(event)) {
+        return;
+      }
+
+      const action = actionForEvent(bindings, event, inText);
+      swallow(event, action, inText);
+
+      if (action === null || (action === 'stop' && event.repeat)) {
         return;
       }
 
       event.preventDefault();
-
-      if (action === 'stop') {
-        event.stopPropagation();
-
-        if (event.repeat) {
-          return;
-        }
-      }
-
       act(action);
     };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      if (actionForEvent(bindings, event, isTextField(event.target)) === 'stop') {
-        event.preventDefault();
-        event.stopPropagation();
-      }
+      const inText = isTextField(event.target);
+      swallow(event, actionForEvent(bindings, event, inText), inText);
     };
 
     window.addEventListener('keydown', onKeyDown, { capture: true });

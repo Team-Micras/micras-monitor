@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { RobotRegistry } from '@/robot-kit';
 import { emergencyCommand } from '@/robot-kit';
@@ -8,12 +8,14 @@ import { TooltipProvider } from './components/ui/tooltip';
 import type { KeyAction } from './keymap/keymap';
 import { tilingCommandFor } from './keymap/tiling-commands';
 import { useKeymap } from './keymap/use-keymap';
-import { MonitorContext, useMonitor, useRobotPackage } from './monitor-context';
+import { nothingToStop, stopAnswered, stopSent } from './lib/stop-outcome';
+import { MonitorContext, useMonitor } from './monitor-context';
+import { PackageSelector } from './package-selection';
 import type { MonitorPorts } from './ports';
 import { Launcher } from './shell/launcher';
 import { StatusBar } from './shell/status-bar';
 import { TopBar } from './shell/top-bar';
-import { VariableDrawer } from './shell/variable-drawer';
+import { DRAWER_SEARCH_SELECTOR, VariableDrawer } from './shell/variable-drawer';
 import {
   createShellStore,
   ShellStoreContext,
@@ -21,6 +23,7 @@ import {
   useShellStore,
   type ShellStore,
 } from './state/shell-store';
+import { initialKeyOverrides, saveKeyOverrides } from './state/key-overrides';
 import { applyTheme, initialTheme } from './state/theme';
 import { DragGhost } from './tiling/drag-ghost';
 import { TilingView } from './tiling/tiling-view';
@@ -38,10 +41,13 @@ export interface AppProps {
 
 /** The monitor: top bar, tiling of workspaces, status bar, drawer and launcher. */
 export function App({ ports, robots, synthetic = false, store: given }: AppProps) {
-  const [store] = useState(() => given ?? createShellStore({ theme: initialTheme() }));
+  const [store] = useState(
+    () => given ?? createShellStore({ theme: initialTheme(), keyOverrides: initialKeyOverrides() })
+  );
+  const [selection] = useState(() => new PackageSelector(ports.connection, ports.schema, robots));
 
   return (
-    <MonitorContext value={{ ports, robots, synthetic }}>
+    <MonitorContext value={{ ports, robots, selection, synthetic }}>
       <ShellStoreContext value={store}>
         <TooltipProvider>
           <Shell />
@@ -51,22 +57,45 @@ export function App({ ports, robots, synthetic = false, store: given }: AppProps
   );
 }
 
+function focusWindowElement(store: ShellStore): void {
+  const id = focusedWindow(activeWorkspace(store.getState().desktop));
+  const element = id === null ? null : document.querySelector(`[data-window="${CSS.escape(id)}"]`);
+
+  if (element instanceof HTMLElement) {
+    element.focus({ preventScroll: true });
+  }
+}
+
 function Shell() {
   const store = useShellStore();
-  const { ports } = useMonitor();
-  const selection = useRobotPackage();
+  const { ports, selection } = useMonitor();
   const theme = useShell((state) => state.theme);
   const bindings = useShell((state) => state.bindings);
+  const keyOverrides = useShell((state) => state.keyOverrides);
   const drawerOpen = useShell((state) => state.overlay === 'drawer');
+  const presses = useRef(0);
 
   useEffect(() => applyTheme(theme), [theme]);
+  useEffect(() => saveKeyOverrides(keyOverrides), [keyOverrides]);
 
-  const stop = () => {
-    const command = emergencyCommand(selection?.package ?? null);
+  const stop = async () => {
+    presses.current += 1;
+    const id = presses.current;
+    const { showStopNotice } = store.getState();
+    const pkg = selection.current()?.package ?? null;
+    const command = emergencyCommand(pkg);
 
-    if (command !== null && ports.connection.status().kind === 'streaming') {
-      void ports.commands.send(command.code);
+    if (command === null) {
+      showStopNotice(nothingToStop(id));
+      return;
     }
+
+    showStopNotice(stopSent(id, command));
+    const outcome = await ports.commands.send(command.code).catch((error: unknown) => ({
+      status: 'failed' as const,
+      message: error instanceof Error ? error.message : String(error),
+    }));
+    store.getState().showStopNotice(stopAnswered(id, command, pkg, outcome));
   };
 
   const onAction = (action: KeyAction) => {
@@ -75,6 +104,11 @@ function Shell() {
 
     if (command !== null) {
       state.run(command);
+
+      if (action.startsWith('focus.')) {
+        focusWindowElement(store);
+      }
+
       return;
     }
 
@@ -95,18 +129,30 @@ function Shell() {
         state.setOverlay('drawer', true);
         return;
       case 'stop':
-        stop();
+        void stop();
         return;
       default:
         return;
     }
   };
 
-  useKeymap(bindings, onAction);
+  const onType = (event: KeyboardEvent) => {
+    const search =
+      drawerOpen && event.key !== '/' ? document.querySelector(DRAWER_SEARCH_SELECTOR) : null;
+
+    if (search instanceof HTMLInputElement) {
+      search.focus();
+      return true;
+    }
+
+    return false;
+  };
+
+  useKeymap(bindings, onAction, onType);
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
-      <TopBar onStop={stop} />
+      <TopBar onStop={() => void stop()} />
       <main className="relative min-h-0 flex-1">
         <TilingView />
         {drawerOpen ? <VariableDrawer /> : null}

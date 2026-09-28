@@ -9,7 +9,7 @@ import {
   SearchIcon,
   XIcon,
 } from 'lucide-react';
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { presentVariable } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
@@ -25,7 +25,7 @@ import {
   useVariables,
   type ReactRobotPackage,
 } from '../monitor-context';
-import type { VariableInfo } from '../ports';
+import type { RobotVariable } from '../ports';
 import { useShell, useShellStore } from '../state/shell-store';
 import { startPointerDrag, surroundingsAt } from '../tiling/pointer-drag';
 import { PLOT_KIND, windowKind } from '../windows/registry';
@@ -34,7 +34,7 @@ type Filter = 'all' | 'plotted' | 'writable';
 
 interface Group {
   readonly name: string | null;
-  readonly variables: readonly VariableInfo[];
+  readonly variables: readonly RobotVariable[];
 }
 
 function groupOf(name: string): string | null {
@@ -42,8 +42,8 @@ function groupOf(name: string): string | null {
   return slash === -1 ? null : name.slice(0, slash);
 }
 
-function groupVariables(variables: readonly VariableInfo[]): readonly Group[] {
-  const groups = new Map<string, VariableInfo[]>();
+function groupVariables(variables: readonly RobotVariable[]): readonly Group[] {
+  const groups = new Map<string, RobotVariable[]>();
   const order: Group[] = [];
 
   for (const variable of variables) {
@@ -68,10 +68,15 @@ function groupVariables(variables: readonly VariableInfo[]): readonly Group[] {
   return order;
 }
 
+/** Finds the drawer's search field, which the shell sends typed characters to. */
+export const DRAWER_SEARCH_SELECTOR = '[data-drawer-search]';
+
 /**
  * The variables drawer (`/`): the schema's variables grouped by prefix, searchable, with their
  * latest values. A row dragged onto a window joins it, onto a window's edge opens a plot there;
- * Enter or a click adds the variable to the focused window, or opens a plot for it.
+ * Enter or a click adds the variable to the focused window, or opens a plot for it. The search
+ * field is not focused on opening, so Space stays STOP; typing a character focuses it, and `/`
+ * in an empty search closes the drawer.
  */
 export function VariableDrawer() {
   const store = useShellStore();
@@ -146,7 +151,7 @@ export function VariableDrawer() {
         <div>
           <h2 className="text-lg font-semibold">Variables</h2>
           <p className="text-sm text-muted-foreground">
-            {status.kind === 'streaming'
+            {status.kind === 'linked' && variables.length > 0
               ? `${variables.length} from schema ${formatHash(status.robot.schemaHash)} · ${pkg === null ? 'raw mode' : `package ${pkg.id}`}`
               : 'Connect to a robot to list its variables'}
           </p>
@@ -159,11 +164,16 @@ export function VariableDrawer() {
         <label className="flex h-10 items-center gap-2 rounded-lg border bg-background px-3 focus-within:ring-[3px] focus-within:ring-ring/50">
           <SearchIcon className="size-4 text-muted-foreground" aria-hidden />
           <input
-            // oxlint-disable-next-line jsx-a11y/no-autofocus
-            autoFocus
+            data-drawer-search
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === '/' && query === '') {
+                event.preventDefault();
+                close();
+              }
+            }}
             placeholder={`Search ${variables.length} variables`}
             aria-label="Search the variables"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
@@ -259,7 +269,7 @@ export function VariableDrawer() {
 }
 
 interface VariableRowProps {
-  readonly variable: VariableInfo;
+  readonly variable: RobotVariable;
   readonly label: string;
   readonly pkg: ReactRobotPackage | null;
   readonly plotted: boolean;
@@ -268,7 +278,8 @@ interface VariableRowProps {
 
 function VariableRow({ variable, label, pkg, plotted, onAdd }: VariableRowProps) {
   const store = useShellStore();
-  const value = useLiveValue(variable.id);
+  const dragged = useRef(false);
+  const value = useLiveValue(variable.name)?.value;
   const dragging = useShell(
     (state) => state.drag?.subject.kind === 'variable' && state.drag.subject.name === variable.name
   );
@@ -280,9 +291,13 @@ function VariableRow({ variable, label, pkg, plotted, onAdd }: VariableRowProps)
       return;
     }
 
+    dragged.current = false;
     const { beginDrag, moveDrag, endDrag, cancelDrag } = store.getState();
     startPointerDrag(event, {
-      onStart: (point) => beginDrag({ kind: 'variable', name: variable.name }, point),
+      onStart: (point) => {
+        dragged.current = true;
+        beginDrag({ kind: 'variable', name: variable.name }, point);
+      },
       onMove: (point) => moveDrag(point, surroundingsAt(point)),
       onEnd: () => endDrag(),
       onCancel: () => cancelDrag(),
@@ -295,7 +310,13 @@ function VariableRow({ variable, label, pkg, plotted, onAdd }: VariableRowProps)
         type="button"
         data-variable={variable.name}
         onPointerDown={onPointerDown}
-        onClick={() => onAdd(variable.name)}
+        onClick={() => {
+          if (dragged.current) {
+            dragged.current = false;
+          } else {
+            onAdd(variable.name);
+          }
+        }}
         title={`${variable.name}${unit === null ? '' : ` (${unit})`}`}
         className={cn(
           'group flex h-8 w-full touch-none items-center select-none gap-2 rounded-md px-2 text-left font-mono text-sm hover:bg-accent/60',

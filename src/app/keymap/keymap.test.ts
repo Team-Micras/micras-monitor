@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
-import { formatChord, keyOf, matchesChord, parseChord, type KeyInput } from './chords';
+import {
+  formatChord,
+  keyOf,
+  matchesChord,
+  matchesChordHeld,
+  parseChord,
+  type KeyInput,
+} from './chords';
 import {
   ACTIONS,
   actionFor,
@@ -77,6 +84,14 @@ describe('matchesChord', () => {
   });
 });
 
+test('matchesChordHeld needs the chord and takes more modifiers', () => {
+  const chord = parseChord('Ctrl+Space');
+  expect(matchesChordHeld(chord, press(' ', { ctrlKey: true, shiftKey: true }, 'Space'))).toBe(
+    true
+  );
+  expect(matchesChordHeld(chord, press(' ', { shiftKey: true }, 'Space'))).toBe(false);
+});
+
 test('formatChord shows one label per key cap', () => {
   expect(formatChord(parseChord('Alt+Shift+ArrowUp'))).toEqual(['Alt', 'Shift', '↑']);
   expect(formatChord(parseChord('Ctrl+K'))).toEqual(['Ctrl', 'K']);
@@ -105,6 +120,15 @@ describe('resolveBindings', () => {
     const bindings = resolveBindings({ stop: ['Ctrl+Space'] });
     expect(actionFor(bindings, press(' ', {}, 'Space'))).toBeNull();
     expect(actionFor(bindings, press(' ', { ctrlKey: true }, 'Space'))).toBe('stop');
+  });
+
+  test('stops with any modifier held on Space, unless another action has that chord', () => {
+    const bindings = resolveBindings();
+    expect(actionFor(bindings, press(' ', { shiftKey: true }, 'Space'))).toBe('stop');
+    expect(actionFor(bindings, press(' ', { ctrlKey: true, altKey: true }, 'Space'))).toBe('stop');
+    const shared = resolveBindings({ launcher: ['Ctrl+Space'] });
+    expect(actionFor(shared, press(' ', { ctrlKey: true }, 'Space'))).toBe('launcher');
+    expect(actionFor(shared, press(' ', { shiftKey: true }, 'Space'))).toBe('stop');
   });
 
   test('keeps the defaults of an override that no longer parses', () => {

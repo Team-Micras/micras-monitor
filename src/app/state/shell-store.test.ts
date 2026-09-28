@@ -232,6 +232,29 @@ describe('dragging a variable', () => {
     expect(opened).toMatchObject({ kind: 'plot', payload: { variables: ['pose/x'] } });
   });
 
+  test('onto a floating window that takes variables adds it there', () => {
+    const shell = store();
+    shell.getState().run({ type: 'toggleFloating', id: 'tracking' });
+    const floating = rectOf(shell, 'tracking');
+    shell.getState().beginDrag({ kind: 'variable', name: 'pose/x' }, { x: 0, y: 0 });
+    shell.getState().moveDrag(client(shell, leftEdgeOf(floating)), TILING);
+    expect(shell.getState().drag?.target).toEqual({
+      kind: 'center',
+      id: 'tracking',
+      preview: floating,
+    });
+    shell.getState().endDrag();
+    expect(shell.getState().desktop.windows.get('tracking')?.payload.variables).toContain('pose/x');
+  });
+
+  test('onto a floating window that takes no variables has no target', () => {
+    const shell = store();
+    shell.getState().run({ type: 'toggleFloating', id: 'commands' });
+    shell.getState().beginDrag({ kind: 'variable', name: 'pose/x' }, { x: 0, y: 0 });
+    shell.getState().moveDrag(client(shell, centerOf(rectOf(shell, 'commands'))), TILING);
+    expect(shell.getState().drag?.target).toBeNull();
+  });
+
   test('onto an empty workspace opens a plot', () => {
     const shell = createShellStore({
       viewport: VIEWPORT,
@@ -252,4 +275,25 @@ test('resizeSplit moves a split within its minimums', () => {
   shell.getState().resizeSplit('', 0.001);
   const root = activeWorkspace(shell.getState().desktop).root;
   expect(root?.type === 'split' && root.ratio > 0.1).toBe(true);
+});
+
+describe('stop notices', () => {
+  test('a newer press replaces an older one, never the other way round', () => {
+    const shell = store();
+    const { showStopNotice } = shell.getState();
+    showStopNotice({ id: 2, tone: 'pending', text: 'Stop sent…' });
+    showStopNotice({ id: 1, tone: 'ok', text: 'Stop accepted' });
+    expect(shell.getState().stopNotice?.id).toBe(2);
+    showStopNotice({ id: 2, tone: 'ok', text: 'Stop accepted' });
+    expect(shell.getState().stopNotice?.text).toBe('Stop accepted');
+  });
+
+  test('clearing only hides the notice of that press', () => {
+    const shell = store();
+    shell.getState().showStopNotice({ id: 3, tone: 'ok', text: 'Stop accepted' });
+    shell.getState().clearStopNotice(2);
+    expect(shell.getState().stopNotice?.id).toBe(3);
+    shell.getState().clearStopNotice(3);
+    expect(shell.getState().stopNotice).toBeNull();
+  });
 });

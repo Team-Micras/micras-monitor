@@ -115,6 +115,20 @@ export function matchesChord(chord: Chord, event: KeyInput): boolean {
   );
 }
 
+/**
+ * Tells whether an event is a chord with any other modifiers held too, as the emergency stop
+ * matches: a Shift held by accident must not keep the robot from stopping.
+ */
+export function matchesChordHeld(chord: Chord, event: KeyInput): boolean {
+  return (
+    keyOf(event) === chord.key &&
+    (!chord.ctrl || event.ctrlKey) &&
+    (!chord.alt || event.altKey) &&
+    (!chord.shift || event.shiftKey) &&
+    (!chord.meta || event.metaKey)
+  );
+}
+
 /** The keys of a chord as they are shown, one label per key cap, such as `['Alt', '←']`. */
 export function formatChord(chord: Chord): readonly string[] {
   const modifiers = MODIFIERS.filter((modifier) => chord[modifierField(modifier)]);

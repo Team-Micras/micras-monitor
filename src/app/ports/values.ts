@@ -1,23 +1,28 @@
 /**
- * The port the shell reads live values from. The telemetry store implements it once it lands.
+ * The port the shell reads live values from. It is the reading side of the telemetry store,
+ * which implements it as it is.
  *
  * @module
  */
 
-/** A value as the shell shows it: numbers for numeric variables, the bytes of a blob. */
-export type LiveValue = number | Uint8Array;
+import type { LatestValue, TelemetryValue } from '@/telemetry';
 
-/** The latest values of the connected robot's variables. */
+export type { LatestValue, TelemetryValue };
+
+/** How the shell names a variable: by name, followed across schema changes, or by current id. */
+export type ValueRef = string | number;
+
+/** The latest values of the connected robot's variables, one subscription per variable. */
 export interface ValuesPort {
-  /** The latest value of a variable, by id, or undefined when none has arrived. */
-  latest(id: number): LiveValue | undefined;
+  /** The latest value of a variable and when it was sampled; the same object until it changes. */
+  latest(variable: ValueRef): LatestValue | undefined;
+
+  /** A number that changes whenever the variable's value does, for `useSyncExternalStore`. */
+  version(variable: ValueRef): number;
 
   /**
-   * Calls `listener` when values changed, at most about ten times a second, which is as often
-   * as numbers on screen should change; returns the function that stops it.
+   * Calls `listener` after any of the variables changed, at most once per tick of the store;
+   * returns the function that stops it.
    */
-  subscribe(listener: () => void): () => void;
-
-  /** A number that changes whenever any value does, for `useSyncExternalStore`. */
-  version(): number;
+  subscribe(variables: readonly ValueRef[], listener: () => void): () => void;
 }

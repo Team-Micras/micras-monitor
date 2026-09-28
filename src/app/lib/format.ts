@@ -4,16 +4,23 @@
  * @module
  */
 
-import type { LiveValue } from '../ports';
+import type { TelemetryValue } from '../ports';
 
-/** A value as a readout shows it: integers whole, other numbers with three decimals, blobs by size. */
-export function formatValue(value: LiveValue | undefined): string {
+/**
+ * A value as a readout shows it: integers whole, other numbers with three decimals, 64 bit
+ * integers with every digit, blobs by size.
+ */
+export function formatValue(value: TelemetryValue | undefined): string {
   if (value === undefined) {
     return '—';
   }
 
   if (value instanceof Uint8Array) {
     return `${value.length} B`;
+  }
+
+  if (typeof value !== 'number') {
+    return String(value);
   }
 
   return Number.isInteger(value) ? String(value) : value.toFixed(3);

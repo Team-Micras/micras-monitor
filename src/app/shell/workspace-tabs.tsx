@@ -7,6 +7,8 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '../components/ui/context-menu';
+import { formatChord } from '../keymap/chords';
+import { workspaceAction } from '../keymap/keymap';
 import { cn } from '../lib/utils';
 import { useShell, useShellStore } from '../state/shell-store';
 
@@ -17,6 +19,12 @@ import { useShell, useShellStore } from '../state/shell-store';
 export function WorkspaceTabs() {
   const store = useShellStore();
   const workspaces = useShell((state) => state.desktop.workspaces);
+  const bindings = useShell((state) => state.bindings);
+  const titleOf = (index: number) => {
+    const action = workspaceAction(index);
+    const chord = action === null ? undefined : bindings.get(action)?.[0];
+    return chord === undefined ? undefined : formatChord(chord).join('+');
+  };
   const active = useShell((state) => state.desktop.active);
   const dropIndex = useShell((state) =>
     state.drag?.target?.kind === 'workspace' ? state.drag.target.index : null
@@ -36,7 +44,7 @@ export function WorkspaceTabs() {
                 role="tab"
                 aria-selected={index === active}
                 data-workspace-tab={index}
-                title={index < 9 ? `Alt+${index + 1}` : undefined}
+                title={titleOf(index)}
                 onClick={() => store.getState().run({ type: 'switchWorkspace', index })}
                 className={cn(
                   'h-8 rounded-lg px-3.5 text-sm text-muted-foreground transition-colors hover:text-foreground',

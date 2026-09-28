@@ -3,16 +3,24 @@ import { useLayoutEffect, useRef } from 'react';
 import { activeWorkspace, focusedWindow, layoutDesktop, layoutWorkspace } from '@/tiling';
 
 import { Kbd } from '../components/ui/kbd';
+import { formatChord } from '../keymap/chords';
+import type { KeyAction } from '../keymap/keymap';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowTitle } from '../windows/registry';
 import { DropPreview } from './drop-preview';
 import { GutterHandle } from './gutter-handle';
 import { WindowFrame } from './window-frame';
 
+function Keys({ action }: { readonly action: KeyAction }) {
+  const chord = useShell((state) => state.bindings.get(action)?.[0]);
+  return chord === undefined ? null : formatChord(chord).map((key) => <Kbd key={key}>{key}</Kbd>);
+}
+
 /**
  * The tiling of every workspace as one flat list of absolutely positioned windows, keyed by
  * id in the order they were opened, so a window keeps its view mounted whatever moves it.
- * Only the active workspace is visible; its gaps resize the splits.
+ * Only the active workspace is visible; its gaps resize the splits. It is a stacking context of
+ * its own, so however many windows float, the drawer, the launcher and popovers stay above.
  */
 export function TilingView() {
   const store = useShellStore();
@@ -60,7 +68,7 @@ export function TilingView() {
     <section
       ref={container}
       data-tiling
-      className="absolute inset-0 overflow-hidden"
+      className="absolute inset-0 isolate overflow-hidden"
       aria-label={`Workspace ${workspace.name}`}
     >
       {[...desktop.windows.values()].map((window) => {
@@ -93,8 +101,8 @@ export function TilingView() {
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
           <p>This workspace is empty.</p>
           <p className="flex items-center gap-1.5">
-            Open a window with <Kbd>Ctrl</Kbd>
-            <Kbd>K</Kbd> or drag a variable here from <Kbd>/</Kbd>
+            Open a window with <Keys action="launcher" /> or drag a variable here from{' '}
+            <Keys action="drawer" />
           </p>
         </div>
       ) : null}

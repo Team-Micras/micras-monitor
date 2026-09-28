@@ -12,8 +12,10 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
   activeWorkspace,
   applyDrop,
+  containsPoint,
   execute,
   hitTest,
+  layoutWorkspace,
   placeFloating,
   resizeSplit,
   usableBounds,
@@ -29,6 +31,7 @@ import {
 } from '@/tiling';
 
 import { resolveBindings, type KeyBindings, type KeyOverrides } from '../keymap/keymap';
+import type { StopNotice } from '../lib/stop-outcome';
 import { PLOT_KIND, windowKind } from '../windows/registry';
 import type { WindowPayload } from '../windows/types';
 import { defaultDesktop } from './default-desktop';
@@ -84,6 +87,8 @@ export interface ShellState {
   readonly drag: DragState | null;
   /** Whether a gap is being dragged, which turns off the windows' transitions. */
   readonly resizing: boolean;
+  /** What the last STOP came to, shown under the button until it times out. */
+  readonly stopNotice: StopNotice | null;
 
   /** Carries out a tiling command. */
   readonly run: (command: Command<WindowPayload>) => void;
@@ -120,6 +125,10 @@ export interface ShellState {
   /** Drops what is dragged on its target, if any. */
   readonly endDrag: () => void;
   readonly cancelDrag: () => void;
+  /** Shows a notice about STOP, unless a newer press already has one. */
+  readonly showStopNotice: (notice: StopNotice) => void;
+  /** Hides the notice of a press, if it is still the one shown. */
+  readonly clearStopNotice: (id: number) => void;
 }
 
 /** A store of the shell's state. */
@@ -186,6 +195,16 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       const target = hitTest(desktop, dragged, point, metrics);
 
       if (subject.kind === 'variable') {
+        const floating = layoutWorkspace(activeWorkspace(desktop), metrics).windows.findLast(
+          (window) => window.visible && window.floating && containsPoint(window.rect, point)
+        );
+
+        if (floating !== undefined) {
+          return windowKind(desktop.windows.get(floating.id)?.kind ?? '').acceptsVariables
+            ? { kind: 'center', id: floating.id, preview: floating.rect }
+            : null;
+        }
+
         if (target === null) {
           return activeWorkspace(desktop).root === null
             ? { kind: 'new', preview: usableBounds(metrics) }
@@ -217,6 +236,7 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       bindings: resolveBindings(options.keyOverrides),
       drag: null,
       resizing: false,
+      stopNotice: null,
 
       run: (command) => update(execute(get().desktop, command, get().metrics)),
 
@@ -358,6 +378,20 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       },
 
       cancelDrag: () => set({ drag: null }),
+
+      showStopNotice: (notice) => {
+        const current = get().stopNotice;
+
+        if (current === null || notice.id >= current.id) {
+          set({ stopNotice: notice });
+        }
+      },
+
+      clearStopNotice: (id) => {
+        if (get().stopNotice?.id === id) {
+          set({ stopNotice: null });
+        }
+      },
     };
   });
 }

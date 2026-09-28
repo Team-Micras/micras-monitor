@@ -6,7 +6,7 @@
 
 import type { Direction } from '@/tiling';
 
-import { matchesChord, parseChord, type Chord, type KeyInput } from './chords';
+import { matchesChord, matchesChordHeld, parseChord, type Chord, type KeyInput } from './chords';
 
 /** A workspace number a chord can name. */
 export type WorkspaceDigit = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
@@ -131,7 +131,11 @@ function parseAll(texts: readonly string[] | undefined): readonly Chord[] | unde
   return chords.length === texts.length ? chords : undefined;
 }
 
-/** The action an event triggers, or null. When two actions share a chord, the first one wins. */
+/**
+ * The action an event triggers, or null. When two actions share a chord, the first one wins.
+ * STOP also matches with more modifiers held than its chord has, unless another action has
+ * exactly that chord.
+ */
 export function actionFor(bindings: KeyBindings, event: KeyInput): KeyAction | null {
   for (const [action, chords] of bindings) {
     if (chords.some((chord) => matchesChord(chord, event))) {
@@ -139,7 +143,9 @@ export function actionFor(bindings: KeyBindings, event: KeyInput): KeyAction | n
     }
   }
 
-  return null;
+  return bindings.get('stop')?.some((chord) => matchesChordHeld(chord, event)) === true
+    ? 'stop'
+    : null;
 }
 
 /** The workspace index, from 0, that a workspace action names. */

@@ -9,6 +9,7 @@ import {
   PlusIcon,
   XIcon,
 } from 'lucide-react';
+import { useEffect } from 'react';
 
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
@@ -29,7 +30,9 @@ import { WINDOW_KINDS } from '../windows/registry';
 
 /**
  * The launcher (Ctrl+K): open windows, go to workspaces, act on the focused window and reach
- * the rest of the app by typing.
+ * the rest of the app by typing. Its search field takes the focus while it is open, so Space
+ * types there; the field lets go of it the moment the launcher closes, so Space is STOP again
+ * while the dialog fades out.
  *
  * @param onAction Runs a keymap action, so that the launcher and the keys do the same thing.
  */
@@ -53,6 +56,14 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   };
 
   const shortcutFor = (action: KeyAction | null) => (action === null ? null : shortcut(action));
+
+  useEffect(() => {
+    const focused = document.activeElement;
+
+    if (!open && focused instanceof HTMLElement && focused.closest('[cmdk-root]') !== null) {
+      focused.blur();
+    }
+  }, [open]);
 
   return (
     <CommandDialog

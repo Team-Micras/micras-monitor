@@ -1,7 +1,7 @@
 /**
  * The window kinds of the app: for each kind, its title, icon and the component that draws it.
  * The generic windows arrive in slice 5; until then every kind draws a placeholder that lists
- * the window's variables with their latest values.
+ * the window's variables with their latest values, and the kinds that take variables say so.
  *
  * @module
  */
@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-import { PlaceholderWindow } from './placeholder-window';
+import { PlaceholderWindow, ViewPlaceholder } from './placeholder-window';
 import type { ShellWindow, WindowViewProps } from './types';
 
 /** A kind of window. */
@@ -67,7 +67,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Type view',
     description: 'A serializable value, such as the maze',
     icon: MapIcon,
-    component: PlaceholderWindow,
+    component: ViewPlaceholder,
     acceptsVariables: false,
   },
   {
@@ -75,7 +75,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Robot',
     description: 'State, transitions and battery',
     icon: BotIcon,
-    component: PlaceholderWindow,
+    component: ViewPlaceholder,
     acceptsVariables: false,
   },
   {
@@ -83,7 +83,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Commands',
     description: 'The robot commands, STOP drawn big',
     icon: ZapIcon,
-    component: PlaceholderWindow,
+    component: ViewPlaceholder,
     acceptsVariables: false,
   },
   {
@@ -91,7 +91,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Log',
     description: 'Robot log and link events',
     icon: ScrollTextIcon,
-    component: PlaceholderWindow,
+    component: ViewPlaceholder,
     acceptsVariables: false,
   },
   {
@@ -99,7 +99,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Link',
     description: 'Rate, credit, drops and round trip',
     icon: RadioTowerIcon,
-    component: PlaceholderWindow,
+    component: ViewPlaceholder,
     acceptsVariables: false,
   },
 ];
@@ -114,7 +114,7 @@ export function windowKind(id: string): WindowKind {
       title: id,
       description: 'A window kind this build does not know',
       icon: ScrollTextIcon,
-      component: PlaceholderWindow,
+      component: ViewPlaceholder,
       acceptsVariables: false,
     }
   );

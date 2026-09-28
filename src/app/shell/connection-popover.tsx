@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popove
 import { formatHash } from '../lib/format';
 import { cn } from '../lib/utils';
 import { useConnectionStatus, useMonitor, useRobotPackage } from '../monitor-context';
-import type { ConnectionStatus, ConnectionTarget, Transport } from '../ports';
+import type { ConnectionStatus, ConnectionTarget, LinkPhase, Transport } from '../ports';
 import { useShell, useShellStore } from '../state/shell-store';
 
 const URL_KEY = 'micras-monitor/websocket-url';
@@ -18,21 +18,31 @@ const TRANSPORT_LABELS: Readonly<Record<Transport, string>> = {
   bluetooth: 'Bluetooth',
 };
 
-const STATUS_WORDS: Readonly<Record<ConnectionStatus['kind'], string>> = {
+type StatusStep = Exclude<ConnectionStatus['kind'], 'linked'> | LinkPhase;
+
+const STATUS_WORDS: Readonly<Record<StatusStep, string>> = {
   disconnected: 'not connected',
   connecting: 'connecting',
   handshaking: 'handshaking',
+  schema: 'reading schema',
+  configuring: 'connected',
   streaming: 'connected',
   failed: 'failed',
 };
 
-const DOT_COLORS: Readonly<Record<ConnectionStatus['kind'], string>> = {
+const DOT_COLORS: Readonly<Record<StatusStep, string>> = {
   disconnected: 'bg-muted-foreground/50',
   connecting: 'bg-amber-500 animate-pulse',
   handshaking: 'bg-amber-500 animate-pulse',
+  schema: 'bg-amber-500 animate-pulse',
+  configuring: 'bg-emerald-500',
   streaming: 'bg-emerald-500',
   failed: 'bg-destructive',
 };
+
+function stepOf(status: ConnectionStatus): StatusStep {
+  return status.kind === 'linked' ? status.phase : status.kind;
+}
 
 /**
  * The connection pill of the top bar and its popover: pick WebSocket or Bluetooth, connect and
@@ -74,12 +84,12 @@ export function ConnectionPopover() {
     <Popover open={open} onOpenChange={(next) => store.getState().setConnectionOpen(next)}>
       <PopoverTrigger asChild>
         <Button variant="outline" className="h-9 rounded-full pr-3 pl-3.5 font-normal">
-          <span className={cn('size-2 rounded-full', DOT_COLORS[status.kind])} aria-hidden />
+          <span className={cn('size-2 rounded-full', DOT_COLORS[stepOf(status)])} aria-hidden />
           <span className="font-medium">
             {current === null ? 'Connect' : TRANSPORT_LABELS[current]}
           </span>
           {current === null ? null : (
-            <span className="text-muted-foreground">· {STATUS_WORDS[status.kind]}</span>
+            <span className="text-muted-foreground">· {STATUS_WORDS[stepOf(status)]}</span>
           )}
           <ChevronDownIcon className="text-muted-foreground" aria-hidden />
         </Button>
@@ -150,7 +160,7 @@ function StatusLine({
   }
 
   if (status.kind === 'handshaking') {
-    return <p className="text-sm text-muted-foreground">Reading the schema…</p>;
+    return <p className="text-sm text-muted-foreground">Waiting for the robot to answer…</p>;
   }
 
   if (status.kind === 'failed') {
@@ -170,9 +180,14 @@ function StatusLine({
       <dt className="text-muted-foreground">Robot</dt>
       <dd className="font-mono">{status.robot.name ?? 'unnamed'}</dd>
       <dt className="text-muted-foreground">Schema</dt>
-      <dd className="font-mono">{formatHash(status.robot.schemaHash)}</dd>
+      <dd className="font-mono">
+        {formatHash(status.robot.schemaHash)}
+        {status.phase === 'schema' ? (
+          <span className="ml-2 font-sans text-muted-foreground">loading…</span>
+        ) : null}
+      </dd>
       <dt className="text-muted-foreground">Package</dt>
-      <dd>{packageName ?? 'none, raw mode'}</dd>
+      <dd>{status.phase === 'schema' ? '—' : (packageName ?? 'none, raw mode')}</dd>
     </dl>
   );
 }

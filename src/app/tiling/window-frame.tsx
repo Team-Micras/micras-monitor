@@ -26,7 +26,7 @@ import { formatChord } from '../keymap/chords';
 import type { KeyAction } from '../keymap/keymap';
 import { cn } from '../lib/utils';
 import { formatValue } from '../lib/format';
-import { useConnectionStatus, useLiveValue, useVariables } from '../monitor-context';
+import { useConnectionStatus, useLinkUp, useLiveValue } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowKind, windowTitle } from '../windows/registry';
 import type { ShellWindow } from '../windows/types';
@@ -58,7 +58,8 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
   const animate = useShell((state) => !state.resizing && state.drag === null);
   const workspaces = useShell((state) => state.desktop.workspaces);
   const bindings = useShell((state) => state.bindings);
-  const streaming = useConnectionStatus().kind === 'streaming';
+  const status = useConnectionStatus();
+  const live = status.kind === 'linked' && status.phase !== 'schema';
   const kind = windowKind(window.kind);
   const View = kind.component;
   const Icon = kind.icon;
@@ -130,9 +131,10 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
       inert={!visible}
       data-window={window.id}
       data-focused={focused}
+      tabIndex={-1}
       onPointerDownCapture={focus}
       className={cn(
-        'absolute flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground',
+        'absolute flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground outline-none',
         animate && 'transition-[left,top,width,height,opacity] duration-200 ease-out',
         focused ? 'border-foreground/25 shadow-sm' : 'border-border',
         floating && 'shadow-2xl',
@@ -166,7 +168,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
           <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
             Paused
           </span>
-        ) : streaming ? (
+        ) : live ? (
           <span className="flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs">
             <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
             Live
@@ -239,6 +241,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
       {floating ? (
         <div
           aria-hidden
+          data-resize-handle
           onPointerDown={onResizePointerDown}
           className="absolute right-0 bottom-0 size-4 cursor-nwse-resize touch-none"
         />
@@ -248,15 +251,16 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
 }
 
 function SeriesChip({ name, color }: { readonly name: string; readonly color: string }) {
-  const variables = useVariables();
-  const id = variables.find((variable) => variable.name === name)?.id ?? null;
-  const value = useLiveValue(id);
+  const value = useLiveValue(name)?.value;
+  const linked = useLinkUp();
 
   return (
     <span className="flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 font-mono text-xs">
       <span className={cn('size-2 shrink-0 rounded-[2px]', color)} aria-hidden />
       <span className="text-muted-foreground">{name}</span>
-      <span className="tabular-nums">{formatValue(value)}</span>
+      <span className={cn('tabular-nums', !linked && 'text-muted-foreground')}>
+        {formatValue(value)}
+      </span>
     </span>
   );
 }
