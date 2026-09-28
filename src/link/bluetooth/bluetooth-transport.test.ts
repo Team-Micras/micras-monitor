@@ -17,12 +17,18 @@ const WRITE_TIME_MS = 5;
 class FakeCharacteristic implements GattCharacteristicLike {
   value: DataView | null = null;
   notifying = false;
+  hangNotifications = false;
+  hangWrites = 0;
   readonly writes: Uint8Array[] = [];
   maxInFlight = 0;
   private inFlight = 0;
   private readonly listeners = new Set<() => void>();
 
   startNotifications(): Promise<this> {
+    if (this.hangNotifications) {
+      return new Promise(() => undefined);
+    }
+
     this.notifying = true;
     return Promise.resolve(this);
   }
@@ -33,6 +39,12 @@ class FakeCharacteristic implements GattCharacteristicLike {
   }
 
   writeValueWithoutResponse(value: Uint8Array): Promise<void> {
+    if (this.hangWrites > 0) {
+      this.hangWrites--;
+      this.writes.push(value.slice());
+      return new Promise(() => undefined);
+    }
+
     if (this.inFlight > 0) {
       return Promise.reject(new Error('GATT operation already in progress'));
     }
@@ -70,6 +82,8 @@ class FakeCharacteristic implements GattCharacteristicLike {
 class FakeDevice implements BluetoothDeviceLike, GattServerLike, GattServiceLike {
   connected = false;
   connects = 0;
+  hangConnects = 0;
+  hangNotifications = false;
   characteristic = new FakeCharacteristic();
   private readonly listeners = new Set<() => void>();
 
@@ -84,8 +98,15 @@ class FakeDevice implements BluetoothDeviceLike, GattServerLike, GattServiceLike
 
   connect(): Promise<GattServerLike> {
     this.connects++;
+
+    if (this.hangConnects > 0) {
+      this.hangConnects--;
+      return new Promise(() => undefined);
+    }
+
     this.connected = true;
     this.characteristic = new FakeCharacteristic();
+    this.characteristic.hangNotifications = this.hangNotifications;
     return Promise.resolve(this);
   }
 
@@ -242,6 +263,69 @@ describe('BluetoothTransport', () => {
 
     expect(transport.state).toEqual({ kind: 'open' });
     expect(device.connects).toBe(2);
+  });
+
+  test('a connection attempt that hangs times out and is tried again', async () => {
+    const device = new FakeDevice();
+    device.hangConnects = 1;
+    const transport = new BluetoothTransport(device, {
+      bluetooth: fakeBluetooth(device, true).bluetooth,
+    });
+
+    transport.open();
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(transport.state).toMatchObject({ kind: 'connecting' });
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(transport.state).toMatchObject({ kind: 'closed', reason: 'failed', retryInMs: 250 });
+
+    await vi.advanceTimersByTimeAsync(250);
+    expect(transport.state).toEqual({ kind: 'open' });
+    expect(device.connects).toBe(2);
+  });
+
+  test('notifications that never start count against the same timeout', async () => {
+    const device = new FakeDevice();
+    device.hangNotifications = true;
+    const transport = new BluetoothTransport(device, {
+      bluetooth: fakeBluetooth(device, true).bluetooth,
+      connectTimeoutMs: 500,
+    });
+
+    transport.open();
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(transport.state).toMatchObject({ kind: 'closed', reason: 'failed' });
+    expect(device.characteristic.listenerCount).toBe(0);
+    expect(device.connected).toBe(false);
+  });
+
+  test('a drop while connecting is a failed attempt, not a lost connection', async () => {
+    const device = new FakeDevice();
+    device.hangNotifications = true;
+    const transport = new BluetoothTransport(device, {
+      bluetooth: fakeBluetooth(device, true).bluetooth,
+    });
+
+    transport.open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.state).toMatchObject({ kind: 'connecting' });
+
+    device.goOutOfRange();
+
+    expect(transport.state).toMatchObject({ kind: 'closed', reason: 'failed', retryInMs: 250 });
+  });
+
+  test('a write that never settles costs its timeout, and the next one goes ahead', async () => {
+    const { device, transport } = await openTransport();
+    device.characteristic.hangWrites = 1;
+
+    transport.send(ramp(30));
+    await vi.advanceTimersByTimeAsync(999);
+    expect(device.characteristic.writes).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1 + WRITE_TIME_MS);
+    expect(joined(device.characteristic.writes)).toEqual([...ramp(30)]);
   });
 
   test('restore finds a device this origin was already given', async () => {
