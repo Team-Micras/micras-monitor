@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
+import { DEFAULT_STREAM_RATE_HZ, type StreamDemand } from '../ports/streams';
+
 import { PlaceholderWindow, ViewPlaceholder } from './placeholder-window';
 import type { ShellWindow, WindowViewProps } from './types';
 
@@ -31,6 +33,8 @@ export interface WindowKind {
   readonly component: ComponentType<WindowViewProps>;
   /** Whether a variable dropped on the window joins it; otherwise the drop opens a plot beside. */
   readonly acceptsVariables: boolean;
+  /** What the window wants streamed; without it, each of its variables at the default rate. */
+  readonly demand?: (window: ShellWindow) => readonly StreamDemand[];
 }
 
 /** The kind a variable dropped on the tiling opens. */
@@ -123,4 +127,13 @@ export function windowKind(id: string): WindowKind {
 /** The title a window shows: its own, else its kind's. */
 export function windowTitle(window: ShellWindow): string {
   return window.payload.title ?? windowKind(window.kind).title;
+}
+
+/** What a window asks the link to stream, as its kind says. */
+export function windowDemand(window: ShellWindow): readonly StreamDemand[] {
+  const demand = windowKind(window.kind).demand;
+
+  return demand
+    ? demand(window)
+    : window.payload.variables.map((variable) => ({ variable, rateHz: DEFAULT_STREAM_RATE_HZ }));
 }

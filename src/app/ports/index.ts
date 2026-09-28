@@ -13,6 +13,7 @@ import type { ValuesPort } from './values';
 export type * from './commands';
 export type * from './connection';
 export type * from './schema';
+export type * from './streams';
 export type * from './values';
 
 /** Every port the app needs, as the composition root hands them over. */
