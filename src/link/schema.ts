@@ -1,4 +1,4 @@
-import { decodeAccess, TypeCode, type Access } from '../protocol';
+import { decodeAccess, TYPE_SIZE, TypeCode, type Access } from '../protocol';
 import type { SchemaPage } from './messages';
 
 /** One variable of the robot, as its schema describes it. */
@@ -45,7 +45,9 @@ export type PageOutcome =
   /** The page started past an entry that never arrived. */
   | 'gap'
   /** Every entry has arrived. */
-  | 'complete';
+  | 'complete'
+  /** The page names a type this monitor does not know, so none of it was taken. */
+  | 'invalid';
 
 /**
  * Puts a schema together from pages, which can go missing: the robot charges them to the credit
@@ -75,6 +77,10 @@ export class SchemaAssembler {
   accept(page: SchemaPage): PageOutcome {
     if (page.schemaHash !== this.hash || page.total !== this.total) {
       return 'ignored';
+    }
+
+    if (!page.entries.every((entry) => isTypeCode(entry.type))) {
+      return 'invalid';
     }
 
     const gap = page.first > this.firstMissing;
@@ -129,4 +135,8 @@ export class SchemaAssembler {
       access: decodeAccess(entry.access),
     };
   }
+}
+
+function isTypeCode(code: number): code is TypeCode {
+  return Number.isInteger(code) && code in TYPE_SIZE;
 }

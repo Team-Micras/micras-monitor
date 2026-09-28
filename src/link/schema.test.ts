@@ -52,3 +52,13 @@ test('refuses to hand out an incomplete schema', () => {
 
   expect(() => schema.result()).toThrow('3 of 6');
 });
+
+test('refuses a page that names a type it does not know', () => {
+  const schema = new SchemaAssembler(0xabc, 6);
+  const bad = page(0, 3);
+  const unknownType: number = 42;
+  bad.entries[1] = { ...bad.entries[1], type: unknownType };
+
+  expect(schema.accept(bad)).toBe('invalid');
+  expect(schema.received).toBe(0);
+});

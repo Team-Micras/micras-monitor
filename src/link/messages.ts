@@ -26,6 +26,13 @@ export enum CommandResult {
   REFUSED = 2,
 }
 
+/** What the robot answered to a command. */
+export interface CommandReply {
+  readonly result: CommandResult;
+  /** Why, in the robot's own numbering, where the protocol version carries it. */
+  readonly reason: number | null;
+}
+
 /** The answer to HELLO: what the robot is and how the session with it works. */
 export interface HelloAck {
   type: MessageType.HELLO_ACK;
@@ -88,11 +95,15 @@ export interface CommandAck {
   type: MessageType.COMMAND_ACK;
   code: number;
   result: CommandResult;
+  /** Why, in the robot's own numbering, where the protocol version carries it. */
+  reason: number | null;
 }
 
 /** The answer to PING. */
 export interface Pong {
   type: MessageType.PONG;
+  /** The metered bytes the robot sent since HELLO, where the protocol version carries it. */
+  sentTotal: number | null;
 }
 
 /** A message the robot logged. */
@@ -132,7 +143,7 @@ const DECODERS: Partial<Record<MessageType, Decoder>> = {
   [MessageType.WRITE_ACK]: decodeWriteAck,
   [MessageType.VALUE]: decodeValue,
   [MessageType.COMMAND_ACK]: decodeCommandAck,
-  [MessageType.PONG]: () => ({ type: MessageType.PONG }),
+  [MessageType.PONG]: () => ({ type: MessageType.PONG, sentTotal: null }),
   [MessageType.LOG]: decodeLog,
   [MessageType.ERROR]: decodeError,
 };
@@ -231,6 +242,7 @@ function decodeCommandAck(reader: Reader): CommandAck {
     type: MessageType.COMMAND_ACK,
     code: reader.u8(),
     result: reader.u8(),
+    reason: null,
   };
 }
 
@@ -280,9 +292,14 @@ export function encodeGroupEnable(group: number, enabled: boolean): Uint8Array {
   );
 }
 
-/** CREDIT: allow the robot to send more metered bytes. Version 1 carries a delta. */
-export function encodeCredit(bytes: number): Uint8Array {
-  return encodeFrame(MessageType.CREDIT, new Writer().u16(bytes).done());
+/** The payload of a CREDIT, which allows the robot to send more metered bytes: a delta in version 1. */
+export function creditPayload(bytes: number): Uint8Array {
+  return new Writer().u16(bytes).done();
+}
+
+/** CREDIT, around its payload. */
+export function encodeCredit(payload: Uint8Array): Uint8Array {
+  return encodeFrame(MessageType.CREDIT, payload);
 }
 
 /** The largest delta one CREDIT carries. */

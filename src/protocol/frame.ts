@@ -1,5 +1,5 @@
 import * as Cobs from './cobs';
-import { MAX_PAYLOAD_SIZE, MessageType } from './protocol';
+import { MAX_FRAME_SIZE, MAX_PAYLOAD_SIZE, MessageType } from './protocol';
 
 /**
  * The frame check, matching `fletcher16` in `micras_comm/src/frame.cpp`.
@@ -164,10 +164,13 @@ export function encodeFrame(type: MessageType, payload: Uint8Array): Uint8Array 
  * Recover frames from a stream of bytes.
  *
  * A corrupt or truncated frame costs exactly the bytes up to the next delimiter and never
- * desynchronises the reader, because an encoded frame cannot contain a delimiter.
+ * desynchronises the reader, because an encoded frame cannot contain a delimiter. Like the
+ * firmware's reader, it holds at most one frame's worth of encoded bytes: a run longer than any
+ * frame can be is thrown away whole at the next delimiter instead of growing the buffer.
  */
 export class FrameReader {
   private encoded: number[] = [];
+  private overrun = false;
   private discardedFrames = 0;
 
   /**
@@ -181,21 +184,20 @@ export class FrameReader {
 
     for (const byte of data) {
       if (byte !== Cobs.DELIMITER) {
-        this.encoded.push(byte);
+        this.take(byte);
         continue;
       }
 
-      if (this.encoded.length > 0) {
-        const frame = this.finish(new Uint8Array(this.encoded));
+      const frame = this.overrun ? null : this.finish(new Uint8Array(this.encoded));
 
-        if (frame) {
-          frames.push(frame);
-        } else {
-          this.discardedFrames++;
-        }
+      if (frame) {
+        frames.push(frame);
+      } else if (this.overrun || this.encoded.length > 0) {
+        this.discardedFrames++;
       }
 
       this.encoded = [];
+      this.overrun = false;
     }
 
     return frames;
@@ -213,9 +215,22 @@ export class FrameReader {
    */
   clear(): void {
     this.encoded = [];
+    this.overrun = false;
+  }
+
+  private take(byte: number): void {
+    if (this.encoded.length >= MAX_FRAME_SIZE) {
+      this.overrun = true;
+    } else {
+      this.encoded.push(byte);
+    }
   }
 
   private finish(encoded: Uint8Array): Frame | null {
+    if (encoded.length === 0) {
+      return null;
+    }
+
     const decoded = Cobs.decode(encoded);
 
     if (!decoded || decoded.length < 3) {

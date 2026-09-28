@@ -9,6 +9,11 @@
 export const PROTOCOL_VERSION = 1;
 /** The largest payload a frame can carry. */
 export const MAX_PAYLOAD_SIZE = 200;
+/**
+ * The largest frame on the wire, delimiter included, as `max_frame_size` in the firmware: the
+ * largest payload with its type and check, encoded.
+ */
+export const MAX_FRAME_SIZE = MAX_PAYLOAD_SIZE + 3 + Math.floor((MAX_PAYLOAD_SIZE + 3) / 254) + 2;
 /** How many stream groups the robot can hold at once. */
 export const MAX_GROUPS = 4;
 /** How many variables fit in one stream group. */

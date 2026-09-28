@@ -1,5 +1,5 @@
 import { Cobs, MessageType } from '../protocol';
-import { MAX_CREDIT_DELTA } from './messages';
+import { creditPayload, MAX_CREDIT_DELTA } from './messages';
 
 /**
  * Whether the robot charges a frame type to the credit window. It charges what it sends on its
@@ -20,10 +20,16 @@ export function wireSize(payloadLength: number): number {
   return Cobs.encodedSize(payloadLength + 3) + 1;
 }
 
+/** Credit to give back: the payload of a CREDIT, and how many bytes it gives back. */
+export interface CreditGrant {
+  readonly payload: Uint8Array;
+  readonly bytes: number;
+}
+
 /**
- * Decides when to give credit back and how much. The robot may only send metered bytes it has
- * credit for, because the radio module has no flow control and drops silently when its buffer
- * fills.
+ * Decides when to give credit back and what the CREDIT says. The robot may only send metered
+ * bytes it has credit for, because the radio module has no flow control and drops silently when
+ * its buffer fills.
  */
 export interface CreditPolicy {
   /**
@@ -35,12 +41,21 @@ export interface CreditPolicy {
   received(bytes: number, now: number): void;
 
   /**
+   * Take the robot's own count of the metered bytes it sent, which a PONG carries in protocol
+   * versions that have it, as everything consumed.
+   *
+   * @param sentTotal The robot's cumulative total.
+   * @param now The current time, in milliseconds.
+   */
+  resync(sentTotal: number, now: number): void;
+
+  /**
    * Take the credit due now, if any.
    *
    * @param now The current time, in milliseconds.
-   * @returns The value the CREDIT message carries, or null when none is due.
+   * @returns What to send, or null when nothing is due.
    */
-  take(now: number): number | null;
+  take(now: number): CreditGrant | null;
 
   /** When credit will be due without anything else arriving, or null when nothing is owed. */
   dueAt(): number | null;
@@ -64,6 +79,12 @@ export const DEFAULT_COALESCING: CoalescingCreditOptions = { minBytes: 64, maxDe
 /**
  * Protocol version 1's credit: a delta of the bytes received since the last CREDIT, coalesced so
  * that a stream of small samples does not become a stream of CREDIT frames.
+ *
+ * A delta cannot recover what was lost. A metered frame that arrives corrupted, or not at all, was
+ * charged by the robot and is never given back, and neither is a CREDIT lost on its way, so every
+ * such loss narrows the window for the rest of the session until only a new HELLO opens it again.
+ * The session sees that as a stall. Protocol version 2 replaces this with cumulative totals that a
+ * later CREDIT and every PONG bring back into step.
  */
 export class CoalescingCredit implements CreditPolicy {
   private owed = 0;
@@ -76,7 +97,12 @@ export class CoalescingCredit implements CreditPolicy {
     this.owedSince ??= now;
   }
 
-  take(now: number): number | null {
+  /** Version 1's PONG carries no total, so there is nothing to take. */
+  resync(): void {
+    return;
+  }
+
+  take(now: number): CreditGrant | null {
     if (this.owed === 0 || this.owedSince === null) {
       return null;
     }
@@ -88,7 +114,7 @@ export class CoalescingCredit implements CreditPolicy {
     const delta = Math.min(this.owed, MAX_CREDIT_DELTA);
     this.owed -= delta;
     this.owedSince = this.owed > 0 ? now : null;
-    return delta;
+    return { payload: creditPayload(delta), bytes: delta };
   }
 
   dueAt(): number | null {

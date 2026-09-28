@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { FRAME_VECTORS, type FrameVector } from '../protocol/fixtures/frame-vectors';
 import { MessageType, TypeCode, writeValue } from '../protocol';
 import {
+  creditPayload,
   decodeMessage,
   encodeCredit,
   encodeGroupDefine,
@@ -26,7 +27,7 @@ describe('encoders against the firmware vectors', () => {
     ['hello', () => encodeHello()],
     ['schema_request', () => encodeSchemaRequest(0)],
     ['group_define', () => encodeGroupDefine(0, 80, [0, 1])],
-    ['credit', () => encodeCredit(256)],
+    ['credit', () => encodeCredit(creditPayload(256))],
     ['write', () => encodeWrite(2, writeValue(1, TypeCode.F32))],
   ])('%s', (name, encode) => {
     expect([...encode()]).toEqual(vector(name).frame);

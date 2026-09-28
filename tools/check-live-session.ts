@@ -123,9 +123,10 @@ try {
   );
 
   const chosen = pickVariables(schema);
-  const epochs: Epoch[] = await session.setGroups([
+  const result = await session.setGroups([
     { variableIds: chosen.map((entry) => entry.id), periodTicks },
   ]);
+  const epochs: readonly Epoch[] = result.status === 'applied' ? result.epochs : [];
   const periodMs = (periodTicks * (robot?.loopTimeUs ?? 0)) / 1000;
   console.log(
     `streaming ${chosen.map((entry) => entry.name).join(', ')} every ${periodTicks} ticks (${periodMs} ms robot time), epoch ${epochs.map((epoch) => epoch.id).join(', ')}, ${epochs[0]?.sampleSize} B per sample`

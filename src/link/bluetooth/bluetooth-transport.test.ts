@@ -234,19 +234,14 @@ describe('BluetoothTransport', () => {
     expect(device.characteristic.writes).toEqual([]);
   });
 
-  test('without getDevices, a drop waits for a user gesture', async () => {
+  test('without getDevices, a drop still reconnects to the same device', async () => {
     const { device, transport } = await openTransport(false);
 
     device.goOutOfRange();
-    await vi.advanceTimersByTimeAsync(60_000);
-
-    expect(transport.state).toMatchObject({ kind: 'closed', reason: 'needs-user-gesture' });
-    expect(device.connects).toBe(1);
-
-    transport.reconnect();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
 
     expect(transport.state).toEqual({ kind: 'open' });
+    expect(device.connects).toBe(2);
   });
 
   test('restore finds a device this origin was already given', async () => {

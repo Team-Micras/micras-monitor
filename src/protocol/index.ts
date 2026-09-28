@@ -12,6 +12,7 @@ export { encodeFrame, FrameReader, Reader, Writer, type Frame } from './frame';
 export {
   decodeAccess,
   ErrorCode,
+  MAX_FRAME_SIZE,
   MAX_GROUP_VARIABLES,
   MAX_GROUPS,
   MAX_PAYLOAD_SIZE,

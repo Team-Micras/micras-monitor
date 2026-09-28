@@ -1,14 +1,14 @@
 import type { ErrorCode, WriteStatus } from '../protocol';
 import { RobotError, TimeoutError } from './errors';
-import type { CommandResult, GroupAck } from './messages';
+import type { CommandReply, GroupAck, Pong } from './messages';
 
 /** What the robot answers each kind of request with. */
 export interface Answers {
   group: GroupAck;
   write: WriteStatus;
   read: Uint8Array;
-  command: CommandResult;
-  ping: undefined;
+  command: CommandReply;
+  ping: Pong;
 }
 
 /** The kinds of request the robot answers. */

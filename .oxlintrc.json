@@ -107,6 +107,7 @@
     {
       "files": ["src/link/**"],
       "rules": {
+        "no-await-in-loop": "off",
         "no-restricted-imports": [
           "error",
           {
@@ -205,6 +206,7 @@
     {
       "files": ["tools/**"],
       "rules": {
+        "no-await-in-loop": "off",
         "no-restricted-imports": [
           "error",
           {
@@ -212,6 +214,26 @@
               {
                 "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(telemetry|tiling|robot-kit|app)|robots))(/|$)",
                 "message": "Tools may only depend on src/protocol and src/link."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Tools are Node scripts; no React."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["tools/simulated-robot/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@/(link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|telemetry|tiling|robot-kit|app)|robots))(/|$)",
+                "message": "The simulated robot stands in for the firmware and speaks only src/protocol."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",

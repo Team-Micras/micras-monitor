@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { decodeAccess, TypeCode, writeValue } from '../protocol';
-import { EpochRegistry, planGroups, sameLayout } from './groups';
+import { EpochRegistry, planGroups, sameLayout, type Epoch, type EpochEndReason } from './groups';
 import type { SchemaEntry } from './schema';
 
 const STREAM = decodeAccess(0x01);
@@ -38,21 +38,71 @@ describe('planGroups', () => {
   });
 });
 
+function recordingRegistry() {
+  const events: string[] = [];
+  let lastId = 100;
+  const registry = new EpochRegistry(
+    {
+      opened: (epoch: Epoch) => events.push(`opened ${epoch.id}`),
+      ended: (epoch: Epoch, reason: EpochEndReason) => events.push(`ended ${epoch.id} ${reason}`),
+    },
+    () => ++lastId
+  );
+
+  return { registry, events };
+}
+
 describe('epochs', () => {
   const [layout] = planGroups(SCHEMA, [{ variableIds: [0, 2, 3], periodTicks: 8 }]);
+  const define = (registry: EpochRegistry, timeline = 1) =>
+    registry.define(layout, 8, layout.sampleSize, timeline);
 
-  test('every definition opens an epoch with a new id', () => {
-    const registry = new EpochRegistry();
-    const first = registry.begin(layout, 8, layout.sampleSize);
-    const second = registry.begin(layout, 8, layout.sampleSize);
+  test('every definition opens an epoch with an id from the source', () => {
+    const { registry } = recordingRegistry();
+    const first = define(registry);
+    const second = define(registry);
 
-    expect(second.epoch.id).toBeGreaterThan(first.epoch.id);
+    expect([first.epoch.id, second.epoch.id]).toEqual([101, 102]);
     expect(registry.current(0)).toBe(second);
     expect(sameLayout(layout, second.epoch)).toBe(true);
   });
 
+  test('an epoch is announced once enabled, and only an announced one is reported ended', () => {
+    const { registry, events } = recordingRegistry();
+
+    define(registry);
+    define(registry);
+    registry.activate(0);
+    registry.activate(0);
+    define(registry);
+    registry.activate(0);
+    registry.end(0, 'disabled');
+
+    expect(events).toEqual([
+      'opened 102',
+      'ended 102 redefined',
+      'opened 103',
+      'ended 103 disabled',
+    ]);
+    expect(registry.active()).toEqual([]);
+  });
+
+  test('a new timeline carries each stream on under a new epoch, sequence and all', () => {
+    const { registry, events } = recordingRegistry();
+    const before = define(registry, 1);
+
+    registry.activate(0);
+    before.advance(0);
+    registry.moveToTimeline(2);
+
+    const after = registry.current(0);
+    expect(after?.epoch).toMatchObject({ id: 102, timeline: 2, variableIds: [0, 2, 3] });
+    expect(after?.advance(1)).toBe(0);
+    expect(events).toEqual(['opened 101', 'ended 101 clock-reset', 'opened 102']);
+  });
+
   test('a sequence gap inside an epoch counts the samples dropped', () => {
-    const open = new EpochRegistry().begin(layout, 8, layout.sampleSize);
+    const open = define(recordingRegistry().registry);
 
     expect(open.advance(0)).toBe(0);
     expect(open.advance(1)).toBe(0);
@@ -61,13 +111,13 @@ describe('epochs', () => {
   });
 
   test('samples dropped before the first one arrived are counted too', () => {
-    const open = new EpochRegistry().begin(layout, 8, layout.sampleSize);
+    const open = define(recordingRegistry().registry);
 
     expect(open.advance(2)).toBe(2);
   });
 
   test('the u16 sequence wraps without a gap', () => {
-    const open = new EpochRegistry().begin(layout, 8, layout.sampleSize);
+    const open = define(recordingRegistry().registry);
 
     open.advance(0);
     open.advance(0xfffe);
@@ -77,14 +127,14 @@ describe('epochs', () => {
   });
 
   test('a new epoch starts its sequence from zero', () => {
-    const registry = new EpochRegistry();
-    registry.begin(layout, 8, layout.sampleSize).advance(40);
+    const { registry } = recordingRegistry();
+    define(registry).advance(40);
 
-    expect(registry.begin(layout, 8, layout.sampleSize).advance(0)).toBe(0);
+    expect(define(registry).advance(0)).toBe(0);
   });
 
   test('decodes values by type and refuses the wrong size', () => {
-    const open = new EpochRegistry().begin(layout, 8, layout.sampleSize);
+    const open = define(recordingRegistry().registry);
     const bytes = new Uint8Array([
       ...writeValue(1.5, TypeCode.F32),
       ...writeValue(true, TypeCode.BOOL),

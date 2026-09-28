@@ -24,13 +24,14 @@ export {
   type GattServiceLike,
   type UartService,
 } from './bluetooth/web-bluetooth';
-export { DEFAULT_WRAP_WINDOW_US, TimestampUnwrapper } from './clock';
+export { DEFAULT_WRAP_SLACK_US, TimestampUnwrapper } from './clock';
 export {
   CoalescingCredit,
   DEFAULT_COALESCING,
   isMetered,
   wireSize,
   type CoalescingCreditOptions,
+  type CreditGrant,
   type CreditPolicy,
 } from './credit';
 export { Emitter, type Listener, type Unsubscribe } from './emitter';
@@ -40,12 +41,16 @@ export {
   OpenEpoch,
   planGroups,
   SAMPLE_HEADER_SIZE,
+  sharedEpochIds,
   type Epoch,
+  type EpochEndReason,
+  type EpochIdSource,
+  type EpochListener,
   type GroupLayout,
   type GroupRequest,
   type SampleValue,
 } from './groups';
-export { CommandResult } from './messages';
+export { CommandResult, type CommandReply } from './messages';
 export {
   MemorySchemaCache,
   SchemaAssembler,
@@ -57,6 +62,8 @@ export { Session, type SessionOptions } from './session';
 export {
   DEFAULT_TIMING,
   type DroppedEvent,
+  type EpochEndEvent,
+  type GroupsResult,
   type HandshakeReason,
   type LinkStats,
   type LogEvent,
@@ -68,8 +75,10 @@ export {
   type SessionEvents,
   type SessionState,
   type SessionTiming,
+  type TimelineEvent,
   type ValueEvent,
   type WriteEvent,
+  type WriteResult,
 } from './session-types';
 export { BaseTransport, type CloseReason, type Transport, type TransportState } from './transport';
 export {

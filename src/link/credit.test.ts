@@ -24,7 +24,7 @@ test('holds credit back until 64 bytes are owed', () => {
   expect(credit.take(1)).toBeNull();
 
   credit.received(34, 2);
-  expect(credit.take(2)).toBe(64);
+  expect(credit.take(2)).toEqual({ payload: new Uint8Array([64, 0]), bytes: 64 });
   expect(credit.take(3)).toBeNull();
   expect(credit.dueAt()).toBeNull();
 });
@@ -35,7 +35,7 @@ test('gives a small debt back 10 ms after its first byte', () => {
   credit.received(12, 100);
   expect(credit.dueAt()).toBe(110);
   expect(credit.take(109)).toBeNull();
-  expect(credit.take(110)).toBe(12);
+  expect(credit.take(110)).toMatchObject({ bytes: 12 });
 });
 
 test('forgets what was owed when the window resets', () => {

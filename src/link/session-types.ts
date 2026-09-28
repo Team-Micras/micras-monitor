@@ -1,5 +1,5 @@
 import type { ErrorCode, Fundamental, Severity, WriteStatus } from '../protocol';
-import type { Epoch, SampleValue } from './groups';
+import type { Epoch, EpochEndReason, SampleValue } from './groups';
 import type { SchemaEntry } from './schema';
 
 /** Why the session is starting a handshake. */
@@ -13,12 +13,16 @@ export type HandshakeReason =
   /** The robot went silent, not even answering PING. */
   | 'keepalive'
   /** Schema pages stopped arriving, which resets the credit window they were lost from. */
-  | 'schema-retry';
+  | 'schema-retry'
+  /** The robot's count of what it sent went back, which only a reboot does. */
+  | 'reboot';
 
 /**
  * Where the session is. It goes `disconnected → handshaking → loadingSchema → configuring →
  * streaming`, skipping the schema when it is already known and the configuration when no group
- * is asked for, and goes back to `handshaking` to recover from a stall or a silent robot.
+ * is asked for, and goes back to `handshaking` to recover from a stall or a silent robot. It keeps
+ * sending HELLO for as long as the transport is open; `error` is only for what retrying cannot
+ * fix, such as a robot that speaks another protocol version.
  */
 export type SessionState =
   | { readonly kind: 'disconnected' }
@@ -56,6 +60,21 @@ export interface SampleEvent {
   readonly timeUs: number;
   /** One value per variable of the epoch, in its order. */
   readonly values: readonly SampleValue[];
+  /** Samples of the epoch that went missing just before this one. */
+  readonly missingBefore: number;
+}
+
+/** An epoch that ended, and why. */
+export interface EpochEndEvent {
+  readonly epoch: Epoch;
+  readonly reason: EpochEndReason;
+}
+
+/** A new run of the robot's clock, which the times of later epochs belong to. */
+export interface TimelineEvent {
+  readonly id: number;
+  /** The first contact, a reset seen in the timestamps, or a reboot the handshake revealed. */
+  readonly reason: 'connected' | 'clock-reset' | 'reboot';
 }
 
 /** Samples the robot took but that never arrived. */
@@ -74,10 +93,12 @@ export interface ValueEvent {
 }
 
 /**
- * The life of a write. A value is only ever `confirmed` once the robot acknowledged it.
+ * The life of a write. A value is only ever `confirmed` once the robot acknowledged it, and one
+ * replaced by a newer write before it was sent is `superseded`.
  */
 export type WriteEvent =
   | { readonly variableId: number; readonly value: Fundamental; readonly state: 'pending' }
+  | { readonly variableId: number; readonly value: Fundamental; readonly state: 'superseded' }
   | { readonly variableId: number; readonly value: Fundamental; readonly state: 'confirmed' }
   | {
       readonly variableId: number;
@@ -96,7 +117,19 @@ export type WriteEvent =
 export interface LogEvent {
   readonly severity: Severity;
   readonly text: string;
+  /** When, in the time of the samples, where the protocol version carries it. */
+  readonly timeUs: number | null;
 }
+
+/** How a `setGroups` ended: applied, or replaced by a later call first. */
+export type GroupsResult =
+  | { readonly status: 'applied'; readonly epochs: readonly Epoch[] }
+  | { readonly status: 'superseded' };
+
+/** How a write ended: answered by the robot, or replaced by a newer write before it was sent. */
+export type WriteResult =
+  | { readonly status: 'answered'; readonly writeStatus: WriteStatus }
+  | { readonly status: 'superseded' };
 
 /** Something on the link did not follow the protocol. */
 export interface ProtocolErrorEvent {
@@ -112,8 +145,10 @@ export interface LinkStats {
   readonly bytesOut: number;
   /** Frames that passed the frame check. */
   readonly framesIn: number;
-  /** Frames thrown away for failing the frame check or being malformed. */
+  /** Frames thrown away for failing the frame check, a bad encoding or a run too long for a frame. */
   readonly framesDiscarded: number;
+  /** Frames that passed the check but could not be read as the message their type names. */
+  readonly framesUndecodable: number;
   /** Bytes of credit given back to the robot. */
   readonly creditReturned: number;
   /** The round trip of the last PING, in milliseconds. */
@@ -132,6 +167,8 @@ export interface SessionEvents {
   state: SessionState;
   schema: SchemaReady;
   epoch: Epoch;
+  epochEnd: EpochEndEvent;
+  timeline: TimelineEvent;
   sample: SampleEvent;
   dropped: DroppedEvent;
   value: ValueEvent;
@@ -143,14 +180,12 @@ export interface SessionEvents {
 
 /** Every timeout and period of a session, in milliseconds unless named otherwise. */
 export interface SessionTiming {
-  /** How long to wait for HELLO_ACK before sending HELLO again. */
+  /** How long to wait for the first HELLO_ACK before sending HELLO again. */
   helloTimeoutMs: number;
-  /** How many HELLOs to send before giving up. */
-  helloAttempts: number;
+  /** The longest wait between two HELLOs, which the wait grows to as HELLOs go unanswered. */
+  helloBackoffMaxMs: number;
   /** How long schema pages may stop arriving before the handshake is redone. */
   schemaTimeoutMs: number;
-  /** How many times to ask for the schema before giving up. */
-  schemaAttempts: number;
   /** How long to wait for the answer to a request. */
   requestTimeoutMs: number;
   /** How many times to send a group request that got no answer. */
@@ -173,9 +208,8 @@ export interface SessionTiming {
 /** Timing for a radio link with a round trip of 50 to 100 ms. */
 export const DEFAULT_TIMING: SessionTiming = {
   helloTimeoutMs: 1000,
-  helloAttempts: 5,
+  helloBackoffMaxMs: 5000,
   schemaTimeoutMs: 1500,
-  schemaAttempts: 5,
   requestTimeoutMs: 1000,
   groupAttempts: 3,
   pingIntervalMs: 1000,

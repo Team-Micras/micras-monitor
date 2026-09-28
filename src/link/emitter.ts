@@ -7,6 +7,9 @@ export type Unsubscribe = () => void;
 /**
  * A small typed event emitter, with no DOM and no framework behind it.
  *
+ * Every emit calls the listeners registered when it started, so one that subscribes or unsubscribes
+ * from inside a listener changes the next emit and not the current one.
+ *
  * A listener that throws does not stop the others from being called, and does not unwind into
  * the code that emitted: its error is rethrown on its own task, where it is reported like any
  * other uncaught error.
@@ -40,7 +43,9 @@ export class Emitter<Events extends object> {
    * @param payload What the listeners are called with.
    */
   emit<K extends keyof Events>(event: K, payload: Events[K]): void {
-    for (const listener of this.listeners[event] ?? []) {
+    const snapshot = Array.from(this.listeners[event] ?? []);
+
+    for (const listener of snapshot) {
       callIsolated(listener, payload);
     }
   }

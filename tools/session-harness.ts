@@ -9,6 +9,7 @@ import {
   Session,
   WebSocketTransport,
   type Epoch,
+  type GroupRequest,
   type HandshakeReason,
   type LogEvent,
   type ProtocolErrorEvent,
@@ -140,31 +141,39 @@ function variableId(session: Session, name: string): number {
  * @param timeoutMs How long to wait before failing.
  * @param what What is being waited for, for the failure message.
  */
-export function waitFor(
+export async function waitFor(
   condition: () => boolean,
   timeoutMs = 5000,
   what = 'a condition'
 ): Promise<void> {
-  return poll(condition, performance.now() + timeoutMs, () => {
-    return new Error(`Timed out after ${timeoutMs} ms waiting for ${what}`);
-  });
+  const deadline = performance.now() + timeoutMs;
+
+  while (!condition()) {
+    if (performance.now() > deadline) {
+      throw new Error(`Timed out after ${timeoutMs} ms waiting for ${what}`);
+    }
+
+    await delay(10);
+  }
 }
 
-async function poll(
-  condition: () => boolean,
-  deadline: number,
-  failure: () => Error
-): Promise<void> {
-  if (condition()) {
-    return;
+/**
+ * Apply a layout and return its epochs, failing if a later layout superseded it.
+ *
+ * @param session The session to apply it on.
+ * @param requests One request per group.
+ */
+export async function applyGroups(
+  session: Session,
+  requests: readonly GroupRequest[]
+): Promise<readonly Epoch[]> {
+  const result = await session.setGroups(requests);
+
+  if (result.status !== 'applied') {
+    throw new Error('The layout was superseded');
   }
 
-  if (performance.now() > deadline) {
-    throw failure();
-  }
-
-  await delay(10);
-  return poll(condition, deadline, failure);
+  return result.epochs;
 }
 
 /** Let time pass. */

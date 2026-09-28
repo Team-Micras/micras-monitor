@@ -1,5 +1,10 @@
+import { withTimeout } from '../timeout';
+
 /** Writes one chunk to the characteristic. */
 export type ChunkWriter = (chunk: Uint8Array) => Promise<void>;
+
+/** How long one write may take before the queue gives up on it and goes on. */
+export const DEFAULT_WRITE_TIMEOUT_MS = 1000;
 
 /**
  * The one queue every write to the characteristic goes through.
@@ -8,23 +13,29 @@ export type ChunkWriter = (chunk: Uint8Array) => Promise<void>;
  * time, each after the previous one settled. Bytes are packed into chunks no larger than one
  * write can carry, filling each chunk across frame boundaries: the robot sees a byte stream and
  * frames are delimited in-band.
+ *
+ * A write that never settles, as one can on a connection that is going away, costs its timeout and
+ * nothing more, and once the queue is cleared for a new connection nothing waits for it at all.
  */
 export class GattWriteQueue {
   private queued: Uint8Array[] = [];
   private headOffset = 0;
   private queuedBytes = 0;
-  private writing = false;
   private generation = 0;
+  private pumping: number | null = null;
 
   /**
    * @param write Writes one chunk.
    * @param chunkSize The most bytes one write carries.
-   * @param onError Called with a write that failed; the queue goes on with the next chunk.
+   * @param onError Called with a write that failed or timed out; the queue goes on with the next
+   * chunk.
+   * @param writeTimeoutMs How long one write may take.
    */
   constructor(
     private readonly write: ChunkWriter,
     private readonly chunkSize: number,
-    private readonly onError: (error: unknown) => void
+    private readonly onError: (error: unknown) => void,
+    private readonly writeTimeoutMs: number = DEFAULT_WRITE_TIMEOUT_MS
   ) {
     if (!Number.isInteger(chunkSize) || chunkSize < 1) {
       throw new Error(`Chunk size must be a positive integer, got ${chunkSize}`);
@@ -43,7 +54,10 @@ export class GattWriteQueue {
 
     this.queued.push(bytes.slice());
     this.queuedBytes += bytes.length;
-    void this.pump();
+
+    if (this.pumping !== this.generation) {
+      void this.pump(this.generation);
+    }
   }
 
   /**
@@ -61,32 +75,21 @@ export class GattWriteQueue {
     return this.queuedBytes;
   }
 
-  private async pump(): Promise<void> {
-    if (this.writing) {
-      return;
+  private async pump(generation: number): Promise<void> {
+    this.pumping = generation;
+
+    while (this.queued.length > 0 && generation === this.generation) {
+      await this.writeOne(this.takeChunk());
     }
 
-    this.writing = true;
-    await this.writeFrom(this.generation);
-    this.writing = false;
-
-    if (this.queued.length > 0) {
-      void this.pump();
+    if (this.pumping === generation) {
+      this.pumping = null;
     }
-  }
-
-  private async writeFrom(generation: number): Promise<void> {
-    if (this.queued.length === 0 || generation !== this.generation) {
-      return;
-    }
-
-    await this.writeOne(this.takeChunk());
-    return this.writeFrom(generation);
   }
 
   private async writeOne(chunk: Uint8Array): Promise<void> {
     try {
-      await this.write(chunk);
+      await withTimeout(this.write(chunk), this.writeTimeoutMs, 'a GATT write');
     } catch (error) {
       this.onError(error);
     }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { connect, delay, waitFor, type Harness } from './session-harness';
+import { applyGroups, connect, delay, waitFor, type Harness } from './session-harness';
 import { createVariables } from './simulated-robot/variables';
 
 let harness: Harness | undefined;
@@ -32,7 +32,7 @@ describe('a session recovers from what a radio link does', { timeout: 15_000 }, 
 
   test('credit lost stalls the stream, and a fresh HELLO resumes it', async () => {
     const { session, robot, recording, id } = await start({ dropCredits: 3 });
-    const [first] = await session.setGroups([
+    const [first] = await applyGroups(session, [
       { variableIds: FOUR_SIGNALS.map(id), periodTicks: 8 },
     ]);
 
@@ -50,9 +50,9 @@ describe('a session recovers from what a radio link does', { timeout: 15_000 }, 
 
   test('corrupted frames are counted and never credited', async () => {
     const { session, robot, recording, id } = await start({ corruptRate: 0.05, seed: 7 });
-    await session.setGroups([{ variableIds: FOUR_SIGNALS.map(id), periodTicks: 16 }]);
+    await applyGroups(session, [{ variableIds: FOUR_SIGNALS.map(id), periodTicks: 16 }]);
     await delay(2000);
-    await session.setGroups([]).catch(() => undefined);
+    await applyGroups(session, []).catch(() => undefined);
 
     await waitFor(
       () =>
@@ -72,7 +72,7 @@ describe('a session recovers from what a radio link does', { timeout: 15_000 }, 
 
   test('a robot that reboots is picked up again, with its clock starting over', async () => {
     const { session, robot, recording, id } = await start({ rebootAfterSeconds: 1 });
-    const [before] = await session.setGroups([
+    const [before] = await applyGroups(session, [
       { variableIds: [id('imu/gyro_x')], periodTicks: 80 },
     ]);
 
@@ -96,7 +96,7 @@ describe('a session recovers from what a radio link does', { timeout: 15_000 }, 
       throughputBytesPerSecond: 3000,
       latencyMs: 20,
     });
-    await session.setGroups([{ variableIds: EIGHT_SIGNALS.map(id), periodTicks: 8 }]);
+    await applyGroups(session, [{ variableIds: EIGHT_SIGNALS.map(id), periodTicks: 8 }]);
 
     const bytesBefore = session.stats.bytesIn;
     const startedAt = performance.now();

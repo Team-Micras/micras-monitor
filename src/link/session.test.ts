@@ -11,9 +11,10 @@ import {
 } from '../protocol';
 import { CommandResult } from './messages';
 import { RobotError, SessionError, TimeoutError } from './errors';
+import type { Epoch } from './groups';
 import { MemorySchemaCache, type SchemaCache, type SchemaEntry } from './schema';
 import { Session } from './session';
-import type { SampleEvent, SessionState, SessionTiming } from './session-types';
+import type { GroupsResult, SampleEvent, SessionState, SessionTiming } from './session-types';
 import { BaseTransport } from './transport';
 
 const HASH = 0x1234abcd;
@@ -26,7 +27,7 @@ const SCHEMA: SchemaEntry[] = [
 
 const TIMING: Partial<SessionTiming> = {
   helloTimeoutMs: 100,
-  helloAttempts: 3,
+  helloBackoffMaxMs: 400,
   requestTimeoutMs: 100,
   pingIntervalMs: 100,
   silenceTimeoutMs: 500,
@@ -127,9 +128,17 @@ async function withGroup(options: Parameters<typeof setup>[0] = {}) {
   context.transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
   await vi.advanceTimersByTimeAsync(0);
   context.transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
-  const [epoch] = await epochs;
+  const [epoch] = applied(await epochs);
 
   return { ...context, epoch };
+}
+
+function applied(result: GroupsResult): readonly Epoch[] {
+  if (result.status !== 'applied') {
+    throw new Error('The layout was superseded');
+  }
+
+  return result.epochs;
 }
 
 beforeEach(() => {
@@ -141,15 +150,19 @@ afterEach(() => {
 });
 
 describe('handshake', () => {
-  test('retries HELLO and gives up after the configured attempts', async () => {
+  test('keeps sending HELLO with backoff for as long as the transport is open', async () => {
     const { transport, session } = setup();
 
     session.open();
     await vi.advanceTimersByTimeAsync(299);
-    expect(transport.sentOf(MessageType.HELLO)).toHaveLength(3);
+    expect(transport.sentOf(MessageType.HELLO)).toHaveLength(2);
 
     await vi.advanceTimersByTimeAsync(1);
-    expect(session.state).toMatchObject({ kind: 'error' });
+    expect(transport.sentOf(MessageType.HELLO)).toHaveLength(3);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(transport.sentOf(MessageType.HELLO)).toHaveLength(3 + Math.floor(9700 / 400) + 1);
+    expect(session.state).toMatchObject({ kind: 'handshaking', reason: 'connected' });
 
     session.restart();
     expect(session.state).toMatchObject({ kind: 'handshaking', reason: 'restart', attempt: 1 });
@@ -253,7 +266,9 @@ describe('samples', () => {
     transport.robotSends(MessageType.SAMPLE, sample(0, 0, 1000, 2.5, 7));
     transport.robotSends(MessageType.SAMPLE, new Writer().u8(0).u16(1).u32(2000).u8(1).done());
 
-    expect(samples).toEqual([{ epoch: epoch.id, seq: 0, timeUs: 1000, values: [2.5, 7] }]);
+    expect(samples).toEqual([
+      { epoch: epoch.id, seq: 0, timeUs: 1000, values: [2.5, 7], missingBefore: 0 },
+    ]);
     expect(errors).toEqual([expect.stringContaining('1 bytes; 6 were acknowledged')]);
   });
 
@@ -271,10 +286,13 @@ describe('samples', () => {
     const epochs = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
 
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 8));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 8));
 
     await expect(epochs).rejects.toThrow('acknowledged 8 bytes');
+    expect([...transport.sentOf(MessageType.GROUP_ENABLE)[0].payload]).toEqual([0, 0]);
     expect(session.openEpochs).toEqual([]);
-    expect(errors).toHaveLength(1);
+    expect(errors).toEqual([]);
   });
 });
 
@@ -306,27 +324,29 @@ describe('schema', () => {
     expect(transport.sentOf(MessageType.HELLO)).toHaveLength(1);
   });
 
-  test('running out of schema attempts is an error that restart recovers from', async () => {
-    const { transport, session } = setup({
-      cached: false,
-      timing: { schemaTimeoutMs: 50, schemaAttempts: 2 },
-    });
+  test('schema pages that stop arriving redo the handshake, asking only for what is missing', async () => {
+    const { transport, session } = setup({ cached: false, timing: { schemaTimeoutMs: 50 } });
     const answerHello = () => transport.robotSends(MessageType.HELLO_ACK, helloAck());
 
     session.open();
     answerHello();
+    transport.robotSends(MessageType.SCHEMA_PAGE, schemaPage(0, 1));
     await vi.advanceTimersByTimeAsync(50);
-    answerHello();
-    await vi.advanceTimersByTimeAsync(50);
-    answerHello();
 
-    expect(session.state).toMatchObject({ kind: 'error' });
+    expect(session.state).toMatchObject({ kind: 'handshaking', reason: 'schema-retry' });
 
-    session.restart();
     answerHello();
+    transport.robotSends(MessageType.SCHEMA_PAGE, schemaPage(1, 1));
+    await vi.advanceTimersByTimeAsync(0);
 
-    expect(session.state.kind).toBe('loadingSchema');
-    expect(transport.sentOf(MessageType.SCHEMA_REQUEST)).toHaveLength(3);
+    const requests = transport
+      .sentOf(MessageType.SCHEMA_REQUEST)
+      .map((frame) => Array.from(frame.payload));
+    expect(requests).toEqual([
+      [0, 0],
+      [1, 0],
+    ]);
+    expect(session.state.kind).toBe('streaming');
   });
 
   test('a cache that throws is a miss, reported, not a hang', async () => {
@@ -369,8 +389,8 @@ describe('groups', () => {
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
 
-    expect(await first).toMatchObject({ reason: 'superseded' });
-    expect(await second).toMatchObject([{ variableIds: [0, 1], sampleSize: 6 }]);
+    expect(await first).toEqual({ status: 'superseded' });
+    expect(applied(await second)).toMatchObject([{ variableIds: [0, 1], sampleSize: 6 }]);
     expect(transport.sentOf(MessageType.GROUP_DEFINE)).toHaveLength(2);
   });
 
@@ -383,12 +403,14 @@ describe('groups', () => {
 
     transport.robotSends(MessageType.ERROR, new Writer().u8(4).u16(0).done());
     await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.ERROR, new Writer().u8(2).u16(0).done());
+    await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 2));
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 2));
 
-    expect(await first).toMatchObject({ reason: 'superseded' });
-    expect(await second).toMatchObject([{ variableIds: [1] }]);
+    expect(await first).toEqual({ status: 'superseded' });
+    expect(applied(await second)).toMatchObject([{ variableIds: [1] }]);
   });
 
   test('a handshake in the middle of configuring applies the layout again after it', async () => {
@@ -403,7 +425,7 @@ describe('groups', () => {
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
 
-    expect(await epochs).toHaveLength(1);
+    expect(applied(await epochs)).toHaveLength(1);
     expect(transport.sentOf(MessageType.GROUP_DEFINE)).toHaveLength(2);
     expect(session.state.kind).toBe('streaming');
   });
@@ -416,6 +438,8 @@ describe('groups', () => {
     ]);
 
     transport.robotSends(MessageType.ERROR, new Writer().u8(4).u16(0).done());
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.ERROR, new Writer().u8(2).u16(0).done());
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(1, 8, 2));
     await vi.advanceTimersByTimeAsync(0);
@@ -464,7 +488,7 @@ describe('requests', () => {
 
     transport.robotSends(MessageType.COMMAND_ACK, new Writer().u8(3).u8(2).done());
 
-    expect(await result).toBe(CommandResult.REFUSED);
+    expect(await result).toEqual({ result: CommandResult.REFUSED, reason: null });
     expect([...transport.sentOf(MessageType.COMMAND)[0].payload]).toEqual([3, 9, 0, 0, 0]);
   });
 

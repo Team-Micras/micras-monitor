@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { WriteStatus } from '../src/protocol';
 import { CommandResult, MemorySchemaCache, SessionError } from '../src/link';
-import { connect, waitFor, type Harness } from './session-harness';
+import { applyGroups, connect, waitFor, type Harness } from './session-harness';
 
 let harness: Harness | undefined;
 
@@ -41,7 +41,7 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
 
   test('streams a group whose samples decode in order', async () => {
     const { session, recording, id } = await start();
-    const [epoch] = await session.setGroups([
+    const [epoch] = await applyGroups(session, [
       { variableIds: [id('imu/accel_z'), id('loop/worst_time_us')], periodTicks: 80 },
     ]);
 
@@ -61,10 +61,12 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
 
   test('a new layout opens a new epoch whose sequence starts over', async () => {
     const { session, recording, id } = await start();
-    const [first] = await session.setGroups([{ variableIds: [id('imu/gyro_x')], periodTicks: 40 }]);
+    const [first] = await applyGroups(session, [
+      { variableIds: [id('imu/gyro_x')], periodTicks: 40 },
+    ]);
     await waitFor(() => recording.samplesOf(first.id).length >= 10);
 
-    const [second, extra] = await session.setGroups([
+    const [second, extra] = await applyGroups(session, [
       { variableIds: [id('imu/gyro_x'), id('imu/gyro_y')], periodTicks: 40 },
       { variableIds: [id('wall/0')], periodTicks: 400 },
     ]);
@@ -89,7 +91,7 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
     expect(session.pendingWrite(profile)).toBe(2);
     expect(recording.writes).toEqual([{ variableId: profile, value: 2, state: 'pending' }]);
 
-    expect(await written).toBe(WriteStatus.OK);
+    expect(await written).toEqual({ status: 'answered', writeStatus: WriteStatus.OK });
     expect(session.pendingWrite(profile)).toBeUndefined();
     expect(recording.writes.at(-1)).toEqual({ variableId: profile, value: 2, state: 'confirmed' });
     expect(await session.read(profile)).toBe(2);
@@ -99,7 +101,10 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
     const { session, recording, id } = await start();
     const gyro = id('imu/gyro_x');
 
-    expect(await session.write(gyro, 1.5)).toBe(WriteStatus.READ_ONLY);
+    expect(await session.write(gyro, 1.5)).toEqual({
+      status: 'answered',
+      writeStatus: WriteStatus.READ_ONLY,
+    });
     expect(recording.writes.map((write) => write.state)).toEqual(['pending', 'refused']);
     await expect(session.write(id('objective'), 300)).rejects.toThrow('out of range');
   });
@@ -114,9 +119,9 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
   test('runs a command and receives what the robot logs about it', async () => {
     const { session, recording } = await start();
 
-    expect(await session.command(2, 7)).toBe(CommandResult.OK);
+    expect(await session.command(2, 7)).toEqual({ result: CommandResult.OK, reason: null });
     await waitFor(() => recording.logs.length > 0);
-    expect(recording.logs[0]).toEqual({ severity: 1, text: 'ran command 2' });
+    expect(recording.logs[0]).toEqual({ severity: 1, text: 'ran command 2', timeUs: null });
   });
 
   test('measures the round trip with PING', async () => {

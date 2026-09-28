@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { FRAME_VECTORS, type FrameVector } from './fixtures/frame-vectors';
 import { encodeFrame, FrameReader, Reader, Writer } from './frame';
-import { MAX_PAYLOAD_SIZE, MessageType } from './protocol';
+import { MAX_FRAME_SIZE, MAX_PAYLOAD_SIZE, MessageType } from './protocol';
 
 function encodeVector(vector: FrameVector): Uint8Array {
   return encodeFrame(vector.type, new Uint8Array(vector.payload));
@@ -73,6 +73,16 @@ describe('FrameReader', () => {
 
     expect(reader.push(frame.subarray(0, 5))).toEqual([]);
     expect(reader.push(frame.subarray(5))).toHaveLength(1);
+  });
+
+  test('throws away a run longer than any frame without holding on to it', () => {
+    const good = encodeVector(vectorNamed('group_define'));
+    const reader = new FrameReader();
+    const garbage = new Uint8Array(MAX_FRAME_SIZE * 4).fill(0x55);
+
+    expect(reader.push(garbage)).toEqual([]);
+    expect(reader.push(new Uint8Array([0, ...good]))).toHaveLength(1);
+    expect(reader.discarded).toBe(1);
   });
 
   test('forgets a partial frame when cleared', () => {

@@ -1,6 +1,7 @@
 import { Backoff, DEFAULT_BACKOFF, type BackoffOptions } from '../backoff';
+import { withTimeout } from '../timeout';
 import { asError, BaseTransport } from '../transport';
-import { GattWriteQueue } from './gatt-write-queue';
+import { DEFAULT_WRITE_TIMEOUT_MS, GattWriteQueue } from './gatt-write-queue';
 import {
   DEFAULT_CHUNK_SIZE,
   HM19_UART,
@@ -21,8 +22,14 @@ export interface BluetoothTransportOptions {
   /** The most bytes one write without response carries. */
   chunkSize?: number;
 
-  /** How long one connection attempt may take, in milliseconds. */
+  /**
+   * How long one connection attempt may take, in milliseconds, from connecting to the GATT server
+   * to the notifications being on.
+   */
   connectTimeoutMs?: number;
+
+  /** How long one write may take, in milliseconds, before the next one goes ahead. */
+  writeTimeoutMs?: number;
 
   /** How the wait between reconnection attempts grows. */
   backoff?: BackoffOptions;
@@ -34,12 +41,12 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
  * A transport over a BLE UART module such as the robot's HM-19.
  *
  * The first connection needs a user gesture, because only one can open the device chooser; that
- * is `BluetoothTransport.request`. After a drop, the transport reconnects on its own through
- * `navigator.bluetooth.getDevices()` where the browser implements it; where it does not, it
- * stops in the `needs-user-gesture` state and `reconnect()` has to be called from a click.
+ * is `BluetoothTransport.request`, or `BluetoothTransport.restore` for a device the origin was
+ * given before. After a drop, the transport reconnects to the same device on its own, with
+ * backoff. Only when the browser refuses to connect without a gesture does it stop in the
+ * `needs-user-gesture` state, and then `reconnect()` has to be called from a click.
  */
 export class BluetoothTransport extends BaseTransport {
-  private readonly bluetooth: BluetoothLike;
   private readonly uart: UartService;
   private readonly connectTimeoutMs: number;
   private readonly backoff: Backoff;
@@ -85,18 +92,18 @@ export class BluetoothTransport extends BaseTransport {
    * @param options How to talk to the module.
    */
   constructor(
-    private device: BluetoothDeviceLike,
+    private readonly device: BluetoothDeviceLike,
     options: BluetoothTransportOptions
   ) {
     super();
-    this.bluetooth = options.bluetooth;
     this.uart = options.uart ?? HM19_UART;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.backoff = new Backoff(options.backoff ?? DEFAULT_BACKOFF);
     this.writes = new GattWriteQueue(
       (chunk) => this.writeChunk(chunk),
       options.chunkSize ?? DEFAULT_CHUNK_SIZE,
-      (error) => this.reportError(asError(error))
+      (error) => this.reportError(asError(error)),
+      options.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS
     );
   }
 
@@ -160,15 +167,11 @@ export class BluetoothTransport extends BaseTransport {
     this.setState({ kind: 'connecting', attempt: this.backoff.attempts + 1 });
 
     try {
-      const characteristic = await withTimeout(this.openUart(), this.connectTimeoutMs);
-
-      if (generation !== this.generation) {
-        this.abandonGattUnlessWanted();
-        return;
-      }
-
-      this.adopt(characteristic);
-      await characteristic.startNotifications();
+      await withTimeout(
+        this.openUart(generation),
+        this.connectTimeoutMs,
+        `connecting to ${this.describeDevice()}`
+      );
 
       if (generation === this.generation) {
         this.backoff.reset();
@@ -176,6 +179,7 @@ export class BluetoothTransport extends BaseTransport {
       }
     } catch (error) {
       if (generation === this.generation) {
+        this.generation++;
         this.release();
         this.abandonGatt();
         this.scheduleRetry('failed', error);
@@ -183,16 +187,24 @@ export class BluetoothTransport extends BaseTransport {
     }
   }
 
-  private async openUart(): Promise<GattCharacteristicLike> {
+  private async openUart(generation: number): Promise<void> {
     const gatt = this.device.gatt;
 
     if (!gatt) {
-      throw new Error(`${this.device.name ?? this.device.id} has no GATT server`);
+      throw new Error(`${this.describeDevice()} has no GATT server`);
     }
 
     const server = await gatt.connect();
     const service = await server.getPrimaryService(this.uart.service);
-    return service.getCharacteristic(this.uart.characteristic);
+    const characteristic = await service.getCharacteristic(this.uart.characteristic);
+
+    if (generation !== this.generation) {
+      this.abandonGattUnlessWanted();
+      return;
+    }
+
+    this.adopt(characteristic);
+    await characteristic.startNotifications();
   }
 
   private adopt(characteristic: GattCharacteristicLike): void {
@@ -231,9 +243,11 @@ export class BluetoothTransport extends BaseTransport {
   };
 
   private readonly onDisconnected = (): void => {
+    const reason = this.state.kind === 'connecting' ? 'failed' : 'lost';
+
     this.generation++;
     this.release();
-    this.scheduleRetry('lost', new Error(`${this.device.name ?? 'The robot'} disconnected`));
+    this.scheduleRetry(reason, new Error(`${this.describeDevice()} disconnected`));
   };
 
   private writeChunk(chunk: Uint8Array): Promise<void> {
@@ -249,31 +263,18 @@ export class BluetoothTransport extends BaseTransport {
       return;
     }
 
-    if (!this.bluetooth.getDevices) {
+    if (needsUserGesture(error)) {
       this.setState({ kind: 'closed', reason: 'needs-user-gesture', error: asError(error) });
       return;
     }
 
     const delay = this.backoff.next();
     this.setState({ kind: 'closed', reason, retryInMs: delay, error: asError(error) });
-    this.retryTimer = setTimeout(() => void this.retry(), delay);
+    this.retryTimer = setTimeout(() => void this.connect(), delay);
   }
 
-  private async retry(): Promise<void> {
-    const generation = this.generation;
-    const device = await findPermittedDevice(this.bluetooth, this.device.id).catch(() => null);
-
-    if (generation !== this.generation || !this.wanted) {
-      return;
-    }
-
-    if (!device) {
-      this.setState({ kind: 'closed', reason: 'needs-user-gesture' });
-      return;
-    }
-
-    this.device = device;
-    await this.connect();
+  private describeDevice(): string {
+    return this.device.name ?? this.device.id;
   }
 
   private cancelRetry(): void {
@@ -294,11 +295,11 @@ async function findPermittedDevice(
   return devices.find((device) => device.id === deviceId) ?? null;
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs} ms`)), timeoutMs);
-  });
-
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+/**
+ * Whether the browser refused to connect for want of a user gesture, which only a click can fix;
+ * anything else is worth retrying.
+ */
+function needsUserGesture(error: unknown): boolean {
+  const { name } = asError(error);
+  return name === 'SecurityError' || name === 'NotAllowedError';
 }
