@@ -14,8 +14,11 @@ export type HandshakeReason =
   | 'keepalive'
   /** Schema pages stopped arriving, which resets the credit window they were lost from. */
   | 'schema-retry'
-  /** A PONG counted less sent than was already received, which only a robot that started over does. */
-  | 'reboot';
+  /**
+   * A PONG gave a total of bytes sent that the credit cannot be brought in line with, such as one
+   * below what already arrived; a robot that started over sends one, but so may a count gone wrong.
+   */
+  | 'credit-resync';
 
 /**
  * Where the session is. It goes `disconnected → handshaking → loadingSchema → configuring →

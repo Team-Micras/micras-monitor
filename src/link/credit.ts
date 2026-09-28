@@ -64,8 +64,13 @@ export interface CreditPolicy {
   /** When credit will be due without anything else arriving, or null when nothing is owed. */
   dueAt(): number | null;
 
-  /** Start over from zero, because a HELLO reset the robot's window. */
-  reset(): void;
+  /**
+   * Start over from zero, because a HELLO reset the robot's window.
+   *
+   * @param window The window the robot announced in its HELLO_ACK, when known; the one before
+   * otherwise.
+   */
+  reset(window?: number): void;
 }
 
 /** When `CumulativeCredit` gives credit back. */
@@ -102,11 +107,12 @@ export class CumulativeCredit implements CreditPolicy {
 
   /**
    * @param options When to give credit back.
-   * @param window The robot's credit window, which no loss can be larger than.
+   * @param window The robot's credit window, which no loss can be larger than, until a reset
+   * gives the one the robot announced.
    */
   constructor(
     private readonly options: CumulativeCreditOptions = DEFAULT_CUMULATIVE,
-    private readonly window: number = CREDIT_WINDOW
+    private window: number = CREDIT_WINDOW
   ) {}
 
   received(bytes: number, now: number): void {
@@ -148,7 +154,8 @@ export class CumulativeCredit implements CreditPolicy {
     return this.owedSince === null ? null : this.owedSince + this.options.maxDelayMs;
   }
 
-  reset(): void {
+  reset(window = this.window): void {
+    this.window = window;
     this.consumed = 0;
     this.told = 0;
     this.owedSince = null;

@@ -185,6 +185,7 @@ export function createVariables(): Variable[] {
       access: ACCESS_STREAM,
       value: CREDIT_WINDOW,
     },
+    { name: 'link/discarded_frames', type: TypeCode.U32, access: ACCESS_STREAM, value: 0 },
   ];
 }
 

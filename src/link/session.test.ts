@@ -4,6 +4,7 @@ import {
   CommandResult,
   decodeAccess,
   encodeFrame,
+  ErrorCode,
   FrameReader,
   MessageType,
   TypeCode,
@@ -86,15 +87,23 @@ class ScriptedTransport extends BaseTransport {
 
 const BOOT_ID = 0x5eed0001;
 
-function helloAck(bootId = BOOT_ID): Uint8Array {
+interface HelloAckFields {
+  bootId?: number;
+  hash?: number;
+  count?: number;
+  creditWindow?: number;
+}
+
+function helloAck(fields: HelloAckFields = {}): Uint8Array {
+  const { bootId = BOOT_ID, hash = HASH, count = SCHEMA.length, creditWindow = 256 } = fields;
   const name = new TextEncoder().encode('micras');
 
   return new Writer()
     .u8(2)
-    .u32(HASH)
-    .u16(SCHEMA.length)
+    .u32(hash)
+    .u16(count)
     .u32(LOOP_TIME_US)
-    .u16(256)
+    .u16(creditWindow)
     .u32(bootId)
     .u8(name.length)
     .raw(name)
@@ -132,6 +141,28 @@ function groupAck(group: number, period: number, size: number): Uint8Array {
   return new Writer().u8(group).u16(period).u16(size).done();
 }
 
+function inOneBatch(...frames: [MessageType, Uint8Array][]): Uint8Array {
+  const encoded = frames.map(([type, payload]) => encodeFrame(type, payload));
+  const bytes = new Uint8Array(encoded.reduce((total, frame) => total + frame.length, 0));
+  let offset = 0;
+
+  for (const frame of encoded) {
+    bytes.set(frame, offset);
+    offset += frame.length;
+  }
+
+  return bytes;
+}
+
+function withBlobSchema(): SchemaCache {
+  const cache = new MemorySchemaCache();
+  cache.store(HASH, [
+    ...SCHEMA,
+    { id: 2, name: 'maze', type: TypeCode.BLOB, access: decodeAccess(0) },
+  ]);
+  return cache;
+}
+
 function setup(
   options: { cached?: boolean; timing?: Partial<SessionTiming>; cache?: SchemaCache } = {}
 ) {
@@ -157,15 +188,17 @@ function setup(
   return { transport, session, states, samples, errors };
 }
 
-async function streaming(options: Parameters<typeof setup>[0] = {}) {
+type ConnectOptions = Parameters<typeof setup>[0] & { hello?: HelloAckFields };
+
+async function streaming(options: ConnectOptions = {}) {
   const context = setup(options);
   context.session.open();
-  context.transport.robotSends(MessageType.HELLO_ACK, helloAck());
+  context.transport.robotSends(MessageType.HELLO_ACK, helloAck(options.hello));
   await vi.advanceTimersByTimeAsync(0);
   return context;
 }
 
-async function withGroup(options: Parameters<typeof setup>[0] = {}) {
+async function withGroup(options: ConnectOptions = {}) {
   const context = await streaming(options);
   const epochs = context.session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
 
@@ -177,7 +210,7 @@ async function withGroup(options: Parameters<typeof setup>[0] = {}) {
   return { ...context, epoch };
 }
 
-async function pinged(options: Parameters<typeof setup>[0] = {}) {
+async function pinged(options: ConnectOptions = {}) {
   const context = await withGroup(options);
 
   await vi.advanceTimersByTimeAsync(100);
@@ -254,6 +287,20 @@ describe('handshake', () => {
     expect(states.map((state) => state.kind)).toEqual(['handshaking', 'streaming']);
     expect(session.schema).toBe(SCHEMA);
   });
+
+  test('a different schema announced later forgets the old one before any read or write', async () => {
+    const { transport, session } = await streaming();
+
+    session.restart();
+    transport.robotSends(MessageType.HELLO_ACK, helloAck({ hash: 0xdeadbeef, count: 5 }));
+
+    expect(session.state).toMatchObject({ kind: 'loadingSchema', total: 5 });
+    expect(session.schema).toBeUndefined();
+    await expect(session.write(0, 1)).rejects.toMatchObject({ reason: 'not-ready' });
+    await expect(session.read(0)).rejects.toMatchObject({ reason: 'not-ready' });
+    expect(transport.sentOf(MessageType.WRITE)).toEqual([]);
+    expect(transport.sentOf(MessageType.READ)).toEqual([]);
+  });
 });
 
 describe('keepalive', () => {
@@ -288,6 +335,25 @@ describe('keepalive', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(session.stats.rttMs).toBe(7);
+  });
+
+  test('a stream quiet for half the stall threshold gets a PING early, whose PONG saves it', async () => {
+    const { transport, session } = await withGroup({
+      timing: { pingIntervalMs: 1000, minStallMs: 400, silenceTimeoutMs: 10_000 },
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    transport.robotSends(MessageType.PONG, pong(0));
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(transport.sentOf(MessageType.PING)).toHaveLength(2);
+
+    transport.robotSends(MessageType.PONG, pong(18));
+    transport.robotSends(MessageType.SAMPLE, sample(0, 1, 1000, 1, 1));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(session.stats.creditRecovered).toBe(18);
+    expect(session.state.kind).toBe('streaming');
   });
 });
 
@@ -583,6 +649,58 @@ describe('requests', () => {
 
     await expect(value).rejects.toMatchObject({ code: 5, context: 1 });
   });
+
+  test('a group definition waits for a blob READ, so a GROUP_TOO_LARGE answers only the READ', async () => {
+    const { transport, session } = await streaming({
+      cached: false,
+      cache: withBlobSchema(),
+      hello: { count: 3 },
+    });
+    const value = session.read(2);
+    const layout = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
+
+    expect(transport.sentOf(MessageType.GROUP_DEFINE)).toEqual([]);
+
+    transport.robotSends(
+      MessageType.ERROR,
+      new Writer().u8(ErrorCode.GROUP_TOO_LARGE).u16(2).done()
+    );
+    await expect(value).rejects.toMatchObject({ code: ErrorCode.GROUP_TOO_LARGE, context: 2 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.sentOf(MessageType.GROUP_DEFINE)).toHaveLength(1);
+
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    expect(applied(await layout)).toHaveLength(1);
+  });
+
+  test('a blob READ waits for a group definition the robot has not answered', async () => {
+    const { transport, session } = await streaming({
+      cached: false,
+      cache: withBlobSchema(),
+      hello: { count: 3 },
+    });
+    const layout = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
+    const value = session.read(2);
+
+    expect(transport.sentOf(MessageType.READ)).toEqual([]);
+
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.sentOf(MessageType.READ)).toHaveLength(1);
+
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    transport.robotSends(
+      MessageType.VALUE,
+      new Writer()
+        .u16(2)
+        .raw(new Uint8Array([1, 2, 3]))
+        .done()
+    );
+    expect(await value).toEqual(new Uint8Array([1, 2, 3]));
+    expect(applied(await layout)).toHaveLength(1);
+  });
 });
 
 describe('credit resynchronized by PONG', () => {
@@ -598,7 +716,7 @@ describe('credit resynchronized by PONG', () => {
     expect(session.state.kind).toBe('streaming');
   });
 
-  test('a total below what already arrived is a robot that started over', async () => {
+  test('a total below what already arrived redoes the handshake to set the count straight', async () => {
     const { transport, session } = await pinged();
 
     for (let seq = 0; seq < 3; seq++) {
@@ -606,7 +724,18 @@ describe('credit resynchronized by PONG', () => {
     }
     transport.robotSends(MessageType.PONG, pong(0));
 
-    expect(session.state).toMatchObject({ kind: 'handshaking', reason: 'reboot' });
+    expect(session.state).toMatchObject({ kind: 'handshaking', reason: 'credit-resync' });
+  });
+
+  test('a loss is measured against the window the robot announced', async () => {
+    const { transport, session } = await pinged({ hello: { creditWindow: 1024 } });
+
+    transport.robotSends(MessageType.SAMPLE, sample(0, 0, 0, 1, 1));
+    transport.robotSends(MessageType.PONG, pong(18 + 600));
+
+    expect(session.stats.creditRecovered).toBe(600);
+    expect(transport.creditTotals()).toEqual([618]);
+    expect(session.state.kind).toBe('streaming');
   });
 
   test('a PONG no PING waits for is not taken', async () => {
@@ -629,7 +758,7 @@ describe('boots and timelines', () => {
 
     transport.robotSends(MessageType.SAMPLE, sample(0, 0, 900_000_000, 1, 1));
     session.restart();
-    transport.robotSends(MessageType.HELLO_ACK, helloAck(0xb007));
+    transport.robotSends(MessageType.HELLO_ACK, helloAck({ bootId: 0xb007 }));
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
     await vi.advanceTimersByTimeAsync(0);
@@ -663,6 +792,34 @@ describe('boots and timelines', () => {
     expect(session.openEpochs[0].id).not.toBe(epoch.id);
   });
 
+  test('an epoch enabled in the batch that shows a clock reset is announced on the new timeline', async () => {
+    const { transport, session, samples, epoch } = await withGroup();
+    const timelines: TimelineEvent[] = [];
+    session.on('timeline', (event) => timelines.push(event));
+
+    transport.robotSends(MessageType.SAMPLE, sample(0, 0, 7_000_000, 1, 1));
+    const layout = session.setGroups([
+      { variableIds: [0, 1], periodTicks: 8 },
+      { variableIds: [0, 1], periodTicks: 8 },
+    ]);
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(1, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSendsBytes(
+      inOneBatch(
+        [MessageType.GROUP_ACK, groupAck(1, 8, 6)],
+        [MessageType.SAMPLE, sample(1, 0, 100, 1, 1)]
+      )
+    );
+
+    const epochs = applied(await layout);
+    expect(timelines).toEqual([{ id: epoch.timeline + 1, reason: 'clock-reset' }]);
+    expect(epochs.map((each) => [each.group, each.timeline])).toEqual([
+      [0, epoch.timeline + 1],
+      [1, epoch.timeline + 1],
+    ]);
+    expect(samples.at(-1)).toMatchObject({ epoch: epochs[1].id, timeUs: 100 });
+  });
+
   test('a LOG is placed on the time of the samples, either side of a wrap', async () => {
     const { transport, session } = await withGroup();
     const logs: LogEvent[] = [];
@@ -679,7 +836,7 @@ describe('boots and timelines', () => {
 });
 
 describe('epochs', () => {
-  test('an enable whose answer is lost is sent again, and the epoch opens only on its answer', async () => {
+  test('an enable whose answer is lost is sent again, and without samples the epoch opens on its answer', async () => {
     const { transport, session } = await streaming();
     const opened: Epoch[] = [];
     session.on('epoch', (epoch) => opened.push(epoch));
@@ -694,6 +851,58 @@ describe('epochs', () => {
 
     expect(applied(await epochs)).toEqual(opened);
     expect(transport.sentOf(MessageType.GROUP_ENABLE)).toHaveLength(2);
+  });
+
+  test('the first sample in the same batch as the enable answer is decoded into its epoch', async () => {
+    const { transport, session, samples } = await streaming();
+    const opened: Epoch[] = [];
+    session.on('epoch', (epoch) => opened.push(epoch));
+    const epochs = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
+
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSendsBytes(
+      inOneBatch(
+        [MessageType.GROUP_ACK, groupAck(0, 8, 6)],
+        [MessageType.SAMPLE, sample(0, 0, 1000, 2.5, 7)]
+      )
+    );
+
+    const [epoch] = applied(await epochs);
+    expect(opened).toEqual([epoch]);
+    expect(samples).toEqual([
+      { epoch: epoch.id, seq: 0, timeUs: 1000, values: [2.5, 7], missingBefore: 0 },
+    ]);
+  });
+
+  test('samples that arrive when the enable answer was lost open the epoch, and the enable is sent again', async () => {
+    const { transport, session, samples, errors } = await streaming();
+    const opened: Epoch[] = [];
+    session.on('epoch', (epoch) => opened.push(epoch));
+    const epochs = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
+
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.SAMPLE, sample(0, 0, 1000, 1, 1));
+    transport.robotSends(MessageType.SAMPLE, sample(0, 1, 2000, 1, 1));
+
+    expect(opened).toHaveLength(1);
+    expect(samples.map((event) => [event.epoch, event.seq])).toEqual([
+      [opened[0].id, 0],
+      [opened[0].id, 1],
+    ]);
+
+    await vi.advanceTimersByTimeAsync(100);
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+
+    expect(applied(await epochs)).toEqual(opened);
+    expect(
+      transport.sentOf(MessageType.GROUP_ENABLE).map((frame) => Array.from(frame.payload))
+    ).toEqual([
+      [0, 1],
+      [0, 1],
+    ]);
+    expect(errors).toEqual([]);
   });
 
   test('a group whose enable never got an answer is turned off', async () => {

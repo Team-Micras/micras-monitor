@@ -101,6 +101,20 @@ describe('epochs', () => {
     expect(events).toEqual(['opened 101', 'ended 101 clock-reset', 'opened 102']);
   });
 
+  test('an epoch not announced yet moves to the new timeline silently, to be announced there', () => {
+    const { registry, events } = recordingRegistry();
+
+    define(registry, 1);
+    registry.moveToTimeline(2);
+
+    expect(events).toEqual([]);
+    expect(registry.current(0)?.epoch).toMatchObject({ id: 102, timeline: 2 });
+
+    registry.activate(0);
+
+    expect(events).toEqual(['opened 102']);
+  });
+
   test('a sequence gap inside an epoch counts the samples dropped', () => {
     const open = define(recordingRegistry().registry);
 

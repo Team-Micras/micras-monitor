@@ -47,7 +47,7 @@ export class SchemaLoader {
     private readonly host: SchemaLoaderHost
   ) {}
 
-  /** The schema in use, once one is known. */
+  /** The schema in use: the one the last HELLO_ACK announced, once it is known. */
   get schema(): readonly SchemaEntry[] | undefined {
     return this.adopted?.entries;
   }
@@ -58,7 +58,8 @@ export class SchemaLoader {
   }
 
   /**
-   * Start learning the schema a HELLO_ACK announced.
+   * Start learning the schema a HELLO_ACK announced. A schema in use that is not the announced
+   * one is forgotten at once, so nothing is read or written by it while the new one loads.
    *
    * @param hash The announced hash.
    * @param total The announced number of variables.
@@ -67,6 +68,8 @@ export class SchemaLoader {
     if (this.adopted?.hash === hash && this.adopted.entries.length === total) {
       return { kind: 'unchanged' };
     }
+
+    this.adopted = undefined;
 
     const cached = this.loadCached(hash);
 

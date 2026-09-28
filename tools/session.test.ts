@@ -32,7 +32,7 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
       creditWindow: 256,
       robotName: 'micras',
     });
-    expect(session.schema).toHaveLength(25);
+    expect(session.schema).toHaveLength(26);
     expect(session.schema?.[2]).toMatchObject({
       id: 2,
       name: 'imu/gyro_x',
@@ -149,6 +149,27 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
     expect(robot.robot?.robotState).toBe(RobotState.ERROR);
     expect(await session.command(6)).toEqual({ result: CommandResult.OK });
     expect(robot.robot?.robotState).toBe(RobotState.IDLE);
+  });
+
+  test('brakes to a standstill on a stop during a run before it is idle', async () => {
+    const { session, robot, id } = await start();
+
+    expect(await session.command(0)).toEqual({ result: CommandResult.OK });
+    expect(await session.command(5)).toEqual({ result: CommandResult.OK });
+    expect(robot.robot?.robotState).toBe(RobotState.BRAKE);
+    expect(await session.read(id('state'))).toBe(13);
+    expect(await session.command(5)).toEqual({ result: CommandResult.OK });
+    expect(await session.command(0)).toEqual({ result: CommandResult.REFUSED, reason: 1 });
+
+    await waitFor(() => robot.robot?.robotState === RobotState.IDLE, 2000, 'the braking to end');
+  });
+
+  test('counts the frames it could not read, as the firmware does', async () => {
+    const { session, robot, id } = await start();
+
+    robot.robot?.receive(new Uint8Array([5, 9, 9, 9, 9, 0]));
+
+    expect(await session.read(id('link/discarded_frames'))).toBe(1);
   });
 
   test('defers a stop that arrives while the maze is being saved', async () => {

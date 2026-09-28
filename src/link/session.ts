@@ -41,6 +41,7 @@ import {
   type RobotMessage,
   type Sample,
 } from './messages';
+import { OneAtATime } from './one-at-a-time';
 import { PendingRequests, type RequestKind } from './requests';
 import { MemorySchemaCache, type SchemaCache, type SchemaEntry } from './schema';
 import { SchemaLoader, type SchemaProgress } from './schema-loader';
@@ -95,6 +96,7 @@ export class Session {
   private readonly requests = new PendingRequests();
   private readonly clock = new TimestampUnwrapper();
   private readonly counters = new LinkCounters();
+  private readonly sizeRefusals = new OneAtATime();
   private readonly credit: CreditPolicy;
   private readonly timing: SessionTiming;
   private readonly helloBackoff: Backoff;
@@ -171,7 +173,7 @@ export class Session {
     return this.info;
   }
 
-  /** The robot's schema, once known. */
+  /** The robot's schema, once known; unknown again while a different one loads. */
   get schema(): readonly SchemaEntry[] | undefined {
     return this.schemaLoader.schema;
   }
@@ -299,23 +301,20 @@ export class Session {
   /**
    * Read the current value of a variable, streamed or not.
    *
+   * The robot refuses a blob too large for a frame with GROUP_TOO_LARGE, as it refuses a group
+   * definition, and the context of either may be the same number; so a blob READ waits for a
+   * GROUP_DEFINE the robot has not answered, and a GROUP_DEFINE waits for it.
+   *
    * @param variableId The variable.
    * @returns Its value, or the bytes of a blob.
    */
   async read(variableId: number): Promise<ReadResult> {
     const entry = this.requireEntry(variableId);
-    const answer = this.requests.add(
-      'read',
-      variableId,
-      this.timing.requestTimeoutMs,
-      (code, context) =>
-        (code === ErrorCode.NO_SUCH_VARIABLE || code === ErrorCode.GROUP_TOO_LARGE) &&
-        context === variableId
-    );
-
-    this.send(encodeRead(variableId));
-
-    const value = decodeReadValue(entry, await answer);
+    const bytes =
+      entry.type === TypeCode.BLOB
+        ? await this.sizeRefusals.run(() => this.requestValue(variableId, true))
+        : await this.requestValue(variableId, false);
+    const value = decodeReadValue(entry, bytes);
 
     this.events.emit('value', { variableId, value });
     return value;
@@ -352,11 +351,27 @@ export class Session {
     return answer;
   }
 
+  private requestValue(variableId: number, mayBeTooLarge: boolean): Promise<Uint8Array> {
+    const answer = this.requests.add(
+      'read',
+      variableId,
+      this.timing.requestTimeoutMs,
+      (code, context) =>
+        context === variableId &&
+        (code === ErrorCode.NO_SUCH_VARIABLE ||
+          (mayBeTooLarge && code === ErrorCode.GROUP_TOO_LARGE))
+    );
+
+    this.send(encodeRead(variableId));
+    return answer;
+  }
+
   private createGroupConfigurator(): GroupConfigurator {
     return new GroupConfigurator(
       {
         send: (frame) => this.send(frame),
         requests: this.requests,
+        sizeRefusals: this.sizeRefusals,
         timing: this.timing,
         generation: () => this.generation,
         timeline: () => this.timeline,
@@ -452,6 +467,7 @@ export class Session {
       this.beginTimeline('reboot');
     }
 
+    this.credit.reset(ack.creditWindow);
     this.groups.forgetRobotGroups();
     this.watchdog.start(now());
     this.applySchemaProgress(this.schemaLoader.begin(ack.schemaHash, ack.variableCount));
@@ -581,7 +597,9 @@ export class Session {
 
   /**
    * Take a PONG as the barrier it is for the credit: every metered frame the robot sent before it
-   * has arrived or never will. A total below what already arrived means the robot started over.
+   * has arrived or never will. A total that no loss within the window explains, such as one below
+   * what already arrived, means the count is off, whether the robot started over or not, and only
+   * a new handshake sets it straight.
    */
   private onPong(pong: Pong): void {
     if (!this.requests.resolve('ping', 0, pong) || !this.creditFlows()) {
@@ -591,7 +609,7 @@ export class Session {
     const recovered = this.credit.resync(pong.sentTotal, now());
 
     if (recovered === null) {
-      this.startHandshake('reboot');
+      this.startHandshake('credit-resync');
     } else {
       this.counters.add('creditRecovered', recovered);
     }

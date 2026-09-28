@@ -8,6 +8,7 @@ import {
   type GroupRequest,
 } from './groups';
 import { encodeGroupDefine, encodeGroupEnable, type GroupAck } from './messages';
+import type { OneAtATime } from './one-at-a-time';
 import type { ErrorMatcher, PendingRequests } from './requests';
 import type { SchemaEntry } from './schema';
 import type { GroupsResult, SessionTiming } from './session-types';
@@ -20,6 +21,13 @@ export interface GroupConfiguratorHost {
 
   /** Where group requests wait for their GROUP_ACK. */
   readonly requests: PendingRequests;
+
+  /**
+   * Where a GROUP_DEFINE takes turns with a blob READ: the robot refuses either with
+   * GROUP_TOO_LARGE and a context that may be the same number, so only one of them may wait for
+   * its answer at a time.
+   */
+  readonly sizeRefusals: OneAtATime;
 
   readonly timing: SessionTiming;
 
@@ -50,7 +58,9 @@ interface Waiter {
  * at a time, and keeps that layout to apply again after every handshake.
  *
  * A group whose definition or enabling failed may or may not be streaming on the robot, so it is
- * treated as unknown and turned off, and so is any group samples arrive for without an epoch.
+ * treated as unknown and turned off, and so is any group samples arrive for without an epoch. A
+ * definition waits for a blob READ the robot has not answered, so that a GROUP_TOO_LARGE is never
+ * taken for the answer to the other.
  */
 export class GroupConfigurator {
   private desired: readonly GroupLayout[] = [];
@@ -216,11 +226,14 @@ export class GroupConfigurator {
 
     this.unknown.add(group);
 
-    const ack = await this.groupRequest(
-      encodeGroupDefine(group, layout.periodTicks, layout.variableIds),
-      group,
-      answersDefine(layout)
-    );
+    const ack = await this.host.sizeRefusals.run(() => {
+      this.throwIfRestarted(generation);
+      return this.groupRequest(
+        encodeGroupDefine(group, layout.periodTicks, layout.variableIds),
+        group,
+        answersDefine(layout)
+      );
+    });
     this.throwIfRestarted(generation);
 
     if (ack.sampleSize !== layout.sampleSize) {

@@ -34,6 +34,7 @@ export enum RobotState {
   CALIBRATE = 'CALIBRATE',
   SAVE = 'SAVE',
   ERROR = 'ERROR',
+  BRAKE = 'BRAKE',
 }
 
 const COMMAND_COUNT = 7;
@@ -54,6 +55,7 @@ const ACCEPTED: Readonly<Record<RobotState, ReadonlySet<Command>>> = {
   [RobotState.CALIBRATE]: BUSY,
   [RobotState.SAVE]: BUSY,
   [RobotState.ERROR]: new Set([Command.STOP, Command.LEAVE_ERROR]),
+  [RobotState.BRAKE]: BUSY,
 };
 
 /**

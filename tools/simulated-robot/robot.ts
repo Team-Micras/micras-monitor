@@ -58,6 +58,7 @@ const BUSY_SECONDS: Readonly<Partial<Record<RobotState, number>>> = {
   [RobotState.RUN]: 5,
   [RobotState.CALIBRATE]: 1,
   [RobotState.SAVE]: 0.2,
+  [RobotState.BRAKE]: 0.3,
 };
 
 const STATE_CODES: Readonly<Record<RobotState, number>> = {
@@ -66,6 +67,7 @@ const STATE_CODES: Readonly<Record<RobotState, number>> = {
   [RobotState.SAVE]: 5,
   [RobotState.CALIBRATE]: 7,
   [RobotState.ERROR]: 12,
+  [RobotState.BRAKE]: 13,
 };
 
 interface Group {
@@ -172,7 +174,7 @@ class CreditWindow {
 
 /** One simulated robot, on one connection. */
 export class Robot {
-  private readonly reader = new FrameReader();
+  private reader = new FrameReader();
   private readonly inbox: Frame[] = [];
   private readonly window = new CreditWindow();
   private readonly bootRandom: () => number;
@@ -251,6 +253,7 @@ export class Robot {
   /** Take bytes from the radio. */
   receive(data: Uint8Array): void {
     this.inbox.push(...this.reader.push(data));
+    this.variable('link/discarded_frames').value = this.reader.discarded;
   }
 
   private boot(): void {
@@ -258,7 +261,7 @@ export class Robot {
     this.groups = Array.from({ length: MAX_GROUPS }, () => undefined);
     this.window.reset();
     this.inbox.length = 0;
-    this.reader.clear();
+    this.reader = new FrameReader();
     this.schemaIndex = this.variables.length;
     this.iteration = 0;
     this.state = RobotState.IDLE;
@@ -648,13 +651,25 @@ export class Robot {
         this.enter(RobotState.SAVE);
         break;
       case Command.STOP:
-        this.enter(this.state === RobotState.ERROR ? RobotState.ERROR : RobotState.IDLE);
+        this.stop();
         break;
       case Command.LEAVE_ERROR:
         this.enter(RobotState.IDLE);
         break;
       case Command.RESET:
         break;
+    }
+  }
+
+  /**
+   * Stop as `halt` in `micras.cpp` does: a run brakes to a standstill before the robot is idle,
+   * a stop while braking lets the braking finish, and the error state stays until it is left.
+   */
+  private stop(): void {
+    if (this.state === RobotState.RUN) {
+      this.enter(RobotState.BRAKE);
+    } else if (this.state !== RobotState.BRAKE && this.state !== RobotState.ERROR) {
+      this.enter(RobotState.IDLE);
     }
   }
 

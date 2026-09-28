@@ -34,7 +34,9 @@ export interface LinkWatchdogHost {
  *
  * Silence is nothing intact arriving at all, so a PONG lost on the way costs nothing while
  * anything else still arrives. A stall is samples stopping while groups are enabled, which PONGs
- * cannot hide. A PING waits for its PONG for one interval, so there is never more than one out.
+ * cannot hide; a stream that goes quiet for half as long gets a PING early, since its PONG may
+ * recover the credit that stopped it. A PING waits for its PONG for one interval, so there is
+ * never more than one out.
  */
 export class LinkWatchdog {
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -79,27 +81,45 @@ export class LinkWatchdog {
   }
 
   private check(now: number): void {
+    const stallMs = this.stallThresholdMs();
+    const quietMs = now - this.lastSampleAt;
+
     if (now - this.lastHeardAt > this.host.timing.silenceTimeoutMs) {
       this.host.silent();
-    } else if (this.isStalled(now)) {
+    } else if (stallMs !== null && quietMs > stallMs) {
       this.host.stalled();
-    } else if (
-      !this.host.requests.has('ping') &&
-      now - this.lastPingAt >= this.host.timing.pingIntervalMs
-    ) {
+    } else if (!this.host.requests.has('ping') && this.pingDue(now, stallMs, quietMs)) {
       this.ping(now);
     }
   }
 
-  private isStalled(now: number): boolean {
-    const periodMs = this.host.streamingPeriodMs();
+  /**
+   * A PING is due every interval, and early once samples have stopped for half the stall
+   * threshold without one sent since: its PONG gives back credit lost with corrupted frames,
+   * which usually restarts the stream before the stall has to redo the handshake.
+   */
+  private pingDue(now: number, stallMs: number | null, quietMs: number): boolean {
+    if (now - this.lastPingAt >= this.host.timing.pingIntervalMs) {
+      return true;
+    }
 
-    if (periodMs === null) {
+    if (stallMs === null) {
       return false;
     }
 
+    const suspiciousMs = stallMs / 2;
+    return quietMs > suspiciousMs && this.lastPingAt < this.lastSampleAt + suspiciousMs;
+  }
+
+  private stallThresholdMs(): number | null {
+    const periodMs = this.host.streamingPeriodMs();
+
+    if (periodMs === null) {
+      return null;
+    }
+
     const { minStallMs, stallPeriods } = this.host.timing;
-    return now - this.lastSampleAt > Math.max(minStallMs, stallPeriods * periodMs);
+    return Math.max(minStallMs, stallPeriods * periodMs);
   }
 
   private ping(sentAt: number): void {

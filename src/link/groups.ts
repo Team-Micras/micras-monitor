@@ -325,20 +325,21 @@ export class EpochRegistry {
   }
 
   /**
-   * Move every announced epoch onto a new timeline: each one ends as `clock-reset` and a new one
-   * carries on its stream, with the same layout and the same sequence.
+   * Move every epoch onto a new timeline: each one is replaced by a new one that carries on its
+   * stream, with the same layout and the same sequence. An announced epoch ends as `clock-reset`
+   * and its successor is announced; one not announced yet is replaced silently, so that it is
+   * announced on the new timeline when its group is enabled.
    *
    * @param timeline The timeline the new epochs belong to.
    */
   moveToTimeline(timeline: number): void {
     for (const [group, open] of this.groups) {
-      if (!open.active) {
-        continue;
-      }
-
       this.groups.set(group, open.continueAs({ ...open.epoch, id: this.nextId(), timeline }));
-      this.listener.ended(open.epoch, 'clock-reset');
-      this.activate(group);
+
+      if (open.active) {
+        this.listener.ended(open.epoch, 'clock-reset');
+        this.activate(group);
+      }
     }
   }
 
