@@ -33,7 +33,8 @@
     "react/only-export-components": [
       "error",
       {
-        "allowConstantExport": true
+        "allowConstantExport": true,
+        "allowExportNames": ["buttonVariants", "badgeVariants"]
       }
     ]
   },
@@ -165,6 +166,42 @@
               {
                 "regex": "^(@/(protocol|link|telemetry|robot-kit|app)|@robots|(\\.\\./)+(protocol|link|telemetry|robot-kit|app|robots))(/|$)",
                 "message": "src/tiling depends on nothing else in the monitor."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/robot-kit/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@/(link|telemetry|tiling|app)|@robots|(\\.\\./)+(link|telemetry|tiling|app|robots))(/|$)",
+                "message": "src/robot-kit depends only on src/protocol."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["robots/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@/(link|telemetry|tiling|app)|(\\.\\./)+(src/(link|telemetry|tiling|app)))(/|$)",
+                "message": "Robot packages depend only on src/robot-kit, src/protocol and React."
               }
             ]
           }
