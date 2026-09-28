@@ -675,6 +675,23 @@ describe('requests', () => {
     expect(applied(await layout)).toHaveLength(1);
   });
 
+  test('a blob READ that waited through a new schema is not sent', async () => {
+    const { transport, session } = await streaming({
+      cached: false,
+      cache: withBlobSchema(),
+      hello: { count: 3 },
+    });
+    void session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]).catch(() => undefined);
+    const outcome = session.read(2).catch((error: unknown) => error);
+
+    session.restart();
+    transport.robotSends(MessageType.HELLO_ACK, helloAck({ hash: 0xdeadbeef, count: 5 }));
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(await outcome).toMatchObject({ reason: 'not-ready' });
+    expect(transport.sentOf(MessageType.READ)).toEqual([]);
+  });
+
   test('a blob READ waits for a group definition the robot has not answered', async () => {
     const { transport, session } = await streaming({
       cached: false,

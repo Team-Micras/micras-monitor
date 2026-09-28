@@ -121,14 +121,14 @@ describe('a session recovers from what a radio link does', { timeout: 15_000 }, 
 
     const bytesBefore = session.stats.bytesIn;
     const startedAt = performance.now();
-    await waitFor(() => session.stats.bytesIn >= bytesBefore + 3000, 5000, '3000 bytes to arrive');
+    await waitFor(() => session.stats.bytesIn >= bytesBefore + 6000, 8000, '6000 bytes to arrive');
     const seconds = (performance.now() - startedAt) / 1000;
     const bytesPerSecond = (session.stats.bytesIn - bytesBefore) / seconds;
     await waitFor(() => recording.totalDropped > 500, 5000, 'samples to be dropped');
 
     expect(recording.handshakeReasons).toEqual(['connected']);
     expect(session.state.kind).toBe('streaming');
-    expect(bytesPerSecond).toBeLessThanOrEqual(3600);
+    expect(bytesPerSecond).toBeLessThanOrEqual(3200);
     expect(bytesPerSecond).toBeGreaterThan(1500);
     expect(recording.samples.length).toBeGreaterThan(50);
     expect(recording.totalDropped).toBeLessThanOrEqual(robot.stats.samplesDropped);

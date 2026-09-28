@@ -312,7 +312,7 @@ export class Session {
     const entry = this.requireEntry(variableId);
     const bytes =
       entry.type === TypeCode.BLOB
-        ? await this.sizeRefusals.run(() => this.requestValue(variableId, true))
+        ? await this.sizeRefusals.run(() => this.requestBlob(variableId, entry))
         : await this.requestValue(variableId, false);
     const value = decodeReadValue(entry, bytes);
 
@@ -349,6 +349,14 @@ export class Session {
 
     this.send(encodeCommand(code, argument));
     return answer;
+  }
+
+  private requestBlob(variableId: number, entry: SchemaEntry): Promise<Uint8Array> {
+    if (this.requireEntry(variableId) !== entry) {
+      throw this.notReady();
+    }
+
+    return this.requestValue(variableId, true);
   }
 
   private requestValue(variableId: number, mayBeTooLarge: boolean): Promise<Uint8Array> {
