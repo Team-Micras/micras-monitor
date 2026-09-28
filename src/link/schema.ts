@@ -8,6 +8,8 @@ export interface SchemaEntry {
   readonly name: string;
   readonly type: TypeCode;
   readonly access: Access;
+  /** How the bytes of a blob are to be read, such as `maze-grid`; only blobs have one. */
+  readonly typeTag?: string;
 }
 
 /**
@@ -128,12 +130,9 @@ export class SchemaAssembler {
       this.filled++;
     }
 
-    this.entries[id] = {
-      id,
-      name: entry.name,
-      type: entry.type,
-      access: decodeAccess(entry.access),
-    };
+    const base = { id, name: entry.name, type: entry.type, access: decodeAccess(entry.access) };
+
+    this.entries[id] = entry.typeTag === null ? base : { ...base, typeTag: entry.typeTag };
   }
 }
 

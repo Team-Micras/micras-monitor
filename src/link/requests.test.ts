@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { ErrorCode } from '../protocol';
 import { RobotError, TimeoutError } from './errors';
-import { CommandResult } from './messages';
+import { CommandResult } from '../protocol';
 import { PendingRequests } from './requests';
 
 beforeEach(() => {
@@ -33,8 +33,8 @@ test('a lost answer costs only its own request', async () => {
   expect(await lost).toBeInstanceOf(TimeoutError);
 
   const next = requests.add('command', 1, 100);
-  requests.resolve('command', 1, { result: CommandResult.OK, reason: null });
-  await expect(next).resolves.toEqual({ result: CommandResult.OK, reason: null });
+  requests.resolve('command', 1, { result: CommandResult.OK });
+  await expect(next).resolves.toEqual({ result: CommandResult.OK });
 });
 
 test('an ERROR fails the oldest request it answers, of any kind', async () => {

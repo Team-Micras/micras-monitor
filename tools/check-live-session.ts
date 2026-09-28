@@ -119,7 +119,7 @@ try {
   const schema = session.schema ?? [];
   const robot = session.robot;
   console.log(
-    `robot: protocol ${robot?.protocolVersion}, ${schema.length} variables, schema ${robot?.schemaHash.toString(16)}, loop ${robot?.loopTimeUs} us, credit ${robot?.initialCredit} B`
+    `robot: protocol ${robot?.protocolVersion}, ${schema.length} variables, schema ${robot?.schemaHash.toString(16)}, loop ${robot?.loopTimeUs} us, credit ${robot?.creditWindow} B, ${robot?.robotName} boot ${robot?.bootId.toString(16)}`
   );
 
   const chosen = pickVariables(schema);

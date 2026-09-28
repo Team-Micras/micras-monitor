@@ -6,7 +6,7 @@
  */
 
 /** The protocol version both ends must agree on in the handshake. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 /** The largest payload a frame can carry. */
 export const MAX_PAYLOAD_SIZE = 200;
 /**
@@ -14,6 +14,11 @@ export const MAX_PAYLOAD_SIZE = 200;
  * largest payload with its type and check, encoded.
  */
 export const MAX_FRAME_SIZE = MAX_PAYLOAD_SIZE + 3 + Math.floor((MAX_PAYLOAD_SIZE + 3) / 254) + 2;
+/**
+ * The metered bytes the robot may have sent that the monitor has not said it consumed, as
+ * `credit_window` in the firmware. Every HELLO opens it again whole.
+ */
+export const CREDIT_WINDOW = 256;
 /** How many stream groups the robot can hold at once. */
 export const MAX_GROUPS = 4;
 /** How many variables fit in one stream group. */
@@ -66,6 +71,15 @@ export enum WriteStatus {
   READ_ONLY = 2,
   NEEDS_IDLE = 3,
   WRONG_SIZE = 4,
+}
+
+/** What the robot did with a command, as `CommandResult` in `link.hpp`. */
+export enum CommandResult {
+  OK = 0,
+  UNKNOWN = 1,
+  REFUSED = 2,
+  /** Accepted, to run once what the robot is busy with ends. */
+  DEFERRED = 3,
 }
 
 /** Why the robot refused a request it could not act on. */

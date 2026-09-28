@@ -12,6 +12,12 @@ export interface FaultOptions {
   /** Added to each direction, in milliseconds, so the round trip grows by twice this. */
   latencyMs: number;
 
+  /**
+   * The bytes the robot's radio holds waiting for air time, past which it drops what the robot
+   * sends without telling it, as the HM-19 does. Only a link with a throughput limit fills it.
+   */
+  radioBufferBytes: number;
+
   /** Lose this schema page, counting pages sent from 0, once; the robot still charges for it. */
   dropSchemaPage: number | null;
 
@@ -28,10 +34,17 @@ export interface FaultOptions {
   seed: number;
 }
 
+/**
+ * What the simulation takes the HM-19 to buffer. Its datasheet does not say, so this is a guess
+ * of the order of its UART FIFO, twice the credit window, until it is measured on the bench.
+ */
+export const DEFAULT_RADIO_BUFFER_BYTES = 512;
+
 /** A link with nothing wrong with it. */
 export const NO_FAULTS: FaultOptions = {
   throughputBytesPerSecond: 0,
   latencyMs: 0,
+  radioBufferBytes: DEFAULT_RADIO_BUFFER_BYTES,
   dropSchemaPage: null,
   dropCredits: 0,
   corruptRate: 0,
@@ -51,7 +64,11 @@ export interface RobotStats {
   corruptedFrames: number;
   /** Bytes of metered frames that were corrupted, which the monitor must not give credit for. */
   corruptedMeteredBytes: number;
-  /** Credit the robot received and applied. */
+  /** Bytes the radio's buffer had no room for and dropped. */
+  radioOverflowBytes: number;
+  /** Logs dropped because another one was already held for credit. */
+  logsDropped: number;
+  /** Credit the robot received and applied, over every session. */
   creditReceived: number;
   creditFramesDropped: number;
   reboots: number;
@@ -67,6 +84,8 @@ export function emptyRobotStats(): RobotStats {
     schemaPagesDropped: 0,
     corruptedFrames: 0,
     corruptedMeteredBytes: 0,
+    radioOverflowBytes: 0,
+    logsDropped: 0,
     creditReceived: 0,
     creditFramesDropped: 0,
     reboots: 0,

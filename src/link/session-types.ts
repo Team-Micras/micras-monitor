@@ -14,7 +14,7 @@ export type HandshakeReason =
   | 'keepalive'
   /** Schema pages stopped arriving, which resets the credit window they were lost from. */
   | 'schema-retry'
-  /** The robot's count of what it sent went back, which only a reboot does. */
+  /** A PONG counted less sent than was already received, which only a robot that started over does. */
   | 'reboot';
 
 /**
@@ -41,7 +41,11 @@ export interface RobotInfo {
   /** The period of the control loop, which is the unit of a group period. */
   readonly loopTimeUs: number;
   /** The credit window the robot starts every session with. */
-  readonly initialCredit: number;
+  readonly creditWindow: number;
+  /** The same for every handshake with one boot of the robot, and different after a reboot. */
+  readonly bootId: number;
+  /** The name the robot introduces itself with. */
+  readonly robotName: string;
 }
 
 /** A schema the session can use. */
@@ -73,7 +77,7 @@ export interface EpochEndEvent {
 /** A new run of the robot's clock, which the times of later epochs belong to. */
 export interface TimelineEvent {
   readonly id: number;
-  /** The first contact, a reset seen in the timestamps, or a reboot the handshake revealed. */
+  /** The first contact, a reset seen in the timestamps, or a new boot id in the handshake. */
   readonly reason: 'connected' | 'clock-reset' | 'reboot';
 }
 
@@ -117,8 +121,8 @@ export type WriteEvent =
 export interface LogEvent {
   readonly severity: Severity;
   readonly text: string;
-  /** When, in the time of the samples, where the protocol version carries it. */
-  readonly timeUs: number | null;
+  /** When, in microseconds on the time of the samples. */
+  readonly timeUs: number;
 }
 
 /** How a `setGroups` ended: applied, or replaced by a later call first. */
@@ -151,6 +155,8 @@ export interface LinkStats {
   readonly framesUndecodable: number;
   /** Bytes of credit given back to the robot. */
   readonly creditReturned: number;
+  /** Bytes of credit given back for metered frames that were lost, as a PONG revealed. */
+  readonly creditRecovered: number;
   /** The round trip of the last PING, in milliseconds. */
   readonly rttMs: number | null;
   readonly samples: number;

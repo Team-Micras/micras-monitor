@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { MessageType, TypeCode } from '../protocol';
+import { decodeAccess, MessageType, TypeCode } from '../protocol';
 import type { SchemaPage } from './messages';
 import { SchemaAssembler } from './schema';
 
@@ -14,6 +14,7 @@ function page(first: number, count: number, total = 6, schemaHash = 0xabc): Sche
       type: TypeCode.F32,
       access: 0x01,
       name: `v${first + offset}`,
+      typeTag: null,
     })),
   };
 }
@@ -61,4 +62,20 @@ test('refuses a page that names a type it does not know', () => {
 
   expect(schema.accept(bad)).toBe('invalid');
   expect(schema.received).toBe(0);
+});
+
+test('keeps the type tag of a blob', () => {
+  const schema = new SchemaAssembler(0xabc, 1);
+
+  schema.accept({
+    type: MessageType.SCHEMA_PAGE,
+    schemaHash: 0xabc,
+    first: 0,
+    total: 1,
+    entries: [{ type: TypeCode.BLOB, access: 0x08, name: 'maze', typeTag: 'maze-grid' }],
+  });
+
+  expect(schema.result()).toEqual([
+    { id: 0, name: 'maze', type: TypeCode.BLOB, access: decodeAccess(0x08), typeTag: 'maze-grid' },
+  ]);
 });

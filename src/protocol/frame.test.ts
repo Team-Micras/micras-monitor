@@ -1,24 +1,23 @@
 import { describe, expect, test } from 'vitest';
 
-import { FRAME_VECTORS, type FrameVector } from './fixtures/frame-vectors';
+import {
+  FRAME_VECTORS,
+  vectorNamed,
+  VECTORS_PROTOCOL_VERSION,
+  type FrameVector,
+} from './fixtures/frame-vectors';
 import { encodeFrame, FrameReader, Reader, Writer } from './frame';
-import { MAX_FRAME_SIZE, MAX_PAYLOAD_SIZE, MessageType } from './protocol';
+import { MAX_FRAME_SIZE, MAX_PAYLOAD_SIZE, MessageType, PROTOCOL_VERSION } from './protocol';
 
 function encodeVector(vector: FrameVector): Uint8Array {
   return encodeFrame(vector.type, new Uint8Array(vector.payload));
 }
 
-function vectorNamed(name: string): FrameVector {
-  const vector = FRAME_VECTORS.find((candidate) => candidate.name === name);
-
-  if (!vector) {
-    throw new Error(`No frame vector named ${name}`);
-  }
-
-  return vector;
-}
-
 describe('frames against the firmware', () => {
+  test('the vectors are of the protocol version this monitor speaks', () => {
+    expect(VECTORS_PROTOCOL_VERSION).toBe(PROTOCOL_VERSION);
+  });
+
   test.each(FRAME_VECTORS)('$name encodes to the bytes the firmware produces', (vector) => {
     expect([...encodeVector(vector)]).toEqual(vector.frame);
   });

@@ -12,7 +12,7 @@ import {
 } from '../protocol';
 import { Backoff } from './backoff';
 import { TimestampUnwrapper } from './clock';
-import { CoalescingCredit, isMetered, wireSize, type CreditPolicy } from './credit';
+import { CumulativeCredit, isMetered, wireSize, type CreditPolicy } from './credit';
 import { Emitter, type Listener, type Unsubscribe } from './emitter';
 import { SessionError } from './errors';
 import { GroupConfigurator } from './group-configurator';
@@ -32,8 +32,12 @@ import {
   encodeCredit,
   encodeHello,
   encodeRead,
+  isSupported,
+  type CommandAck,
   type CommandReply,
+  type ForeignHelloAck,
   type HelloAck,
+  type Pong,
   type RobotMessage,
   type Sample,
 } from './messages';
@@ -61,7 +65,7 @@ export interface SessionOptions {
   /** Where schemas are kept between sessions; in memory by default. */
   schemaCache?: SchemaCache;
 
-  /** When to give credit back; protocol version 1's coalesced delta by default. */
+  /** When to give credit back; protocol version 2's coalesced total by default. */
   creditPolicy?: CreditPolicy;
 
   /** Timeouts and periods, over the defaults for a radio link. */
@@ -124,7 +128,7 @@ export class Session {
     private readonly transport: Transport,
     options: SessionOptions = {}
   ) {
-    this.credit = options.creditPolicy ?? new CoalescingCredit();
+    this.credit = options.creditPolicy ?? new CumulativeCredit();
     this.timing = { ...DEFAULT_TIMING, ...options.timing };
     this.helloBackoff = new Backoff({
       initialMs: this.timing.helloTimeoutMs,
@@ -417,32 +421,35 @@ export class Session {
     this.armStateTimer(this.helloBackoff.next(), () => this.sendHello());
   }
 
-  private onHelloAck(ack: HelloAck): void {
+  private onHelloAck(ack: HelloAck | ForeignHelloAck): void {
     if (this.current.kind !== 'handshaking') {
       return;
     }
 
     this.stopTimer(this.stateTimer);
 
-    if (ack.version !== PROTOCOL_VERSION) {
-      this.fail(
-        new Error(
-          `The robot speaks protocol ${ack.version}; this monitor speaks ${PROTOCOL_VERSION}`
-        )
-      );
+    if (!isSupported(ack)) {
+      this.fail(new Error(versionMismatch(ack.version)));
       return;
     }
+
+    const previousBoot = this.info?.bootId;
 
     this.info = {
       protocolVersion: ack.version,
       schemaHash: ack.schemaHash,
       variableCount: ack.variableCount,
       loopTimeUs: ack.loopTimeUs,
-      initialCredit: ack.initialCredit,
+      creditWindow: ack.creditWindow,
+      bootId: ack.bootId,
+      robotName: ack.robotName,
     };
 
-    if (this.timeline === 0) {
+    if (previousBoot === undefined) {
       this.beginTimeline('connected');
+    } else if (previousBoot !== ack.bootId) {
+      this.clock.reset();
+      this.beginTimeline('reboot');
     }
 
     this.groups.forgetRobotGroups();
@@ -554,16 +561,17 @@ export class Session {
         this.requests.resolve('read', message.variableId, message.bytes);
         break;
       case MessageType.COMMAND_ACK:
-        this.requests.resolve('command', message.code, {
-          result: message.result,
-          reason: message.reason,
-        });
+        this.requests.resolve('command', message.code, commandReply(message));
         break;
       case MessageType.PONG:
-        this.requests.resolve('ping', 0, message);
+        this.onPong(message);
         break;
       case MessageType.LOG:
-        this.events.emit('log', { severity: message.severity, text: message.text, timeUs: null });
+        this.events.emit('log', {
+          severity: message.severity,
+          text: message.text,
+          timeUs: this.clock.place(message.timestampUs),
+        });
         break;
       case MessageType.ERROR:
         this.onRobotError(message.code, message.context);
@@ -571,6 +579,30 @@ export class Session {
     }
   }
 
+  /**
+   * Take a PONG as the barrier it is for the credit: every metered frame the robot sent before it
+   * has arrived or never will. A total below what already arrived means the robot started over.
+   */
+  private onPong(pong: Pong): void {
+    if (!this.requests.resolve('ping', 0, pong) || !this.creditFlows()) {
+      return;
+    }
+
+    const recovered = this.credit.resync(pong.sentTotal, now());
+
+    if (recovered === null) {
+      this.startHandshake('reboot');
+    } else {
+      this.counters.add('creditRecovered', recovered);
+    }
+  }
+
+  /**
+   * Decode a sample into its epoch. A defined group only streams once enabled, and the robot
+   * sends the GROUP_ACK of the enable ahead of the first sample, so a sample of an epoch not yet
+   * announced announces it: its acknowledgement came first on the wire, even when the configurator
+   * waiting for it has not run yet.
+   */
   private onSample(sample: Sample): void {
     if (this.current.kind !== 'configuring' && this.current.kind !== 'streaming') {
       return;
@@ -776,6 +808,16 @@ export class Session {
   private reportProtocolError(message: string, code?: ErrorCode, context?: number): void {
     this.events.emit('protocolError', { message, code, context });
   }
+}
+
+function versionMismatch(version: number): string {
+  const update = version < PROTOCOL_VERSION ? "the robot's firmware" : 'this monitor';
+
+  return `The robot speaks version ${version} of the link protocol and this monitor speaks version ${PROTOCOL_VERSION}; update ${update} to connect`;
+}
+
+function commandReply(ack: CommandAck): CommandReply {
+  return ack.reason === 0 ? { result: ack.result } : { result: ack.result, reason: ack.reason };
 }
 
 function now(): number {

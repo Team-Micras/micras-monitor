@@ -1,5 +1,5 @@
 /**
- * The layout of each message of protocol version 1, one encoder or decoder per message type.
+ * The layout of each message of protocol version 2, one encoder or decoder per message type.
  *
  * Nothing else in the link knows where a field sits in a payload, so a new protocol version
  * changes the functions of the messages it changes and nothing around them.
@@ -8,9 +8,11 @@
  */
 
 import {
+  CommandResult,
   encodeFrame,
   ErrorCode,
   MessageType,
+  PROTOCOL_VERSION,
   Reader,
   Severity,
   TypeCode,
@@ -19,28 +21,33 @@ import {
   type Frame,
 } from '../protocol';
 
-/** What the robot answered to a command, matching `CommandResult` in `link.hpp`. */
-export enum CommandResult {
-  OK = 0,
-  UNKNOWN = 1,
-  REFUSED = 2,
-}
-
 /** What the robot answered to a command. */
 export interface CommandReply {
   readonly result: CommandResult;
-  /** Why, in the robot's own numbering, where the protocol version carries it. */
-  readonly reason: number | null;
+  /** Why it refused or deferred it, in the robot's own numbering; absent when it gave none. */
+  readonly reason?: number;
 }
 
 /** The answer to HELLO: what the robot is and how the session with it works. */
 export interface HelloAck {
   type: MessageType.HELLO_ACK;
-  version: number;
+  version: typeof PROTOCOL_VERSION;
   schemaHash: number;
   variableCount: number;
   loopTimeUs: number;
-  initialCredit: number;
+  creditWindow: number;
+  /** The same for every HELLO of one boot, and different after a reboot. */
+  bootId: number;
+  robotName: string;
+}
+
+/**
+ * A HELLO_ACK of another protocol version. Only the version byte is read, since that is the one
+ * field every version keeps in place.
+ */
+export interface ForeignHelloAck {
+  type: MessageType.HELLO_ACK;
+  version: number;
 }
 
 /** One variable as a schema page describes it. */
@@ -48,6 +55,8 @@ export interface WireSchemaEntry {
   type: TypeCode;
   access: number;
   name: string;
+  /** How the bytes of a blob are to be read; null for every other type. */
+  typeTag: string | null;
 }
 
 /** A run of consecutive schema entries. */
@@ -95,21 +104,23 @@ export interface CommandAck {
   type: MessageType.COMMAND_ACK;
   code: number;
   result: CommandResult;
-  /** Why, in the robot's own numbering, where the protocol version carries it. */
-  reason: number | null;
+  /** Why it refused or deferred it, in the robot's own numbering, 0 for no reason. */
+  reason: number;
 }
 
 /** The answer to PING. */
 export interface Pong {
   type: MessageType.PONG;
-  /** The metered bytes the robot sent since HELLO, where the protocol version carries it. */
-  sentTotal: number | null;
+  /** The metered bytes the robot sent since HELLO, wrapping, counting every frame before it. */
+  sentTotal: number;
 }
 
 /** A message the robot logged. */
 export interface Log {
   type: MessageType.LOG;
   severity: Severity;
+  /** On the robot's clock, the one the samples are stamped with. */
+  timestampUs: number;
   text: string;
 }
 
@@ -123,6 +134,7 @@ export interface RobotErrorMessage {
 /** Anything the robot sends. */
 export type RobotMessage =
   | HelloAck
+  | ForeignHelloAck
   | SchemaPage
   | GroupAck
   | Sample
@@ -143,7 +155,7 @@ const DECODERS: Partial<Record<MessageType, Decoder>> = {
   [MessageType.WRITE_ACK]: decodeWriteAck,
   [MessageType.VALUE]: decodeValue,
   [MessageType.COMMAND_ACK]: decodeCommandAck,
-  [MessageType.PONG]: () => ({ type: MessageType.PONG, sentTotal: null }),
+  [MessageType.PONG]: decodePong,
   [MessageType.LOG]: decodeLog,
   [MessageType.ERROR]: decodeError,
 };
@@ -173,15 +185,28 @@ export function decodeMessage(frame: Frame): RobotMessage | null {
   }
 }
 
-function decodeHelloAck(reader: Reader): HelloAck {
+function decodeHelloAck(reader: Reader): HelloAck | ForeignHelloAck {
+  const version = reader.u8();
+
+  if (version !== PROTOCOL_VERSION) {
+    return { type: MessageType.HELLO_ACK, version };
+  }
+
   return {
     type: MessageType.HELLO_ACK,
-    version: reader.u8(),
+    version,
     schemaHash: reader.u32(),
     variableCount: reader.u16(),
     loopTimeUs: reader.u32(),
-    initialCredit: reader.u16(),
+    creditWindow: reader.u16(),
+    bootId: reader.u32(),
+    robotName: reader.text(reader.u8()),
   };
+}
+
+/** Whether a HELLO_ACK is of the protocol version this monitor speaks. */
+export function isSupported(ack: HelloAck | ForeignHelloAck): ack is HelloAck {
+  return ack.version === PROTOCOL_VERSION;
 }
 
 function decodeSchemaPage(reader: Reader): SchemaPage {
@@ -194,13 +219,10 @@ function decodeSchemaPage(reader: Reader): SchemaPage {
   for (let index = 0; index < count; index++) {
     const type: TypeCode = reader.u8();
     const access = reader.u8();
-    const length = reader.u8();
+    const name = reader.text(reader.u8());
+    const typeTag = type === TypeCode.BLOB ? reader.text(reader.u8()) : null;
 
-    if (reader.left < length) {
-      throw new RangeError('Schema entry name runs past the page');
-    }
-
-    entries.push({ type, access, name: reader.text(length) });
+    entries.push({ type, access, name, typeTag });
   }
 
   return { type: MessageType.SCHEMA_PAGE, schemaHash, first, total, entries };
@@ -242,12 +264,21 @@ function decodeCommandAck(reader: Reader): CommandAck {
     type: MessageType.COMMAND_ACK,
     code: reader.u8(),
     result: reader.u8(),
-    reason: null,
+    reason: reader.u8(),
   };
 }
 
+function decodePong(reader: Reader): Pong {
+  return { type: MessageType.PONG, sentTotal: reader.u32() };
+}
+
 function decodeLog(reader: Reader): Log {
-  return { type: MessageType.LOG, severity: reader.u8(), text: reader.text(reader.left) };
+  return {
+    type: MessageType.LOG,
+    severity: reader.u8(),
+    timestampUs: reader.u32(),
+    text: reader.text(reader.left),
+  };
 }
 
 function decodeError(reader: Reader): RobotErrorMessage {
@@ -292,18 +323,18 @@ export function encodeGroupEnable(group: number, enabled: boolean): Uint8Array {
   );
 }
 
-/** The payload of a CREDIT, which allows the robot to send more metered bytes: a delta in version 1. */
-export function creditPayload(bytes: number): Uint8Array {
-  return new Writer().u16(bytes).done();
+/**
+ * The payload of a CREDIT: the metered bytes consumed since HELLO, wrapping at 2³², which opens
+ * the window again by whatever the robot had not been told yet.
+ */
+export function creditPayload(consumedTotal: number): Uint8Array {
+  return new Writer().u32(consumedTotal >>> 0).done();
 }
 
 /** CREDIT, around its payload. */
 export function encodeCredit(payload: Uint8Array): Uint8Array {
   return encodeFrame(MessageType.CREDIT, payload);
 }
-
-/** The largest delta one CREDIT carries. */
-export const MAX_CREDIT_DELTA = 0xffff;
 
 /** WRITE: set a variable. */
 export function encodeWrite(variableId: number, bytes: Uint8Array): Uint8Array {

@@ -18,6 +18,7 @@ import {
   type SessionOptions,
   type SessionState,
   type SessionTiming,
+  type TimelineEvent,
   type WriteEvent,
 } from '../src/link';
 import {
@@ -47,6 +48,7 @@ export class Recording {
   readonly writes: WriteEvent[] = [];
   readonly logs: LogEvent[] = [];
   readonly protocolErrors: ProtocolErrorEvent[] = [];
+  readonly timelines: TimelineEvent[] = [];
 
   constructor(session: Session) {
     session.on('state', (state) => this.states.push(state));
@@ -59,6 +61,7 @@ export class Recording {
     session.on('write', (write) => this.writes.push(write));
     session.on('log', (log) => this.logs.push(log));
     session.on('protocolError', (error) => this.protocolErrors.push(error));
+    session.on('timeline', (timeline) => this.timelines.push(timeline));
   }
 
   /** Why each handshake started, in order. */

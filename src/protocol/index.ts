@@ -10,6 +10,8 @@
 export * as Cobs from './cobs';
 export { encodeFrame, FrameReader, Reader, Writer, type Frame } from './frame';
 export {
+  CommandResult,
+  CREDIT_WINDOW,
   decodeAccess,
   ErrorCode,
   MAX_FRAME_SIZE,

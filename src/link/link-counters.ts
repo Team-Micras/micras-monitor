@@ -14,6 +14,7 @@ export class LinkCounters {
     framesDiscarded: 0,
     framesUndecodable: 0,
     creditReturned: 0,
+    creditRecovered: 0,
     rttMs: null,
     samples: 0,
     droppedSamples: 0,

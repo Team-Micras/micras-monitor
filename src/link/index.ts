@@ -26,11 +26,11 @@ export {
 } from './bluetooth/web-bluetooth';
 export { DEFAULT_WRAP_SLACK_US, TimestampUnwrapper } from './clock';
 export {
-  CoalescingCredit,
-  DEFAULT_COALESCING,
+  CumulativeCredit,
+  DEFAULT_CUMULATIVE,
   isMetered,
   wireSize,
-  type CoalescingCreditOptions,
+  type CumulativeCreditOptions,
   type CreditGrant,
   type CreditPolicy,
 } from './credit';
@@ -50,7 +50,7 @@ export {
   type GroupRequest,
   type SampleValue,
 } from './groups';
-export { CommandResult, type CommandReply } from './messages';
+export type { CommandReply } from './messages';
 export {
   MemorySchemaCache,
   SchemaAssembler,

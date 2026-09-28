@@ -1,12 +1,14 @@
-import { Cobs, MessageType } from '../protocol';
-import { creditPayload, MAX_CREDIT_DELTA } from './messages';
+import { Cobs, CREDIT_WINDOW, MessageType } from '../protocol';
+import { creditPayload } from './messages';
 
 /**
  * Whether the robot charges a frame type to the credit window. It charges what it sends on its
  * own initiative (`send_metered` in `link.cpp`); replies are bounded by the rate of the requests.
  */
 export function isMetered(type: MessageType): boolean {
-  return type === MessageType.SAMPLE || type === MessageType.SCHEMA_PAGE;
+  return (
+    type === MessageType.SAMPLE || type === MessageType.SCHEMA_PAGE || type === MessageType.LOG
+  );
 }
 
 /**
@@ -41,13 +43,15 @@ export interface CreditPolicy {
   received(bytes: number, now: number): void;
 
   /**
-   * Take the robot's own count of the metered bytes it sent, which a PONG carries in protocol
-   * versions that have it, as everything consumed.
+   * Take the robot's own count of the metered bytes it sent before a PONG as everything consumed,
+   * since whatever of it has not arrived intact by the PONG never will, and say the total again.
    *
-   * @param sentTotal The robot's cumulative total.
+   * @param sentTotal The robot's cumulative total, wrapping at 2³².
    * @param now The current time, in milliseconds.
+   * @returns The bytes lost on the way that it gives back, or null when the total is not one the
+   * robot could have sent in this session, which only a robot that started over sends.
    */
-  resync(sentTotal: number, now: number): void;
+  resync(sentTotal: number, now: number): number | null;
 
   /**
    * Take the credit due now, if any.
@@ -60,12 +64,12 @@ export interface CreditPolicy {
   /** When credit will be due without anything else arriving, or null when nothing is owed. */
   dueAt(): number | null;
 
-  /** Forget whatever is owed, because the robot reset its window. */
+  /** Start over from zero, because a HELLO reset the robot's window. */
   reset(): void;
 }
 
-/** When `CoalescingCredit` gives credit back. */
-export interface CoalescingCreditOptions {
+/** When `CumulativeCredit` gives credit back. */
+export interface CumulativeCreditOptions {
   /** Give back as soon as this many bytes are owed. */
   minBytes: number;
 
@@ -73,48 +77,71 @@ export interface CoalescingCreditOptions {
   maxDelayMs: number;
 }
 
-/** A CREDIT is 7 bytes on the wire, so one per 64 bytes received costs about a tenth of the uplink. */
-export const DEFAULT_COALESCING: CoalescingCreditOptions = { minBytes: 64, maxDelayMs: 10 };
+/** A CREDIT is 9 bytes on the wire, so one per 64 bytes received costs about a seventh of the uplink. */
+export const DEFAULT_CUMULATIVE: CumulativeCreditOptions = { minBytes: 64, maxDelayMs: 10 };
+
+const U32_RANGE = 2 ** 32;
 
 /**
- * Protocol version 1's credit: a delta of the bytes received since the last CREDIT, coalesced so
- * that a stream of small samples does not become a stream of CREDIT frames.
+ * Protocol version 2's credit: every CREDIT carries the total of metered bytes consumed since
+ * HELLO, wrapping at 2³², coalesced so that a stream of small samples does not become a stream of
+ * CREDIT frames.
  *
- * A delta cannot recover what was lost. A metered frame that arrives corrupted, or not at all, was
- * charged by the robot and is never given back, and neither is a CREDIT lost on its way, so every
- * such loss narrows the window for the rest of the session until only a new HELLO opens it again.
- * The session sees that as a stall. Protocol version 2 replaces this with cumulative totals that a
- * later CREDIT and every PONG bring back into step.
+ * A total, unlike a delta, loses nothing when a CREDIT is lost: the next one carries it. What a
+ * total alone cannot recover is a metered frame that never arrived intact, which the robot charged
+ * and the monitor never counted. The PONG closes that gap: it carries the total the robot sent
+ * before it, so whatever of it did not arrive by then never will, and is given back as consumed.
+ * The total is sent again after every PONG, lost bytes or not, because a CREDIT lost when nothing
+ * else is owed would otherwise leave a robot whose window is full waiting for one forever.
  */
-export class CoalescingCredit implements CreditPolicy {
-  private owed = 0;
+export class CumulativeCredit implements CreditPolicy {
+  private consumed = 0;
+  private told = 0;
   private owedSince: number | null = null;
+  private repeat = false;
 
-  constructor(private readonly options: CoalescingCreditOptions = DEFAULT_COALESCING) {}
+  /**
+   * @param options When to give credit back.
+   * @param window The robot's credit window, which no loss can be larger than.
+   */
+  constructor(
+    private readonly options: CumulativeCreditOptions = DEFAULT_CUMULATIVE,
+    private readonly window: number = CREDIT_WINDOW
+  ) {}
 
   received(bytes: number, now: number): void {
-    this.owed += bytes;
+    this.consumed = (this.consumed + bytes) % U32_RANGE;
     this.owedSince ??= now;
   }
 
-  /** Version 1's PONG carries no total, so there is nothing to take. */
-  resync(): void {
-    return;
+  resync(sentTotal: number, now: number): number | null {
+    const lost = distance(this.consumed, sentTotal);
+
+    if (lost > this.window) {
+      return null;
+    }
+
+    this.consumed = sentTotal;
+    this.repeat = this.consumed !== 0;
+    this.owedSince = this.repeat ? now - this.options.maxDelayMs : null;
+    return lost;
   }
 
   take(now: number): CreditGrant | null {
-    if (this.owed === 0 || this.owedSince === null) {
+    const owed = distance(this.told, this.consumed);
+
+    if ((owed === 0 && !this.repeat) || this.owedSince === null) {
       return null;
     }
 
-    if (this.owed < this.options.minBytes && now - this.owedSince < this.options.maxDelayMs) {
+    if (owed < this.options.minBytes && now - this.owedSince < this.options.maxDelayMs) {
       return null;
     }
 
-    const delta = Math.min(this.owed, MAX_CREDIT_DELTA);
-    this.owed -= delta;
-    this.owedSince = this.owed > 0 ? now : null;
-    return { payload: creditPayload(delta), bytes: delta };
+    this.told = this.consumed;
+    this.owedSince = null;
+    this.repeat = false;
+    return { payload: creditPayload(this.consumed), bytes: owed };
   }
 
   dueAt(): number | null {
@@ -122,7 +149,14 @@ export class CoalescingCredit implements CreditPolicy {
   }
 
   reset(): void {
-    this.owed = 0;
+    this.consumed = 0;
+    this.told = 0;
     this.owedSince = null;
+    this.repeat = false;
   }
+}
+
+/** How far a u32 total has to go forward, wrapping, to reach another. */
+export function distance(from: number, to: number): number {
+  return (to - from + U32_RANGE) % U32_RANGE;
 }

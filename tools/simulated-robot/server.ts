@@ -95,8 +95,6 @@ function runRobot(socket: WebSocket, settings: SimulatedRobotOptions, stats: Rob
     for (let i = 0; i < TICKS_PER_BATCH; i++) {
       robot.tick();
     }
-
-    robot.sendSchemaPage();
   }, BATCH_INTERVAL_MS);
   const reboot =
     settings.rebootAfterSeconds === null

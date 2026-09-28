@@ -4,7 +4,7 @@
  * @module
  */
 
-import { TypeCode } from '../../src/protocol';
+import { CREDIT_WINDOW, TypeCode } from '../../src/protocol';
 
 /** One registered variable, the way the firmware's pool holds it. */
 export interface Variable {
@@ -13,6 +13,10 @@ export interface Variable {
   access: number;
   value: number | boolean;
   sample?: (t: number) => number;
+  /** How a blob's bytes are to be read, which only a blob has. */
+  typeTag?: string;
+  /** What a blob serializes to when read. */
+  serialize?: () => Uint8Array;
 }
 
 /** The access bits of a schema entry, as `Access::to_byte` packs them. */
@@ -21,14 +25,20 @@ export const ACCESS_WRITE = 0x02;
 export const ACCESS_IDLE = 0x04;
 const ACCESS_PERSIST = 0x08;
 
-/** The size of the credit window, as `initial_credit` in `protocol.hpp`. */
-export const INITIAL_CREDIT = 256;
-
 /**
  * A fresh set of the robot's variables, as a robot that just booted holds them.
  */
 export function createVariables(): Variable[] {
   return [
+    { name: 'state', type: TypeCode.U8, access: ACCESS_STREAM, value: 0 },
+    {
+      name: 'maze',
+      type: TypeCode.BLOB,
+      access: ACCESS_PERSIST,
+      value: 0,
+      typeTag: 'maze-grid',
+      serialize: () => new Uint8Array(32).map((_, index) => (index * 37) & 0xff),
+    },
     {
       name: 'imu/gyro_x',
       type: TypeCode.F32,
@@ -173,7 +183,7 @@ export function createVariables(): Variable[] {
       name: 'link/credit',
       type: TypeCode.I32,
       access: ACCESS_STREAM,
-      value: INITIAL_CREDIT,
+      value: CREDIT_WINDOW,
     },
   ];
 }
@@ -198,6 +208,7 @@ export function schemaHash(variables: readonly Variable[]): number {
   for (const variable of variables) {
     hash = mix(hash, new TextEncoder().encode(variable.name));
     hash = mix(hash, new Uint8Array([variable.type, variable.access]));
+    hash = mix(hash, new TextEncoder().encode(variable.typeTag ?? ''));
   }
 
   return hash;

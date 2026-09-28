@@ -45,6 +45,28 @@ export class TimestampUnwrapper {
   }
 
   /**
+   * Place a timestamp on the time the samples are on, without taking it as the latest: the one
+   * closest to the latest sample, either side of a wrap. That suits what the robot stamps on the
+   * clock of the samples but may send out of order with them, such as a LOG held for credit.
+   *
+   * @param timestampUs The timestamp as the robot sent it.
+   * @returns The time in microseconds since the robot's clock last started.
+   */
+  place(timestampUs: number): number {
+    if (!this.previous) {
+      return timestampUs;
+    }
+
+    const base = this.wraps * U32_RANGE;
+    const latest = base + this.previous.timestampUs;
+
+    return [base - U32_RANGE, base, base + U32_RANGE]
+      .map((wrap) => wrap + timestampUs)
+      .filter((time) => time >= 0)
+      .reduce((best, time) => (Math.abs(time - latest) < Math.abs(best - latest) ? time : best));
+  }
+
+  /**
    * Forget the robot's clock, because it is known to have started over, such as after a reboot
    * the handshake revealed. This is not counted as a reset seen in the timestamps.
    */

@@ -109,8 +109,16 @@ export class Reader {
     return value;
   }
 
-  /** Take a number of bytes, without copying them. */
+  /**
+   * Take a number of bytes, without copying them.
+   *
+   * @throws A `RangeError` when fewer are left, as every other read past the end does.
+   */
   bytes(count: number): Uint8Array {
+    if (count > this.left) {
+      throw new RangeError(`${count} bytes asked for, ${this.left} left`);
+    }
+
     const value = this.payload.subarray(this.index, this.index + count);
     this.index += count;
     return value;

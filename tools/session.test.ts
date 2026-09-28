@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { WriteStatus } from '../src/protocol';
-import { CommandResult, MemorySchemaCache, SessionError } from '../src/link';
+import { CommandResult, TypeCode, WriteStatus } from '../src/protocol';
+import { MemorySchemaCache, SessionError } from '../src/link';
 import { applyGroups, connect, waitFor, type Harness } from './session-harness';
+import { RobotState } from './simulated-robot/commands';
 
 let harness: Harness | undefined;
 
@@ -26,15 +27,21 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
       'streaming',
     ]);
     expect(session.robot).toMatchObject({
-      protocolVersion: 1,
+      protocolVersion: 2,
       loopTimeUs: 125,
-      initialCredit: 256,
+      creditWindow: 256,
+      robotName: 'micras',
     });
-    expect(session.schema).toHaveLength(23);
-    expect(session.schema?.[0]).toMatchObject({
-      id: 0,
+    expect(session.schema).toHaveLength(25);
+    expect(session.schema?.[2]).toMatchObject({
+      id: 2,
       name: 'imu/gyro_x',
       access: { stream: true },
+    });
+    expect(session.schema?.[1]).toMatchObject({
+      name: 'maze',
+      type: TypeCode.BLOB,
+      typeTag: 'maze-grid',
     });
     expect(recording.schemas).toMatchObject([{ fromCache: false }]);
   });
@@ -117,11 +124,46 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
   });
 
   test('runs a command and receives what the robot logs about it', async () => {
-    const { session, recording } = await start();
+    const { session, recording, id } = await start();
 
-    expect(await session.command(2, 7)).toEqual({ result: CommandResult.OK, reason: null });
+    expect(await session.command(2, 7)).toEqual({ result: CommandResult.OK });
     await waitFor(() => recording.logs.length > 0);
-    expect(recording.logs[0]).toEqual({ severity: 1, text: 'ran command 2', timeUs: null });
+    expect(recording.logs[0]).toMatchObject({ severity: 1, text: 'state CALIBRATE' });
+    expect(recording.logs[0].timeUs).toBeGreaterThan(0);
+    expect(await session.read(id('state'))).toBe(7);
+  });
+
+  test('refuses what the state does not accept, with the reason', async () => {
+    const { session, robot } = await start();
+
+    expect(await session.command(0)).toEqual({ result: CommandResult.OK });
+    expect(await session.command(1)).toEqual({ result: CommandResult.REFUSED, reason: 1 });
+    expect(await session.command(6)).toEqual({ result: CommandResult.REFUSED, reason: 4 });
+    expect(await session.command(9)).toEqual({ result: CommandResult.UNKNOWN });
+    expect(await session.command(5)).toEqual({ result: CommandResult.OK });
+
+    robot.robot?.fault();
+
+    expect(await session.command(0)).toEqual({ result: CommandResult.REFUSED, reason: 1 });
+    expect(await session.command(5)).toEqual({ result: CommandResult.OK });
+    expect(robot.robot?.robotState).toBe(RobotState.ERROR);
+    expect(await session.command(6)).toEqual({ result: CommandResult.OK });
+    expect(robot.robot?.robotState).toBe(RobotState.IDLE);
+  });
+
+  test('defers a stop that arrives while the maze is being saved', async () => {
+    const { session, robot } = await start();
+
+    expect(await session.command(3)).toEqual({ result: CommandResult.OK });
+    expect(await session.command(5)).toEqual({ result: CommandResult.DEFERRED, reason: 2 });
+    expect(await session.command(4)).toEqual({ result: CommandResult.REFUSED, reason: 2 });
+    await waitFor(() => robot.robot?.robotState === RobotState.IDLE, 2000, 'the save to end');
+  });
+
+  test('reads the bytes of a blob', async () => {
+    const { session, id } = await start();
+
+    expect(await session.read(id('maze'))).toHaveLength(32);
   });
 
   test('measures the round trip with PING', async () => {

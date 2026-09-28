@@ -9,6 +9,7 @@
  * --port <n>                 port to listen on
  * --throughput <bytes/s>     cap what the radio carries
  * --latency <ms>             delay each direction
+ * --radio-buffer <bytes>     what the radio holds before it drops (512)
  * --drop-schema-page <n>     lose schema page n (from 0), once
  * --drop-credits <n>         ignore n CREDIT frames once samples flow
  * --corrupt <rate>           corrupt this share (0 to 1) of outgoing frames
@@ -31,6 +32,7 @@ const FLAGS: readonly (readonly [flag: string, option: NumericOption])[] = [
   ['port', 'port'],
   ['throughput', 'throughputBytesPerSecond'],
   ['latency', 'latencyMs'],
+  ['radio-buffer', 'radioBufferBytes'],
   ['drop-schema-page', 'dropSchemaPage'],
   ['drop-credits', 'dropCredits'],
   ['corrupt', 'corruptRate'],

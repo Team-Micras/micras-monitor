@@ -3,6 +3,8 @@ import { seededRandom, type FaultOptions, type RobotStats } from './faults';
 
 interface InFlight {
   bytes: Uint8Array;
+  /** When its air time ends, which is when it leaves the radio's buffer. */
+  airDoneAt: number;
   dueAt: number;
 }
 
@@ -11,7 +13,8 @@ interface InFlight {
  * throughput and latency, and corrupts outgoing frames at the configured rate.
  *
  * Without limits it hands bytes over at once. With them, bytes wait in a queue that stands in for
- * the radio module's buffer and leave when the air time before them is spent.
+ * the radio module's buffer and leave when the air time before them is spent; a frame that finds
+ * the buffer full is dropped whole, and the robot is not told.
  */
 export class Wire {
   private readonly random: () => number;
@@ -44,13 +47,23 @@ export class Wire {
     }
 
     const now = performance.now();
+
+    if (this.buffered(now) + bytes.length > this.faults.radioBufferBytes) {
+      this.stats.radioOverflowBytes += bytes.length;
+      return;
+    }
+
     const airTimeMs =
       this.faults.throughputBytesPerSecond > 0
         ? (bytes.length * 1000) / this.faults.throughputBytesPerSecond
         : 0;
 
     this.busyUntil = Math.max(now, this.busyUntil) + airTimeMs;
-    this.outgoing.push({ bytes, dueAt: this.busyUntil + this.faults.latencyMs });
+    this.outgoing.push({
+      bytes,
+      airDoneAt: this.busyUntil,
+      dueAt: this.busyUntil + this.faults.latencyMs,
+    });
   }
 
   /** Take bytes the monitor sent. */
@@ -60,7 +73,8 @@ export class Wire {
       return;
     }
 
-    this.incoming.push({ bytes, dueAt: performance.now() + this.faults.latencyMs });
+    const now = performance.now();
+    this.incoming.push({ bytes, airDoneAt: now, dueAt: now + this.faults.latencyMs });
   }
 
   /** Deliver whatever is due by now, both ways. */
@@ -73,6 +87,12 @@ export class Wire {
     }
 
     takeDue(this.incoming, now).forEach((bytes) => this.toRobot(bytes));
+  }
+
+  private buffered(now: number): number {
+    return this.outgoing
+      .filter((flight) => flight.airDoneAt > now)
+      .reduce((total, flight) => total + flight.bytes.length, 0);
   }
 
   private isShaped(): boolean {
