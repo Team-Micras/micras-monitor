@@ -105,6 +105,32 @@
       }
     },
     {
+      "files": ["src/telemetry/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@/(link|tiling|robot-kit|app)|@robots|(\\.\\./)+(link|tiling|robot-kit|app|robots))(/|$)",
+                "message": "src/telemetry depends only on the types of src/protocol."
+              },
+              {
+                "regex": "^(@/protocol|(\\.\\./)+protocol)(/|$)",
+                "allowTypeImports": true,
+                "allowImportNames": ["TypeCode"],
+                "message": "src/telemetry takes only types, and the TypeCode enum, from src/protocol."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/tiling/**"],
       "rules": {
         "no-restricted-imports": [

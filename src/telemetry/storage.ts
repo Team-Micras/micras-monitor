@@ -1,0 +1,89 @@
+import { TypeCode } from '@/protocol';
+
+import type { NumericColumn, TelemetryValue } from './types';
+
+/**
+ * How a numeric variable is stored: `f32` for the types a 32 bit float holds exactly, `f64` for
+ * the rest.
+ */
+export type ColumnKind = 'f32' | 'f64';
+
+const COLUMN_KIND: Partial<Record<TypeCode, ColumnKind>> = {
+  [TypeCode.BOOL]: 'f32',
+  [TypeCode.U8]: 'f32',
+  [TypeCode.I8]: 'f32',
+  [TypeCode.U16]: 'f32',
+  [TypeCode.I16]: 'f32',
+  [TypeCode.F32]: 'f32',
+  [TypeCode.U32]: 'f64',
+  [TypeCode.I32]: 'f64',
+  [TypeCode.F64]: 'f64',
+  [TypeCode.U64]: 'f64',
+  [TypeCode.I64]: 'f64',
+};
+
+const LARGEST_EXACT = BigInt(Number.MAX_SAFE_INTEGER);
+
+/**
+ * The column a type is stored in, or undefined for blobs, which are not stored numerically.
+ *
+ * Counters such as `localizer/accepted` pass 2²⁴, so 32 bit integers need 64 bit floats.
+ */
+export function columnKindOf(type: TypeCode): ColumnKind | undefined {
+  return COLUMN_KIND[type];
+}
+
+/**
+ * Whether a type can hold integers a 64 bit float cannot represent exactly.
+ */
+export function isWideInteger(type: TypeCode): boolean {
+  return type === TypeCode.U64 || type === TypeCode.I64;
+}
+
+/**
+ * How many bytes one value of a column takes.
+ */
+export function bytesPerValue(kind: ColumnKind): number {
+  return kind === 'f32' ? 4 : 8;
+}
+
+/**
+ * A zeroed column of the given kind.
+ */
+export function allocateColumn(kind: ColumnKind, length: number): NumericColumn {
+  return kind === 'f32' ? new Float32Array(length) : new Float64Array(length);
+}
+
+/**
+ * The kind of an existing column.
+ */
+export function kindOfColumn(column: NumericColumn): ColumnKind {
+  return column instanceof Float32Array ? 'f32' : 'f64';
+}
+
+/**
+ * A value as a float; anything that is not a number, a boolean or an integer becomes NaN.
+ */
+export function toNumber(value: TelemetryValue): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'bigint' || typeof value === 'boolean') {
+    return Number(value);
+  }
+
+  return Number.NaN;
+}
+
+/**
+ * Whether storing a value as a 64 bit float loses integer precision, that is, whether it lies
+ * beyond ±(2⁵³ − 1).
+ */
+export function losesPrecision(value: TelemetryValue): boolean {
+  if (typeof value === 'bigint') {
+    return value > LARGEST_EXACT || value < -LARGEST_EXACT;
+  }
+
+  return typeof value === 'number' && Math.abs(value) > Number.MAX_SAFE_INTEGER;
+}
