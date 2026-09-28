@@ -625,7 +625,7 @@ export class Session {
       return;
     }
 
-    if (failures.length > 0) {
+    if (failures.length > 0 && this.desired === layouts) {
       this.desired = layouts.filter((layout) => this.enabled.has(layout.group));
     }
 

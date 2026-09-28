@@ -374,6 +374,23 @@ describe('groups', () => {
     expect(transport.sentOf(MessageType.GROUP_DEFINE)).toHaveLength(2);
   });
 
+  test('a layout asked for while an older one fails is still applied', async () => {
+    const { transport, session } = await streaming();
+    const first = session
+      .setGroups([{ variableIds: [0], periodTicks: 8 }])
+      .catch((error: unknown) => error);
+    const second = session.setGroups([{ variableIds: [1], periodTicks: 8 }]);
+
+    transport.robotSends(MessageType.ERROR, new Writer().u8(4).u16(0).done());
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 2));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 2));
+
+    expect(await first).toMatchObject({ reason: 'superseded' });
+    expect(await second).toMatchObject([{ variableIds: [1] }]);
+  });
+
   test('a handshake in the middle of configuring applies the layout again after it', async () => {
     const { transport, session } = await streaming();
     const epochs = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
