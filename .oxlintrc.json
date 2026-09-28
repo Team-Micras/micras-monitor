@@ -105,6 +105,26 @@
       }
     },
     {
+      "files": ["src/tiling/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@/(protocol|link|telemetry|robot-kit|app)|@robots|(\\.\\./)+(protocol|link|telemetry|robot-kit|app|robots))(/|$)",
+                "message": "src/tiling depends on nothing else in the monitor."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/main.tsx"],
       "rules": {
         "no-restricted-imports": "off"

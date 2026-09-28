@@ -43,7 +43,7 @@ keep their dependencies pointing one way; each planned layer gets its rule when 
 | `src/protocol/`   | COBS, frames, message layouts and value codecs            | nothing else in the monitor      |
 | `src/link/`       | Transports and the session (planned)                      | `protocol`                       |
 | `src/telemetry/`  | Session store, history and recording (planned)            | `protocol`                       |
-| `src/tiling/`     | Tiling window engine, no DOM (planned)                    | nothing else in the monitor      |
+| `src/tiling/`     | Tiling window engine, no DOM                              | nothing else in the monitor      |
 | `src/robot-kit/`  | Contracts for robot packages (planned)                    | `protocol`                       |
 | `src/app/`        | React: shell, windows, theme                              | every layer above                |
 | `robots/<robot>/` | Robot packages: types, views, commands, presets (planned) | `robot-kit`, React for the views |
