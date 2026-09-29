@@ -76,6 +76,7 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
       onStatus: setStatus,
       onDraw: (milliseconds, shown) => {
         element.dataset.drawMs = milliseconds.toFixed(2);
+        element.dataset.draws = String(Number(element.dataset.draws ?? 0) + 1);
         element.dataset.windowStartUs = String(shown.startUs);
         element.dataset.windowEndUs = String(shown.endUs);
       },

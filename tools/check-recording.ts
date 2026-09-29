@@ -15,9 +15,9 @@
  * records until `--kill-at` minutes and kills the browser with SIGKILL, as the tab dying does.
  * A new browser on the same profile then recovers the recording, opens it, shows the whole
  * history and scrolls through it, while it records the rest of the session, to `--minutes`.
- * With `--memory-cap-mb` the stores keep that much at most, and with `--view-cap-mb` the store of
- * an opened session alone, so that blocks leave memory and come back from the file as the history
- * scrolls. It prints the numbers and exits non-zero when
+ * With `--memory-cap-mb` the stores keep that much at most, and with `--view-cap-mb` (1 MB unless
+ * told otherwise) the store of an opened session alone, so that blocks leave memory and come back
+ * from the file as the history scrolls; the check asks that some did. It prints the numbers and exits non-zero when
  * a check fails. It is a manual check, not part of CI.
  *
  * @module
@@ -38,7 +38,7 @@ const { values: args } = parseArgs({
     minutes: { type: 'string', default: '30' },
     'kill-at': { type: 'string', default: '15' },
     'memory-cap-mb': { type: 'string' },
-    'view-cap-mb': { type: 'string' },
+    'view-cap-mb': { type: 'string', default: '1' },
     screens: { type: 'string' },
     headed: { type: 'boolean', default: false },
   },
@@ -291,14 +291,46 @@ async function sessionRows(page: Page): Promise<SessionRow[]> {
   return found;
 }
 
-async function plotWindow(page: Page): Promise<{ startUs: number; endUs: number; drawMs: number }> {
+interface PlotWindow {
+  readonly startUs: number;
+  readonly endUs: number;
+  readonly drawMs: number;
+  readonly draws: number;
+}
+
+async function plotWindow(page: Page): Promise<PlotWindow> {
   const plot = page.locator('[data-plot]').first();
-  const [start, end, draw] = await Promise.all([
-    plot.getAttribute('data-window-start-us'),
-    plot.getAttribute('data-window-end-us'),
-    plot.getAttribute('data-draw-ms'),
-  ]);
-  return { startUs: Number(start), endUs: Number(end), drawMs: Number(draw) };
+  const [start, end, draw, draws] = await Promise.all(
+    ['data-window-start-us', 'data-window-end-us', 'data-draw-ms', 'data-draws'].map((name) =>
+      plot.getAttribute(name)
+    )
+  );
+  return {
+    startUs: Number(start),
+    endUs: Number(end),
+    drawMs: Number(draw),
+    draws: Number(draws),
+  };
+}
+
+/** Press a key on the plot and read the window once the plot drew what the key did. */
+async function pressAndDraw(page: Page, key: string): Promise<PlotWindow> {
+  const before = await plotWindow(page);
+  await page.keyboard.press(key);
+  const deadline = Date.now() + 5000;
+  let after = await plotWindow(page);
+
+  while (after.draws === before.draws && Date.now() < deadline) {
+    await page.waitForTimeout(5);
+    after = await plotWindow(page);
+  }
+
+  return after;
+}
+
+function percentile(values: readonly number[], share: number): number {
+  const sorted = values.toSorted((left, right) => left - right);
+  return sorted[Math.floor(share * (sorted.length - 1))] ?? 0;
 }
 
 async function focusPlot(page: Page): Promise<void> {
@@ -326,49 +358,44 @@ async function screenshot(page: Page, name: string): Promise<void> {
 async function navigate(page: Page, label: string): Promise<void> {
   await focusPlot(page);
   const homeStarted = performance.now();
-  await page.keyboard.press('Home');
-  await page.waitForTimeout(50);
-  const whole = await plotWindow(page);
+  const whole = await pressAndDraw(page, 'Home');
   const homeMs = performance.now() - homeStarted;
   log(`${label}: whole history ${clock(whole.endUs - whole.startUs)} drawn in ${whole.drawMs} ms`);
   await screenshot(page, `${label}-whole`);
 
   for (let zoom = 0; zoom < 12; zoom++) {
-    await page.keyboard.press('+');
+    await pressAndDraw(page, '+');
   }
 
-  await page.keyboard.press('Home');
-  await page.keyboard.press('ArrowLeft');
+  await pressAndDraw(page, 'Home');
+  await pressAndDraw(page, 'ArrowLeft');
+  let last = await pressAndDraw(page, '+');
 
-  for (let zoom = 0; zoom < 10; zoom++) {
-    await page.keyboard.press('+');
+  for (let zoom = 1; zoom < 10; zoom++) {
+    last = await pressAndDraw(page, '+');
   }
 
-  const first = await plotWindow(page);
-  const span = first.endUs - first.startUs;
+  const span = last.endUs - last.startUs;
   const draws: number[] = [];
   const scrollStarted = performance.now();
-  let steps = 0;
-  let last = first;
 
-  while (last.endUs < whole.endUs && steps < 5000) {
-    await page.keyboard.press('Shift+ArrowRight');
-    last = await plotWindow(page);
+  while (last.endUs < whole.endUs && draws.length < 5000) {
+    last = await pressAndDraw(page, 'Shift+ArrowRight');
     draws.push(last.drawMs);
-    steps++;
   }
 
   const scrollMs = performance.now() - scrollStarted;
-  const sorted = draws.toSorted((left, right) => left - right);
-  const p95 = sorted[Math.floor(0.95 * (sorted.length - 1))] ?? 0;
+  const start = draws.slice(0, Math.max(5, Math.ceil(draws.length / 10)));
+  const startP95 = percentile(start, 0.95);
+  const p95 = percentile(draws, 0.95);
   const viewing = page.locator('[data-viewing]');
   const [evicted, resident, reads] = await Promise.all(
-    ['data-evicted-blocks', 'data-resident-blocks', 'data-block-reads'].map((name) =>
-      viewing.getAttribute(name)
+    ['data-evicted-blocks', 'data-resident-blocks', 'data-block-reads'].map(async (name) =>
+      Number(await viewing.getAttribute(name))
     )
   );
   log(
-    `${label}: scrolled ${clock(whole.endUs - whole.startUs)} in windows of ${clock(span)}, ${steps} steps in ${(scrollMs / 1000).toFixed(1)} s; draw p50 ${sorted[Math.floor(sorted.length / 2)] ?? 0} ms, p95 ${p95} ms, max ${sorted.at(-1) ?? 0} ms; ${resident} blocks in memory and ${evicted} out of it, ${reads} read back from the file`
+    `${label}: scrolled ${clock(whole.endUs - whole.startUs)} in windows of ${clock(span)}, ${draws.length} steps in ${(scrollMs / 1000).toFixed(1)} s; draw p50 ${percentile(draws, 0.5)} ms, p95 ${p95} ms (${startP95} ms over the first ${start.length}), max ${percentile(draws, 1)} ms; ${resident} blocks in memory and ${evicted} out of it, ${reads} read back from the file`
   );
   check(
     `${label}: the whole history shows at once`,
@@ -376,9 +403,14 @@ async function navigate(page: Page, label: string): Promise<void> {
     `${whole.drawMs} ms to draw, ${homeMs.toFixed(0)} ms from the key`
   );
   check(
-    `${label}: scrolling the whole history costs what is on screen`,
-    steps > 10 && p95 < 16,
-    `${steps} steps, p95 ${p95} ms per draw`
+    `${label}: scrolling costs what is on screen, as much at the end of the history as at its start`,
+    draws.length > 10 && p95 < 16 && p95 <= 2 * startP95 + 1,
+    `${draws.length} steps, p95 ${p95} ms per draw over the whole history, ${startP95} ms over its start`
+  );
+  check(
+    `${label}: blocks that left memory come back from the file when scrolled to`,
+    reads > 0 && evicted > 0,
+    `${reads} blocks read back, ${evicted} out of memory at the end`
   );
 
   const box = await page.locator('[data-plot]').first().boundingBox();
@@ -425,14 +457,15 @@ async function main(): Promise<void> {
     await page.keyboard.press('Escape');
 
     const first = await recordUntil(page, recordingStarted + KILL_MS, 'first tab');
-    const beforeKill = first.reading.progress;
-    const endBeforeKillUs = first.reading.endUs;
+    const lastReading = first.died ? first.reading : await read(page).catch(() => first.reading);
     kill(profile);
+    const beforeKill = lastReading.progress;
+    const endBeforeKillUs = lastReading.endUs;
     const killedAt = Date.now();
     log(
       first.died
-        ? `the tab died on its own ${((killedAt - first.reading.atMs) / 1000).toFixed(1)} s after the last reading, at ${(beforeKill.elapsedMs / 60_000).toFixed(2)} min: ${megabytes(beforeKill.bytes)} and ${beforeKill.samples} samples written then`
-        : `killed the browser at ${(beforeKill.elapsedMs / 60_000).toFixed(2)} min: ${megabytes(beforeKill.bytes)} and ${beforeKill.samples} samples written`
+        ? `the tab died on its own ${((killedAt - lastReading.atMs) / 1000).toFixed(1)} s after the last reading, at ${(beforeKill.elapsedMs / 60_000).toFixed(2)} min: ${megabytes(beforeKill.bytes)} and ${beforeKill.samples} samples written then`
+        : `killed the browser ${killedAt - lastReading.atMs} ms after the last reading, at ${(beforeKill.elapsedMs / 60_000).toFixed(2)} min: ${megabytes(beforeKill.bytes)} and ${beforeKill.samples} samples written`
     );
     await context.close().catch(() => undefined);
 
@@ -469,9 +502,7 @@ async function main(): Promise<void> {
     await page.waitForTimeout(500);
     const loadMs = Number(await page.locator('[data-viewing]').getAttribute('data-load-ms'));
     await focusPlot(page);
-    await page.keyboard.press('Home');
-    await page.waitForTimeout(100);
-    const history = await plotWindow(page);
+    const history = await pressAndDraw(page, 'Home');
     const lostUs = endBeforeKillUs - history.endUs;
     log(
       `recovered session: ${megabytes(recovered.bytes)}, ${recovered.samples} samples, ${clock(recovered.durationUs)}, ${clock(history.startUs)} to ${clock(history.endUs)}; opened in ${openMs.toFixed(0)} ms (read and load ${loadMs} ms)`
