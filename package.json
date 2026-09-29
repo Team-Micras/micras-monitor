@@ -16,8 +16,9 @@
     "test:unit": "vitest run --project unit",
     "test:browser": "vitest run --project browser",
     "simulate": "bun tools/simulated-robot.ts",
+    "size": "bun tools/bundle-size.ts",
     "bench:telemetry": "bun tools/bench-telemetry.ts",
-    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build"
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build && bun run size"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",
