@@ -1,5 +1,5 @@
 import { RefreshCwIcon } from 'lucide-react';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { roleVariable, type SerializableType } from '@/robot-kit';
 
@@ -29,8 +29,8 @@ function revisionOf(pkg: ReactRobotPackage | null, name: string): string | null 
 
 /**
  * A blob through the view of its serializable type, or as a hexadecimal dump when no package
- * decodes it. The blob is read on demand when it is not streamed, and read again when the value
- * of the package's revision of it changes from one it had, one READ at a time.
+ * decodes it. The blob is read once the schema has it, and read again when the value of the
+ * package's revision of it changes from one it had, one READ at a time.
  */
 export function TypeViewWindow({ window }: WindowViewProps) {
   const { reads, values } = useMonitor().ports;
@@ -45,34 +45,35 @@ export function TypeViewWindow({ window }: WindowViewProps) {
 
   const reader = useRef<CoalescedReads | null>(null);
 
-  const request = (variable: string) =>
-    reads.read(variable).then((outcome) => {
-      setReading(false);
-      setFailure(outcome.status === 'failed' ? outcome.message : null);
-    });
-
   const readAgain = () => {
     setReading(true);
     reader.current?.request();
   };
 
-  const readerFor = useEffectEvent(
-    (variable: string) => new CoalescedReads(() => request(variable))
-  );
+  const variableId = entry?.variable?.id;
 
   useEffect(() => {
-    if (!linked || name === null) {
+    if (!linked || name === null || variableId === undefined) {
       return undefined;
     }
 
-    const blob = readerFor(name);
+    let cancelled = false;
+    const blob = new CoalescedReads(() =>
+      reads.read(name).then((outcome) => {
+        if (!cancelled) {
+          setReading(false);
+          setFailure(outcome.status === 'failed' ? outcome.message : null);
+        }
+      })
+    );
     reader.current = blob;
     blob.request();
     return () => {
+      cancelled = true;
       blob.close();
       reader.current = null;
     };
-  }, [linked, name]);
+  }, [reads, linked, name, variableId]);
 
   useEffect(() => {
     if (!linked || revision === null) {

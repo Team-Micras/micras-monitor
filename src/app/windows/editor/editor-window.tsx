@@ -1,5 +1,7 @@
 import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from 'lucide-react';
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+
+import type { TypeCode } from '@/protocol';
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -7,6 +9,7 @@ import { Switch } from '../../components/ui/switch';
 import { cn } from '../../lib/utils';
 import { useLinkUp, useLiveValue, useMonitor } from '../../monitor-context';
 import type { WriteOutcome, WriteValue } from '../../ports';
+import { CoalescedReads } from '../type-view/coalesced-reads';
 import { usePresentedVariables, type PresentedVariable } from '../shared/presented-variables';
 import { bitSet, integerValue, sameInteger, withBit, type IntegerValue } from '../shared/bits';
 import { formatReading } from '../shared/readings';
@@ -60,12 +63,29 @@ function usePendingWrite(name: string): WriteValue | undefined {
 }
 
 function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
-  const { writes } = useMonitor().ports;
+  const { writes, reads } = useMonitor().ports;
   const linked = useLinkUp();
   const confirmed = useLiveValue(entry.name)?.value;
   const pending = usePendingWrite(entry.name);
   const [last, setLast] = useState<LastWrite | null>(null);
   const { variable, presentation } = entry;
+  const reader = useRef<CoalescedReads | null>(null);
+  const variableId = variable?.id;
+  const streamed = variable?.access.stream ?? true;
+
+  useEffect(() => {
+    if (!linked || streamed || variableId === undefined) {
+      return undefined;
+    }
+
+    const current = new CoalescedReads(() => reads.read(entry.name));
+    reader.current = current;
+    current.request();
+    return () => {
+      current.close();
+      reader.current = null;
+    };
+  }, [reads, linked, streamed, variableId, entry.name]);
 
   if (variable === undefined || presentation === null) {
     return (
@@ -78,11 +98,14 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
 
   const control = editorControl(variable.type, presentation.labels);
   const writable = variable.access.write && control.kind !== 'none';
+  const needsConfirmed = control.kind === 'bool' || control.kind === 'bitmask';
   const disabledReason = !writable
     ? 'The robot does not take writes of this variable.'
     : !linked
       ? 'Connect to a robot to write.'
-      : null;
+      : needsConfirmed && confirmed === undefined && pending === undefined
+        ? 'Waiting for the robot to report the current value.'
+        : null;
 
   const write = (value: WriteValue) => {
     setLast({ value, outcome: null });
@@ -92,9 +115,13 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
         status: 'failed' as const,
         message: error instanceof Error ? error.message : String(error),
       }))
-      .then((outcome) =>
-        setLast((current) => (current?.value === value ? { value, outcome } : current))
-      );
+      .then((outcome) => {
+        if (outcome.status === 'confirmed') {
+          reader.current?.request();
+        }
+
+        setLast((current) => (current?.value === value ? { value, outcome } : current));
+      });
   };
 
   const confirmedText =
@@ -117,6 +144,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
         confirmed={integerValue(confirmed)}
         pending={integerValue(pending)}
         disabled={disabledReason !== null}
+        type={variable.type}
         onWrite={write}
       />
       {variable.access.idle && writable ? (
@@ -137,12 +165,14 @@ function Control({
   confirmed,
   pending,
   disabled,
+  type,
   onWrite,
 }: {
   readonly control: EditorControl;
   readonly confirmed: IntegerValue | undefined;
   readonly pending: IntegerValue | undefined;
   readonly disabled: boolean;
+  readonly type: TypeCode;
   readonly onWrite: (value: WriteValue) => void;
 }) {
   switch (control.kind) {
@@ -174,7 +204,7 @@ function Control({
               disabled={disabled || base === undefined}
               onChange={(on) => {
                 if (base !== undefined) {
-                  onWrite(withBit(base, flag.bit, on));
+                  onWrite(withBit(base, flag.bit, on, type));
                 }
               }}
             />

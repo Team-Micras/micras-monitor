@@ -29,7 +29,13 @@ import { LinkWindow } from './link/link-window';
 import { LogWindow } from './log/log-window';
 import { ViewPlaceholder } from './placeholder-window';
 import { PlotWindow } from './plot/plot-window';
-import { EDITOR_RATE_HZ, PLOT_RATE_HZ, READOUT_RATE_HZ, REVISION_RATE_HZ } from './rates';
+import {
+  BATTERY_RATE_HZ,
+  EDITOR_RATE_HZ,
+  PLOT_RATE_HZ,
+  READOUT_RATE_HZ,
+  REVISION_RATE_HZ,
+} from './rates';
 import { ReadoutsWindow } from './readouts/readouts-window';
 import { RobotWindow } from './robot/robot-window';
 import { TypeViewWindow } from './type-view/type-view-window';
@@ -120,7 +126,10 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     icon: BotIcon,
     component: RobotWindow,
     acceptsVariables: false,
-    demand: (_window, pkg) => roles(pkg, ['state', 'battery'], READOUT_RATE_HZ),
+    demand: (_window, pkg) => [
+      ...roles(pkg, ['state'], READOUT_RATE_HZ),
+      ...roles(pkg, ['battery'], BATTERY_RATE_HZ),
+    ],
   },
   {
     id: 'commands',

@@ -18,6 +18,9 @@ export type { DecimateOptions, Decimation, Gap, SampleRun, SampleValue, TimeRang
 
 /** The stored history of the robot's variables, by name. Times are on the session timeline. */
 export interface HistoryPort {
+  /** Grows every time the whole history is forgotten, as when the store is reset. */
+  readonly generation: number;
+
   /**
    * The minimum and maximum of a variable per pixel column of `[startUs, endUs)`, with where
    * its line breaks; asked again with the previous result, only the changed columns are redone.

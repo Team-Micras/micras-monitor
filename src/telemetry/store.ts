@@ -180,6 +180,7 @@ export class TelemetryStore {
   private sessionRange: Cached<TimeRange | undefined> | undefined;
   private statusSnapshot: StoreStatus;
   private historyVersion = 0;
+  private resets = 0;
   private clockUs = Number.NEGATIVE_INFINITY;
 
   /**
@@ -456,7 +457,13 @@ export class TelemetryStore {
 
     this.boundaryList = [];
     this.historyVersion++;
+    this.resets++;
     this.refreshStatus();
+  }
+
+  /** How many times the history was forgotten by {@link reset}, to tell a fresh one from a longer one. */
+  get generation(): number {
+    return this.resets;
   }
 
   /** The latest value of a variable; the same object until it changes. */

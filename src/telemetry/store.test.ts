@@ -616,8 +616,10 @@ describe('queries', () => {
     store.markBoundary('reconnect', SECOND);
     single(store, 3, 1, 0);
     streamSingle(store, 3, 0, 10, (index) => 2 * SECOND + index * MS);
+    expect(store.generation).toBe(0);
     store.reset();
 
+    expect(store.generation).toBe(1);
     expect(store.variable(1)).toMatchObject({ storedSamples: 0, epochs: 1 });
     expect(store.boundaries()).toEqual([]);
     expect(store.status().usedBytes).toBe(0);

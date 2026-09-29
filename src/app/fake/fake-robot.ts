@@ -348,7 +348,7 @@ export class FakeRobot {
 
   /** Reads a variable as `ReadPort.read` does, after a command's delay. */
   read(name: string): Promise<ReadOutcome> {
-    if (this.#status.kind !== 'linked') {
+    if (this.#status.kind !== 'linked' || this.#status.phase === 'schema') {
       return Promise.resolve({ status: 'failed', message: 'Not connected to a robot.' });
     }
 

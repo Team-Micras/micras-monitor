@@ -65,4 +65,26 @@ describe('TransitionTracker', () => {
       { value: 3, timeUs: 2000 },
     ]);
   });
+
+  test('starts over when the store is reset and appended to before the next scan', () => {
+    const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+    store.setSchema([{ id: 0, name: 'state', type: TypeCode.U8 }]);
+    store.openEpoch({
+      epochId: 1,
+      groupId: 0,
+      variables: [{ id: 0, type: TypeCode.U8 }],
+      firstSequence: 0,
+    });
+    [1, 2].forEach((value, index) => store.append(1, index, index * 1000, [value]));
+    const tracker = new TransitionTracker(store, 'state');
+    expect(tracker.update()).toHaveLength(2);
+
+    store.reset();
+    [3, 4].forEach((value, index) => store.append(1, 2 + index, 5000 + index * 1000, [value]));
+
+    expect(tracker.update()).toEqual([
+      { value: 3, timeUs: 5000 },
+      { value: 4, timeUs: 6000 },
+    ]);
+  });
 });

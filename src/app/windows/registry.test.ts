@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { mouse } from '@/robot-kit/fixtures/packages';
 
-import { READOUT_RATE_HZ, REVISION_RATE_HZ } from './rates';
+import { BATTERY_RATE_HZ, READOUT_RATE_HZ, REVISION_RATE_HZ } from './rates';
 import { windowDemand } from './registry';
 import type { ShellWindow } from './types';
 
@@ -20,7 +20,7 @@ describe('windowDemand', () => {
   test('asks for the Robot window by the roles of the package', () => {
     expect(windowDemand(win('robot', ['stale_name']), PACKAGE)).toEqual([
       { variable: 'state', rateHz: READOUT_RATE_HZ },
-      { variable: 'battery', rateHz: READOUT_RATE_HZ },
+      { variable: 'battery', rateHz: BATTERY_RATE_HZ },
     ]);
     expect(windowDemand(win('robot'), null)).toEqual([]);
   });

@@ -10,6 +10,9 @@ export const PLOT_RATE_HZ = 100;
 /** Samples per second a readout or the Robot window asks for: numbers change ten times a second. */
 export const READOUT_RATE_HZ = 10;
 
+/** Samples per second the Robot window asks for the battery: it drains over minutes. */
+export const BATTERY_RATE_HZ = 1;
+
 /** Samples per second an editor asks for, to see the confirmed value soon after a write. */
 export const EDITOR_RATE_HZ = 5;
 

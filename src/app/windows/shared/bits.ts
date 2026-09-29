@@ -5,6 +5,7 @@
  * @module
  */
 
+import { TypeCode } from '@/protocol';
 import { hasBit } from '@/robot-kit';
 
 import type { TelemetryValue, WriteValue } from '../../ports';
@@ -28,11 +29,20 @@ export function bitSet(value: IntegerValue, bit: number): boolean {
   return typeof value === 'bigint' ? ((value >> BigInt(bit)) & 1n) === 1n : hasBit(value, bit);
 }
 
-/** An integer with one bit set or cleared, of the same kind as the one given. */
-export function withBit(value: IntegerValue, bit: number, on: boolean): IntegerValue {
+/**
+ * An integer of the given type with one bit set or cleared, of the same kind as the one given;
+ * a bigint stays within the range of its type, such as bit 63 of an `i64` making it negative.
+ */
+export function withBit(
+  value: IntegerValue,
+  bit: number,
+  on: boolean,
+  type: TypeCode
+): IntegerValue {
   if (typeof value === 'bigint') {
     const mask = 1n << BigInt(bit);
-    return on ? value | mask : value & ~mask;
+    const changed = on ? value | mask : value & ~mask;
+    return type === TypeCode.I64 ? BigInt.asIntN(64, changed) : BigInt.asUintN(64, changed);
   }
 
   if (bitSet(value, bit) === on) {

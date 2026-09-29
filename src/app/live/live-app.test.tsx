@@ -45,3 +45,14 @@ test('shows live values of the simulated robot over a WebSocket', async () => {
   await expect.poll(readout, { timeout: 3000 }).not.toBe(first);
   expect(robot.planner?.plan?.rates.map((rate) => rate.variable)).toContain('imu/gyro_z');
 });
+
+test('reads the blob of a type view once the schema of the simulated robot has it', async () => {
+  robot = new LiveRobot({ planner: { debounceMs: 20 } });
+  const store = createShellStore({ theme: 'dark' });
+  store.getState().openWindow('type-view', ['maze']);
+  await render(<App ports={robot.ports} robots={new RobotRegistry([MICRAS])} store={store} />);
+
+  robot.connect({ transport: 'websocket', url: `ws://127.0.0.1:${inject('simulatedRobotPort')}` });
+
+  await expect.poll(() => document.querySelector('[data-hex-dump]') !== null).toBe(true);
+});

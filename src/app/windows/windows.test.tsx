@@ -305,6 +305,30 @@ describe('Editor', () => {
       .toBe('FAN · RACING_LINE · BOOST');
   });
 
+  test('reads a writable variable that does not stream, on link-up and after a write', async () => {
+    const { screen, readsOf } = await open({
+      windows: [win('edit', 'editor', ['aux_flag'])],
+      root: leaf('edit'),
+      robot: {
+        variables: [
+          {
+            name: 'aux_flag',
+            type: TypeCode.BOOL,
+            access: decodeAccess(0x02),
+            signal: () => 1,
+          },
+        ],
+      },
+    });
+    const flag = screen.getByRole('switch');
+    await expect.element(flag).toHaveAttribute('data-state', 'checked');
+    await expect.element(flag).toBeEnabled();
+    expect(readsOf('aux_flag')).toBe(1);
+
+    await flag.click();
+    await expect.poll(() => readsOf('aux_flag')).toBe(2);
+  });
+
   test('says why the robot refused a write and keeps the confirmed value', async () => {
     const { screen } = await open({
       windows: [win('edit', 'editor', ['objective'])],
