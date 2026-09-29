@@ -31,12 +31,13 @@ import {
 } from '@/telemetry';
 
 import type { RobotVariable } from '../ports';
-import type {
-  SessionInfo,
-  SessionLibrary,
-  SessionLocks,
-  SessionRecovery,
-  StorageEstimate,
+import {
+  sessionId,
+  type SessionInfo,
+  type SessionLibrary,
+  type SessionLocks,
+  type SessionRecovery,
+  type StorageEstimate,
 } from './session-library';
 
 /** What a recording's header says of the robot, taken when REC starts. */
@@ -226,6 +227,17 @@ function pick(event: { readonly usedBytes: number; readonly capBytes: number }) 
   return { usedBytes: event.usedBytes, capBytes: event.capBytes };
 }
 
+function describedBy(
+  header: RecordingHeader
+): Partial<Pick<SessionInfo, 'name' | 'robot' | 'createdAtMs'>> {
+  const robot = typeof header.robot.name === 'string' ? header.robot.name : null;
+  return {
+    name: header.name ?? defaultSessionName(robot, header.startedAtMs),
+    robot,
+    createdAtMs: header.startedAtMs,
+  };
+}
+
 function spanOf(summary: RecordingSummary): number {
   return summary.range ? summary.range.endUs - summary.range.startUs : 0;
 }
@@ -287,14 +299,20 @@ export class SessionManager {
     try {
       const sessions = await this.#options.library.list();
       const unfinished = sessions.filter((session) => session.state === 'recording');
-      const held = await Promise.all(
-        unfinished.map((session) => this.#options.locks.held(session.id))
+      const results = await Promise.allSettled(
+        unfinished.map(async (session) =>
+          (await this.#options.locks.held(session.id)) ? null : this.#recover(session)
+        )
       );
-      const results = await Promise.all(
-        unfinished.filter((_, index) => !held[index]).map((session) => this.#recover(session))
+      const recovered = results.flatMap((result) =>
+        result.status === 'fulfilled' && result.value !== null ? [result.value] : []
       );
-      const recovered = results.filter((result): result is RecoveredSession => result !== null);
       this.#set({ recovered: [...this.#state.recovered, ...recovered] });
+    } catch (error) {
+      this.#set({ error: messageOf(error) });
+    }
+
+    try {
       await this.refresh();
     } catch (error) {
       this.#set({ error: messageOf(error) });
@@ -324,6 +342,7 @@ export class SessionManager {
     const { library, locks, store } = this.#options;
     const description = this.#options.describe();
     const startedAtMs = this.#now();
+    let release: (() => void) | undefined;
     this.#set({ error: null });
 
     try {
@@ -332,7 +351,11 @@ export class SessionManager {
         await library.persist().catch(() => false);
       }
 
+      const id = sessionId(startedAtMs);
+      const held = await locks.hold(id);
+      release = held;
       const { info, file } = await library.create({
+        id,
         name: defaultSessionName(description.name, startedAtMs),
         robot: description.name,
         createdAtMs: startedAtMs,
@@ -341,7 +364,6 @@ export class SessionManager {
         samples: 0,
         durationUs: 0,
       });
-      const release = await locks.hold(info.id);
       const header: RecordingHeader = {
         format: RECORDING_FORMAT,
         version: RECORDING_FORMAT_VERSION,
@@ -356,16 +378,22 @@ export class SessionManager {
       this.#sources = [...this.#sources, { id: info.id, file }];
       const unsubscribe = recorder.subscribe(() => this.#publishRecording());
       const timer = setInterval(() => store.flushIfDue(), FLUSH_CHECK_MS);
-      this.#recording = { session: info, startedAtMs, recorder, release, unsubscribe, timer };
+      this.#recording = { session: info, startedAtMs, recorder, release: held, unsubscribe, timer };
+      release = undefined;
       this.#publishRecording();
       this.#set({ liveSources: this.#sources.map((source) => source.id) });
       await this.refresh();
     } catch (error) {
+      release?.();
       this.#set({ error: `Recording could not start: ${messageOf(error)}` });
     }
   }
 
-  /** End the recording: write what is being filled, and mark the session saved. */
+  /**
+   * End the recording: write what is being filled, and mark the session saved. If marking it
+   * fails, as when the disk is full, the session keeps its lock and stays marked as recording, so
+   * no other tab takes it as cut short while this one lives, and the next start recovers it.
+   */
   async stopRecording(): Promise<void> {
     const active = this.#recording;
 
@@ -386,11 +414,11 @@ export class SessionManager {
         samples: stats.samples,
         durationUs: range ? range.endUs - range.startUs : 0,
       });
+      active.release();
     } catch (error) {
       this.#set({ error: `Recording did not end cleanly: ${messageOf(error)}` });
     } finally {
       active.unsubscribe();
-      active.release();
       this.#set({ recording: null });
       await this.refresh().catch(() => undefined);
     }
@@ -603,9 +631,10 @@ export class SessionManager {
 
   async #recover(session: SessionInfo): Promise<RecoveredSession | null> {
     const { library } = this.#options;
-    const file = await library.open(session.id);
+    let file: RecordingFile | undefined;
 
     try {
+      file = await library.open(session.id);
       const size = await file.size();
 
       if (size === 0) {
@@ -632,16 +661,14 @@ export class SessionManager {
         samples: summary.samples,
         durationUs: spanOf(summary),
         recovery,
-        ...(summary.header.name === undefined || session.name !== session.id
-          ? {}
-          : { name: summary.header.name }),
+        ...(session.name === session.id ? describedBy(summary.header) : {}),
       });
       return { session: info, recovery };
     } catch (error) {
       this.#set({ error: `Could not recover ${session.name}: ${messageOf(error)}` });
       return null;
     } finally {
-      await file.close().catch(() => undefined);
+      await file?.close().catch(() => undefined);
     }
   }
 

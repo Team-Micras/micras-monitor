@@ -199,7 +199,7 @@ export class OpfsSessionLibrary implements SessionLibrary {
     return expectList(await this.#transport.call({ op: 'list' }));
   }
 
-  async create(info: Omit<SessionInfo, 'id' | 'updatedAtMs'>) {
+  async create(info: Omit<SessionInfo, 'updatedAtMs'>) {
     const created = expectInfo(
       await this.#transport.call({ op: 'create', info, nowMs: this.#now() })
     );

@@ -124,6 +124,38 @@ describe('recording the live session', () => {
     await manager.stopRecording();
   });
 
+  test('holds the lock of a session before its description says it is recording', async () => {
+    const locks = new MemoryLocks();
+    const library = new MemorySessionLibrary();
+    const create = library.create.bind(library);
+    const heldAtCreate: boolean[] = [];
+    library.create = async (info) => {
+      heldAtCreate.push(await locks.held(info.id));
+      return create(info);
+    };
+    const { manager } = rig(library, locks);
+    await manager.start();
+    await manager.startRecording();
+
+    expect(heldAtCreate).toEqual([true]);
+  });
+
+  test('keeps the lock of a session it could not mark saved, so no other tab takes it', async () => {
+    const locks = new MemoryLocks();
+    const library = new MemorySessionLibrary();
+    const { manager, stream } = rig(library, locks);
+    await manager.start();
+    await manager.startRecording();
+    await stream(1);
+    const { id } = recordingState(manager.state).session;
+    library.update = () => Promise.reject(new DOMException('full', 'QuotaExceededError'));
+    await manager.stopRecording();
+
+    expect(manager.state.error).toMatch(/did not end cleanly: full/);
+    expect(await locks.held(id)).toBe(true);
+    expect(manager.state.sessions[0].state).toBe('recording');
+  });
+
   test('says why recording could not write, and keeps going once it can', async () => {
     const root = new FakeDirectory();
     const library = new OpfsSessionLibrary(new DirectTransport(root));
@@ -280,6 +312,60 @@ async function recordThenDie(seconds: number) {
 }
 
 describe('recovering after the tab died', () => {
+  test('recovers a session whose description was lost, from its recording', async () => {
+    const { root, id, after } = await recordThenDie(8);
+    const folder = root.at('micras-monitor', 'sessions', id);
+
+    if (!(folder instanceof FakeDirectory)) {
+      throw new Error('No session folder');
+    }
+
+    folder.entries.delete('session.json');
+    folder.entries.delete('session.next.json');
+    await after.manager.start();
+
+    expect(after.manager.state.error).toBeNull();
+    expect(after.manager.state.recovered[0].session).toMatchObject({
+      id,
+      state: 'saved',
+      robot: 'micras',
+      name: expect.stringMatching(/^micras · /),
+    });
+    const again = rig(new OpfsSessionLibrary(new DirectTransport(root)));
+    await again.manager.start();
+
+    expect(again.manager.state).toMatchObject({ error: null, recovered: [] });
+    expect(again.manager.state.sessions.map((session) => session.state)).toEqual(['saved']);
+  });
+
+  test('lists every session even when one of them cannot be recovered', async () => {
+    const root = new FakeDirectory();
+    const saver = rig(new OpfsSessionLibrary(new DirectTransport(root)));
+    await saver.manager.start();
+    await saver.manager.startRecording();
+    await saver.stream(3);
+    await saver.manager.stopRecording();
+    const elsewhere = new OpfsSessionLibrary(new DirectTransport(root));
+    await elsewhere.create({
+      id: 'held-elsewhere',
+      name: 'held elsewhere',
+      robot: null,
+      createdAtMs: Date.UTC(2026, 8, 29, 11),
+      state: 'recording',
+      bytes: 0,
+      samples: 0,
+      durationUs: 0,
+    });
+    const tab = rig(new OpfsSessionLibrary(new DirectTransport(root)));
+    await tab.manager.start();
+
+    expect(tab.manager.state.ready).toBe(true);
+    expect(tab.manager.state.error).toMatch(/Could not recover held elsewhere/);
+    expect(tab.manager.state.sessions.map((session) => session.name).toSorted()).toEqual(
+      ['held elsewhere', saver.manager.state.sessions[0].name].toSorted()
+    );
+  });
+
   test('recovers the recording with nothing lost beyond the last flush', async () => {
     const { id, first, after } = await recordThenDie(23);
     await after.manager.start();

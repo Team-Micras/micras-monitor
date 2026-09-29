@@ -49,7 +49,10 @@ export interface SessionInfo {
 
 /** The part of a session's description that can change after it is made. */
 export type SessionUpdate = Partial<
-  Pick<SessionInfo, 'name' | 'state' | 'bytes' | 'samples' | 'durationUs' | 'recovery'>
+  Pick<
+    SessionInfo,
+    'name' | 'robot' | 'createdAtMs' | 'state' | 'bytes' | 'samples' | 'durationUs' | 'recovery'
+  >
 >;
 
 /** What the browser grants the monitor to store. */
@@ -71,12 +74,13 @@ export interface SessionLibrary {
   list(): Promise<SessionInfo[]>;
 
   /**
-   * Make a session and its empty recording file, open for writing.
+   * Make a session and its empty recording file, open for writing. The caller picks the id, with
+   * {@link sessionId}, so that it can hold the session's lock before the session exists.
    *
    * @throws If there is no room, or the file system refuses.
    */
   create(
-    info: Omit<SessionInfo, 'id' | 'updatedAtMs'>
+    info: Omit<SessionInfo, 'updatedAtMs'>
   ): Promise<{ readonly info: SessionInfo; readonly file: RecordingFile }>;
 
   /**
@@ -131,12 +135,11 @@ const LOCK_PREFIX = 'micras-monitor/session/';
 
 /** The subset of `navigator.locks` the monitor uses. */
 export interface LockManagerLike {
-  request(
+  request<T>(
     name: string,
-    options: { readonly mode: 'exclusive' },
-    callback: () => Promise<void>
-  ): Promise<unknown>;
-  query(): Promise<{ readonly held?: readonly { readonly name?: string }[] }>;
+    options: { readonly mode: 'exclusive'; readonly ifAvailable?: boolean },
+    callback: (lock: unknown) => T | Promise<T>
+  ): Promise<T>;
 }
 
 /** Locks shared by every tab of the origin, over the Web Locks API. */
@@ -163,10 +166,14 @@ export class WebLocks implements SessionLocks {
     });
   }
 
-  /** {@inheritDoc SessionLocks.held} */
-  async held(id: string): Promise<boolean> {
-    const { held = [] } = await this.#locks.query();
-    return held.some((lock) => lock.name === LOCK_PREFIX + id);
+  /**
+   * {@inheritDoc SessionLocks.held} Asked by trying to take the lock without waiting, which is
+   * given back at once when it was free.
+   */
+  held(id: string): Promise<boolean> {
+    return this.#locks.request(LOCK_PREFIX + id, { mode: 'exclusive', ifAvailable: true }, (lock) =>
+      Promise.resolve(lock === null)
+    );
   }
 }
 

@@ -3,9 +3,10 @@ import { describe, expect, test } from 'vitest';
 import { DirectTransport, FakeDirectory, FakeFile } from './fake-opfs';
 import { isHostRequest, OpfsHost, type HostResponse } from './opfs-host';
 import { MessageTransport, OpfsSessionLibrary, type StorageManagerLike } from './opfs-library';
-import type { SessionInfo } from './session-library';
+import { sessionId, type SessionInfo } from './session-library';
 
-const NEW_SESSION: Omit<SessionInfo, 'id' | 'updatedAtMs'> = {
+const NEW_SESSION: Omit<SessionInfo, 'updatedAtMs'> = {
+  id: sessionId(Date.UTC(2026, 8, 29, 10, 42)),
   name: 'micras · 29 Sep 10:42',
   robot: 'micras',
   createdAtMs: Date.UTC(2026, 8, 29, 10, 42),
@@ -28,6 +29,16 @@ function recordingOf(root: FakeDirectory, id: string): FakeFile {
   }
 
   return file;
+}
+
+function tear(root: FakeDirectory, id: string, name: string): void {
+  const description = root.at('micras-monitor', 'sessions', id, name);
+
+  if (!(description instanceof FakeFile)) {
+    throw new Error(`No ${name} for ${id}`);
+  }
+
+  description.bytes = new TextEncoder().encode('{"id": "tru');
 }
 
 describe('the OPFS session library', () => {
@@ -86,23 +97,40 @@ describe('the OPFS session library', () => {
     expect(await sessions.list()).toEqual([renamed]);
   });
 
-  test('lists a directory without a readable description as a recording cut short', async () => {
+  test('reads the other copy of a description torn in the middle of a write', async () => {
     const { root, library: sessions } = library();
     const { info, file } = await sessions.create(NEW_SESSION);
     await file.close();
-    const description = root.at('micras-monitor', 'sessions', info.id, 'session.json');
+    const renamed = await sessions.update(info.id, { name: 'Bench' });
+    tear(root, info.id, 'session.json');
 
-    if (description instanceof FakeFile) {
-      description.bytes = new TextEncoder().encode('{"id": "tru');
-    }
-
+    expect(await sessions.list()).toEqual([renamed]);
+    expect(await sessions.update(info.id, { state: 'saved' })).toMatchObject({
+      name: 'Bench',
+      state: 'saved',
+    });
     expect(await sessions.list()).toEqual([
-      expect.objectContaining({
-        id: info.id,
-        name: info.id,
-        state: 'recording',
-        createdAtMs: NEW_SESSION.createdAtMs,
-      }),
+      expect.objectContaining({ name: 'Bench', state: 'saved' }),
+    ]);
+  });
+
+  test('lists and updates a directory with no readable description as a recording cut short', async () => {
+    const { root, library: sessions } = library();
+    const { info, file } = await sessions.create(NEW_SESSION);
+    await file.close();
+    tear(root, info.id, 'session.json');
+    tear(root, info.id, 'session.next.json');
+    const stray = {
+      id: info.id,
+      name: info.id,
+      state: 'recording',
+      createdAtMs: NEW_SESSION.createdAtMs,
+    };
+
+    expect(await sessions.list()).toEqual([expect.objectContaining(stray)]);
+    await sessions.update(info.id, { state: 'saved', name: 'Found' });
+    expect(await sessions.list()).toEqual([
+      expect.objectContaining({ id: info.id, name: 'Found', state: 'saved' }),
     ]);
   });
 

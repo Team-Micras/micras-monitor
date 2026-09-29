@@ -9,7 +9,6 @@ import { MemoryRecordingFile, type RecordingFile } from '@/telemetry';
 
 import {
   byNewest,
-  sessionId,
   type SessionInfo,
   type SessionLibrary,
   type SessionUpdate,
@@ -93,14 +92,13 @@ export class MemorySessionLibrary implements SessionLibrary {
     );
   }
 
-  create(info: Omit<SessionInfo, 'id' | 'updatedAtMs'>) {
-    const id = sessionId(info.createdAtMs);
+  create(info: Omit<SessionInfo, 'updatedAtMs'>) {
     const entry: Entry = {
-      info: { ...info, id, updatedAtMs: this.#now() },
+      info: { ...info, updatedAtMs: this.#now() },
       file: new MemoryRecordingFile(),
       opened: 0,
     };
-    this.#entries.set(id, entry);
+    this.#entries.set(info.id, entry);
     return Promise.resolve({ info: entry.info, file: new SharedFile(entry, entry.file) });
   }
 

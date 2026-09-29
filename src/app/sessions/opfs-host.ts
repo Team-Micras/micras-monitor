@@ -7,22 +7,19 @@
  *
  * ```
  * micras-monitor/sessions/<id>/session.json    the SessionInfo, rewritten whole
+ * micras-monitor/sessions/<id>/session.next.json the same, written first on every change
  * micras-monitor/sessions/<id>/recording.mmrec the recording, version 1 of the format
  * ```
  *
- * A session whose `session.json` is missing or unreadable, as when the tab died while writing it,
- * is listed from its directory's name as a recording cut short, so that it is recovered.
+ * A description is written to `session.next.json` and then to `session.json`, so a tab that dies
+ * during a write leaves one of them whole; the reader takes `session.json`, else the other. A
+ * session with neither, as when the tab died before the first one was written, is listed, and
+ * updated, from its directory's name as a recording cut short, so that it is recovered.
  *
  * @module
  */
 
-import {
-  byNewest,
-  isSessionInfo,
-  sessionId,
-  type SessionInfo,
-  type SessionUpdate,
-} from './session-library';
+import { byNewest, isSessionInfo, type SessionInfo, type SessionUpdate } from './session-library';
 
 /** A synchronous access handle, as `FileSystemSyncAccessHandle` has it in a worker. */
 export interface SyncAccessHandle {
@@ -57,7 +54,7 @@ export type HostRequest =
   | {
       readonly id: number;
       readonly op: 'create';
-      readonly info: Omit<SessionInfo, 'id' | 'updatedAtMs'>;
+      readonly info: Omit<SessionInfo, 'updatedAtMs'>;
       readonly nowMs: number;
     }
   | {
@@ -127,6 +124,7 @@ export function isHostRequest(value: unknown): value is HostRequest {
 const APP_DIRECTORY = 'micras-monitor';
 const SESSIONS_DIRECTORY = 'sessions';
 const INFO_FILE = 'session.json';
+const NEXT_INFO_FILE = 'session.next.json';
 const RECORDING_FILE = 'recording.mmrec';
 
 interface OpenFile {
@@ -297,18 +295,23 @@ export class OpfsHost {
     return infos.filter((info): info is SessionInfo => info !== null).toSorted(byNewest);
   }
 
-  async #create(info: Omit<SessionInfo, 'id' | 'updatedAtMs'>, nowMs: number) {
-    const id = sessionId(info.createdAtMs);
+  async #create(info: Omit<SessionInfo, 'updatedAtMs'>, nowMs: number) {
     const sessions = await this.#directory();
-    const folder = await sessions.getDirectoryHandle(id, { create: true });
+    const folder = await sessions.getDirectoryHandle(info.id, { create: true });
     await folder.getFileHandle(RECORDING_FILE, { create: true });
-    const created: SessionInfo = { ...info, id, updatedAtMs: nowMs };
+    const created: SessionInfo = { ...info, updatedAtMs: nowMs };
     await this.#writeInfo(created);
     return created;
   }
 
   async #update(id: string, update: SessionUpdate, nowMs: number): Promise<SessionInfo> {
-    const next: SessionInfo = { ...(await this.#readInfo(id)), ...update, updatedAtMs: nowMs };
+    const current = await this.#readInfo(id).catch(() => this.#stray(id));
+
+    if (current === null) {
+      throw new Error(`No session ${id}`);
+    }
+
+    const next: SessionInfo = { ...current, ...update, updatedAtMs: nowMs };
     await this.#writeInfo(next);
     return next;
   }
@@ -341,9 +344,13 @@ export class OpfsHost {
   }
 
   async #readInfo(id: string): Promise<SessionInfo> {
+    return this.#readInfoFrom(id, INFO_FILE).catch(() => this.#readInfoFrom(id, NEXT_INFO_FILE));
+  }
+
+  async #readInfoFrom(id: string, name: string): Promise<SessionInfo> {
     const sessions = await this.#directory();
     const folder = await sessions.getDirectoryHandle(id);
-    const handle = await syncHandle(await folder.getFileHandle(INFO_FILE));
+    const handle = await syncHandle(await folder.getFileHandle(name));
 
     try {
       const bytes = new Uint8Array(handle.getSize());
@@ -384,9 +391,14 @@ export class OpfsHost {
   }
 
   async #writeInfo(info: SessionInfo): Promise<void> {
+    await this.#writeInfoTo(info, NEXT_INFO_FILE);
+    await this.#writeInfoTo(info, INFO_FILE);
+  }
+
+  async #writeInfoTo(info: SessionInfo, name: string): Promise<void> {
     const sessions = await this.#directory();
     const folder = await sessions.getDirectoryHandle(info.id);
-    const handle = await syncHandle(await folder.getFileHandle(INFO_FILE, { create: true }));
+    const handle = await syncHandle(await folder.getFileHandle(name, { create: true }));
 
     try {
       const bytes = new TextEncoder().encode(JSON.stringify(info));
