@@ -209,7 +209,7 @@
       }
     },
     {
-      "files": ["src/main.tsx"],
+      "files": ["src/main.tsx", "src/composition.test.tsx"],
       "rules": {
         "no-restricted-imports": "off"
       }
