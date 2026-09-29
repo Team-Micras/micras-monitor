@@ -1,6 +1,7 @@
 /**
- * A session connected over a real WebSocket to a simulated robot on a free port, with everything
- * it emits recorded, for the tests that drive the two against each other.
+ * A session connected to a simulated robot of its own through an in-memory socket, with
+ * everything it emits recorded, for the tests that drive the two against each other on virtual
+ * time.
  *
  * @module
  */
@@ -21,11 +22,8 @@ import {
   type TimelineEvent,
   type WriteEvent,
 } from '../src/link';
-import {
-  startSimulatedRobot,
-  type SimulatedRobot,
-  type SimulatedRobotOptions,
-} from './simulated-robot/server';
+import { startInMemoryRobot, type InMemoryRobot } from './in-memory-robot';
+import type { SimulatedRobotOptions } from './simulated-robot/server';
 
 /** Timeouts short enough for a test over a local socket. */
 export const TEST_TIMING: Partial<SessionTiming> = {
@@ -84,7 +82,7 @@ export class Recording {
 
 /** A session talking to a simulated robot of its own. */
 export interface Harness {
-  readonly robot: SimulatedRobot;
+  readonly robot: InMemoryRobot;
   readonly session: Session;
   readonly recording: Recording;
 
@@ -96,17 +94,19 @@ export interface Harness {
 }
 
 /**
- * Start a robot, connect a session to it and wait until the session is ready.
+ * Start a robot, connect a session to it and wait until the session is ready. The test runs on
+ * virtual time, which `useVirtualTime` moves.
  *
  * @param faults What to do to the link.
  * @param options How to build the session; the test timing by default.
  */
 export async function connect(
-  faults: Partial<SimulatedRobotOptions> = {},
+  faults: Partial<Omit<SimulatedRobotOptions, 'port'>> = {},
   options: SessionOptions = {}
 ): Promise<Harness> {
-  const robot = await startSimulatedRobot({ ...faults, port: 0 });
-  const session = new Session(new WebSocketTransport(`ws://127.0.0.1:${robot.port}`), {
+  const robot = startInMemoryRobot(faults);
+  const transport = new WebSocketTransport('ws://in-memory', { createSocket: robot.createSocket });
+  const session = new Session(transport, {
     timing: TEST_TIMING,
     ...options,
   });
@@ -122,7 +122,7 @@ export async function connect(
     id: (name) => variableId(session, name),
     close: async () => {
       session.close();
-      await robot.close();
+      robot.close();
     },
   };
 }

@@ -2,8 +2,11 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { applyGroups, connect, waitFor, type Harness } from './session-harness';
 import { createVariables } from './simulated-robot/variables';
+import { useVirtualTime } from './virtual-time';
 
 let harness: Harness | undefined;
+
+useVirtualTime();
 
 async function start(...args: Parameters<typeof connect>): Promise<Harness> {
   harness = await connect(...args);

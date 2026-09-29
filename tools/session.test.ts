@@ -4,8 +4,11 @@ import { CommandResult, TypeCode, WriteStatus } from '../src/protocol';
 import { MemorySchemaCache, SessionError } from '../src/link';
 import { applyGroups, connect, waitFor, type Harness } from './session-harness';
 import { RobotState } from './simulated-robot/commands';
+import { useVirtualTime } from './virtual-time';
 
 let harness: Harness | undefined;
+
+useVirtualTime();
 
 async function start(...args: Parameters<typeof connect>): Promise<Harness> {
   harness = await connect(...args);
@@ -213,7 +216,7 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
 
     expect(await read).toBeInstanceOf(SessionError);
     expect(session.state.kind).toBe('closed');
-    await robot.close();
+    robot.close();
     harness = undefined;
   });
 });
