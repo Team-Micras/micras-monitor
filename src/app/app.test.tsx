@@ -9,6 +9,7 @@ import { activeWorkspace, focusedWindow, leafIds, type Point, type Rect } from '
 
 import { App } from './app';
 import { createDemoRobot } from './fake/demo-robot';
+import { recordStopOutcomes } from './fixtures/stop-outcomes';
 import type { FakeRobot, FakeRobotOptions } from './fake/fake-robot';
 import { isTextField } from './keymap/use-keymap';
 import type { CommandOutcome, MonitorPorts } from './ports';
@@ -31,6 +32,8 @@ interface Setup {
   readonly robot: FakeRobot;
   readonly sent: number[];
   readonly screen: Awaited<ReturnType<typeof render>>;
+  /** Every text the Stop outcome showed since the app came up. */
+  readonly outcomes: () => string;
 }
 
 async function setup(options: SetupOptions = {}): Promise<Setup> {
@@ -62,7 +65,7 @@ async function setup(options: SetupOptions = {}): Promise<Setup> {
   );
   await expect.element(screen.getByRole('region', { name: 'Workspace Overview' })).toBeVisible();
   await settled();
-  return { store, robot, sent, screen };
+  return { store, robot, sent, screen, outcomes: recordStopOutcomes() };
 }
 
 function shell({ store }: Setup): ShellStore {
@@ -79,10 +82,6 @@ async function connect({ screen }: Setup): Promise<void> {
   await expect.element(screen.getByText('· connected')).toBeVisible();
   await userEvent.keyboard('{Escape}');
   await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument();
-}
-
-function stopOutcome({ screen }: Setup) {
-  return screen.getByRole('status', { name: 'Stop outcome' });
 }
 
 function activeIds(store: ShellStore): string[] {
@@ -216,7 +215,7 @@ describe('STOP', () => {
 
     await userEvent.keyboard(' ');
     expect(sent).toEqual([STOP]);
-    await expect.element(stopOutcome(context)).toHaveTextContent('Stop accepted');
+    await expect.poll(context.outcomes).toContain('Stop accepted');
     expect(shell(context).getState().desktop.workspaces).toHaveLength(4);
 
     await userEvent.keyboard('{Shift>} {/Shift}');
@@ -238,7 +237,7 @@ describe('STOP', () => {
   test('is not sent without a robot, and says there is nothing to stop', async () => {
     const context = await setup();
     await userEvent.keyboard(' ');
-    await expect.element(stopOutcome(context)).toHaveTextContent('Nothing to stop');
+    await expect.poll(context.outcomes).toContain('Nothing to stop');
     expect(context.sent).toEqual([]);
     await expect
       .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
@@ -252,7 +251,7 @@ describe('STOP', () => {
       .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
       .toBeDisabled();
     await userEvent.keyboard(' ');
-    await expect.element(stopOutcome(context)).toHaveTextContent('Nothing to stop');
+    await expect.poll(context.outcomes).toContain('Nothing to stop');
     expect(context.sent).toEqual([]);
   });
 
@@ -265,7 +264,7 @@ describe('STOP', () => {
       .toMatchObject({ phase: 'configuring' });
     await context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }).click();
     expect(context.sent).toEqual([STOP]);
-    await expect.element(stopOutcome(context)).toHaveTextContent('Stop accepted');
+    await expect.poll(context.outcomes).toContain('Stop accepted');
   });
 
   test('shows a refusal with its reason in the package words', async () => {
@@ -274,7 +273,7 @@ describe('STOP', () => {
     });
     await connect(context);
     await userEvent.keyboard(' ');
-    await expect.element(stopOutcome(context)).toHaveTextContent('Stop refused: not idle');
+    await expect.poll(context.outcomes).toContain('Stop refused: not idle');
   });
 
   test('shows a deferral and a failure', async () => {
@@ -287,11 +286,9 @@ describe('STOP', () => {
     });
     await connect(context);
     await userEvent.keyboard(' ');
-    await expect.element(stopOutcome(context)).toHaveTextContent('Stop deferred: not idle');
+    await expect.poll(context.outcomes).toContain('Stop deferred: not idle');
     await userEvent.keyboard(' ');
-    await expect
-      .element(stopOutcome(context))
-      .toHaveTextContent('Stop failed: The robot did not answer.');
+    await expect.poll(context.outcomes).toContain('Stop failed: The robot did not answer.');
   });
 
   test('is Space again the moment the launcher closes', async () => {

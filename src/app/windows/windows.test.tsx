@@ -10,6 +10,7 @@ import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/ti
 import { App } from '../app';
 import { createDemoRobot } from '../fake/demo-robot';
 import type { FakeRobot, FakeRobotOptions } from '../fake/fake-robot';
+import { recordStopOutcomes } from '../fixtures/stop-outcomes';
 import type { CommandOutcome, MonitorPorts, ReadOutcome } from '../ports';
 import { createShellStore, type ShellStore } from '../state/shell-store';
 import '../styles.css';
@@ -87,6 +88,8 @@ interface Harness {
   readonly readsOf: (name: string) => number;
   readonly store: ShellStore;
   readonly screen: Awaited<ReturnType<typeof render>>;
+  /** Every text the Stop outcome showed since the app came up. */
+  readonly outcomes: () => string;
 }
 
 const robots: FakeRobot[] = [];
@@ -145,10 +148,11 @@ async function open({
   const screen = await render(
     <App ports={ports} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
   );
+  const outcomes = recordStopOutcomes();
   robot.connect({ transport: 'websocket', url: 'ws://robot' });
   await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
   const readsOf = (name: string) => reads.filter((read) => read === name).length;
-  return { robot, sent, readsOf, store, screen };
+  return { robot, sent, readsOf, store, screen, outcomes };
 }
 
 function query(selector: string): HTMLElement | null {
@@ -498,7 +502,7 @@ describe('A variable missing from the schema', () => {
 
 describe('Commands', () => {
   test('asks before a dangerous command and shows the refusal with its reason', async () => {
-    const { screen, sent } = await open({
+    const { screen, sent, outcomes } = await open({
       windows: [win('commands', 'commands')],
       root: leaf('commands'),
       send: () => Promise.resolve({ status: 'refused', reason: 1 }),
@@ -518,13 +522,11 @@ describe('Commands', () => {
 
     await screen.getByRole('main').getByRole('button', { name: 'Stop' }).click();
     expect(sent).toEqual([3, 5]);
-    await expect
-      .element(screen.getByRole('status', { name: 'Stop outcome' }))
-      .toHaveTextContent('Stop refused');
+    await expect.poll(outcomes).toContain('Stop refused');
   });
 
   test('sends STOP through the shell, again while a STOP still waits for its answer', async () => {
-    const { screen, sent } = await open({
+    const { screen, sent, outcomes } = await open({
       windows: [win('commands', 'commands')],
       root: leaf('commands'),
       send: (code) =>
@@ -535,9 +537,7 @@ describe('Commands', () => {
     await expect.element(stop).toBeEnabled();
     await stop.click();
     expect(sent).toEqual([5, 5]);
-    await expect
-      .element(screen.getByRole('status', { name: 'Stop outcome' }))
-      .toHaveTextContent('Stop');
+    await expect.poll(outcomes).toContain('Stop');
   });
 
   test('keeps the buttons through a reconfiguration and hides them without a robot', async () => {
