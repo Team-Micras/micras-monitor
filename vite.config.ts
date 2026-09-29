@@ -2,6 +2,7 @@ import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
+import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
 
 const PERFORMANCE_TESTS = ['src/**/*-performance.test.tsx'];
@@ -16,8 +17,60 @@ function chromium() {
   };
 }
 
+const DARK_COLOR = '#0a0a0a';
+
+/** The GitHub Pages site serves the app from `/micras-monitor/`; anywhere else it is the root. */
+const base = process.env.BASE_PATH ?? '/';
+
 export default defineConfig({
-  plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],
+  base,
+  plugins: [
+    react(),
+    babel({ presets: [reactCompilerPreset()] }),
+    tailwindcss(),
+    VitePWA({
+      registerType: 'prompt',
+      injectRegister: false,
+      includeAssets: ['micras_monitor_logo.svg', 'apple-touch-icon.png'],
+      manifest: {
+        id: base,
+        name: 'Micras Monitor',
+        short_name: 'Micras',
+        description: 'Live monitor and remote control for the Micras micromouse',
+        display: 'standalone',
+        orientation: 'any',
+        start_url: base,
+        scope: base,
+        theme_color: DARK_COLOR,
+        background_color: DARK_COLOR,
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+          {
+            src: 'icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          { src: 'micras_monitor_logo.svg', sizes: 'any', type: 'image/svg+xml' },
+        ],
+      },
+      strategies: 'injectManifest',
+      srcDir: 'sw',
+      filename: 'sw.ts',
+      injectManifest: {
+        globPatterns: [
+          '**/*.{js,css,html,svg,png,webmanifest}',
+          'assets/geist-latin-wght-normal-*.woff2',
+          'assets/geist-latin-ext-wght-normal-*.woff2',
+          'assets/geist-mono-latin-wght-normal-*.woff2',
+          'assets/geist-mono-latin-ext-wght-normal-*.woff2',
+        ],
+        globIgnores: ['sw.js'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+      },
+    }),
+  ],
   resolve: {
     tsconfigPaths: true,
   },
@@ -30,6 +83,16 @@ export default defineConfig({
           include: ['src/**/*.test.ts', 'robots/**/*.test.ts', 'tools/**/*.test.ts'],
           environment: 'node',
           testTimeout: 30_000,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'e2e',
+          include: ['e2e/**/*.test.ts'],
+          environment: 'node',
+          testTimeout: 90_000,
+          hookTimeout: 180_000,
         },
       },
       {

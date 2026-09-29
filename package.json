@@ -11,14 +11,15 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project browser",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
     "test:browser": "vitest run --project browser --project performance",
+    "test:e2e": "vitest run --project e2e",
     "simulate": "bun tools/simulated-robot.ts",
     "size": "bun tools/bundle-size.ts",
     "bench:telemetry": "bun tools/bench-telemetry.ts",
-    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run build && bun run size"
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run test:e2e && bun run build && bun run size"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",
@@ -53,8 +54,12 @@
     "tw-animate-css": "1.4.0",
     "typescript": "7.0.2",
     "vite": "8.3.1",
+    "vite-plugin-pwa": "1.3.0",
     "vitest": "4.1.11",
     "vitest-browser-react": "2.3.0",
+    "workbox-precaching": "7.4.1",
+    "workbox-routing": "7.4.1",
+    "workbox-window": "7.4.1",
     "ws": "8.22.0"
   },
   "engines": {

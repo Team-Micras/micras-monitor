@@ -5,11 +5,13 @@ import { App } from '@/app/app';
 import { safeLocalStorage } from '@/app/layouts/layout-book';
 import { LiveRobot } from '@/app/live/live-robot';
 import type { MonitorPorts } from '@/app/ports';
+import { serviceWorkerUpdates } from '@/app/pwa/app-updates';
 import '@/app/styles.css';
 import type { BluetoothLike } from '@/link';
 import { RobotRegistry } from '@/robot-kit';
 import type { Scheduler } from '@/telemetry';
 import { micras } from '@robots/micras';
+import { registerSW } from 'virtual:pwa-register';
 
 const root = document.getElementById('root');
 
@@ -46,6 +48,7 @@ const ports = synthetic
   ? (await import('@/app/fake/demo-robot')).createDemoRobot().ports
   : liveRobot(query.get('connect'));
 const robots = new RobotRegistry([micras]);
+const updates = import.meta.env.PROD ? serviceWorkerUpdates(registerSW) : undefined;
 
 createRoot(root).render(
   <StrictMode>
@@ -54,6 +57,7 @@ createRoot(root).render(
       robots={robots}
       synthetic={synthetic}
       layouts={safeLocalStorage() ?? undefined}
+      updates={updates}
     />
   </StrictMode>
 );
