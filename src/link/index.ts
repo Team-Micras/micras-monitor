@@ -50,6 +50,13 @@ export {
   type GroupRequest,
   type SampleValue,
 } from './groups';
+export {
+  DEFAULT_LINK_BUDGET,
+  LinkBudget,
+  UART_BYTES_PER_SECOND,
+  type BudgetEstimate,
+  type LinkBudgetOptions,
+} from './link-budget';
 export type { CommandReply } from './messages';
 export {
   MemorySchemaCache,
@@ -59,6 +66,19 @@ export {
   type SchemaEntry,
 } from './schema';
 export { Session, type SessionOptions } from './session';
+export {
+  MIN_DEGRADED_RATE_HZ,
+  planStreams,
+  type PlanInput,
+  type PlannedRate,
+  type RateRequest,
+  type StreamPlan,
+} from './stream-plan';
+export {
+  StreamPlanner,
+  type StreamPlannerEvents,
+  type StreamPlannerOptions,
+} from './stream-planner';
 export {
   DEFAULT_TIMING,
   type DroppedEvent,
