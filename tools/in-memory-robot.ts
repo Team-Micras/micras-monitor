@@ -3,7 +3,9 @@
  *
  * Every byte crosses on a timer, as it would cross a real socket on a later turn of the event loop,
  * so a test can put the robot, its radio and the monitor on fake timers together and run minutes
- * of a slow link in virtual time, whatever else loads the machine.
+ * of a slow link in virtual time, whatever else loads the machine. The sockets keep to the parts of
+ * a browser's WebSocket the monitor relies on: sending before `open` throws, and a socket opened
+ * after the robot closed emits `error` and then `close`, as one to a server that is gone does.
  *
  * @module
  */
@@ -29,10 +31,13 @@ export interface InMemoryRobot {
   /** The robot on the latest connection, if one is open. */
   readonly robot: Robot | undefined;
 
-  /** Opens a socket to a robot of its own, fresh from boot, whatever the URL. */
+  /**
+   * Opens a socket to a robot of its own, fresh from boot, whatever the URL; once the robot is
+   * closed, a socket that fails to connect.
+   */
   readonly createSocket: WebSocketFactory;
 
-  /** Drops every connection, as a server that stops does. */
+  /** Drops every connection and refuses new ones, as a server that stops does. */
   close(): void;
 }
 
@@ -54,6 +59,7 @@ export function startInMemoryRobot(
   const stats = emptyRobotStats();
   const sockets = new Set<InMemorySocket>();
   let latest: Robot | undefined;
+  let closed = false;
 
   return {
     stats,
@@ -61,6 +67,10 @@ export function startInMemoryRobot(
       return latest;
     },
     createSocket: () => {
+      if (closed) {
+        return InMemorySocket.refused();
+      }
+
       const socket = new InMemorySocket((connection) => {
         const robot = runRobot(connection, settings, stats);
         latest = robot;
@@ -76,6 +86,8 @@ export function startInMemoryRobot(
       return socket;
     },
     close: () => {
+      closed = true;
+
       for (const socket of sockets) {
         socket.drop(ABNORMAL_CLOSURE);
       }
@@ -89,11 +101,19 @@ class InMemorySocket implements WebSocketLike {
   readonly #listeners = new Map<WebSocketEventType, Set<(event: unknown) => void>>();
   readonly #toRobot = new Set<(bytes: Uint8Array) => void>();
   readonly #onClose = new Set<() => void>();
+  #open = false;
   #closed = false;
 
-  constructor(accept: (connection: RobotConnection) => void) {
+  constructor(accept: ((connection: RobotConnection) => void) | null) {
     later(() => {
       if (this.#closed) {
+        return;
+      }
+
+      if (accept === null) {
+        this.#closed = true;
+        this.#emit('error', {});
+        this.#emit('close', { code: ABNORMAL_CLOSURE, reason: '' });
         return;
       }
 
@@ -102,8 +122,14 @@ class InMemorySocket implements WebSocketLike {
         onMessage: (listener) => this.#toRobot.add(listener),
         onClose: (listener) => this.#onClose.add(listener),
       });
+      this.#open = true;
       this.#emit('open', {});
     });
+  }
+
+  /** A socket to a robot that no longer listens: it emits `error`, then `close`, and never opens. */
+  static refused(): InMemorySocket {
+    return new InMemorySocket(null);
   }
 
   addEventListener(type: WebSocketEventType, listener: (event: unknown) => void): void {
@@ -116,7 +142,16 @@ class InMemorySocket implements WebSocketLike {
     this.#listeners.get(type)?.delete(listener);
   }
 
+  /**
+   * Sends to the robot; what is sent once the socket closed is dropped.
+   *
+   * @throws {DOMException} An `InvalidStateError` before the socket opened, as a browser's does.
+   */
   send(data: Uint8Array): void {
+    if (!this.#open && !this.#closed) {
+      throw new DOMException('The socket is still connecting', 'InvalidStateError');
+    }
+
     if (this.#closed) {
       return;
     }
