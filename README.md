@@ -43,6 +43,15 @@ the quickest way to see live values.
 as the simulation's monitor bridge (`just micras serve`), streams a few variables for five seconds
 and prints what the link did. It is a manual check, not part of CI.
 
+`bun tools/check-micras-sim.ts --robot ws://localhost:8080 [--screens <dir>]` follows a whole
+exploration of Micras in the simulation through the app itself: it serves the app with Vite, opens
+it headless at `?connect=…`, sends EXPLORE from IDLE, checks that SAVE during the run is refused as
+not idle, that the maze view follows `maze/revision`, that the state and its transitions match the
+robot's `state …` log lines, then explores again and presses Space to check that STOP goes through
+BRAKE to IDLE. With `--screens` it saves the maze window during and after the search, dark and light.
+It needs a run that stays up after the search, such as `explore_link` without its `[[events]]` and
+its `[stop]` (the robot left idle in the start cell) and `--monitor`. Also a manual check, not CI.
+
 ## Layout
 
 The app is a single package. Folders are layers, and `no-restricted-imports` rules in `.oxlintrc.json`
