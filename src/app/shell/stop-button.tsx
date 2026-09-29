@@ -56,7 +56,8 @@ export function StopButton({ onStop }: { readonly onStop: () => void }) {
   );
 }
 
-function StopNoticeView({ notice }: { readonly notice: StopNotice }) {
+/** What the last press of STOP came to, for a while, then it clears itself. */
+export function StopNoticeView({ notice }: { readonly notice: StopNotice }) {
   const store = useShellStore();
   const { id, tone, text } = notice;
 

@@ -40,6 +40,18 @@
   },
   "overrides": [
     {
+      "files": ["sw/**"],
+      "rules": {
+        "no-underscore-dangle": "off"
+      }
+    },
+    {
+      "files": ["e2e/**"],
+      "rules": {
+        "no-await-in-loop": "off"
+      }
+    },
+    {
       "files": ["src/**", "robots/**"],
       "env": {
         "browser": true
@@ -229,7 +241,12 @@
       }
     },
     {
-      "files": ["src/main.tsx", "src/composition.test.tsx"],
+      "files": [
+        "src/main.tsx",
+        "src/composition.test.tsx",
+        "src/phone.test.tsx",
+        "src/phone-plan.test.ts"
+      ],
       "rules": {
         "no-restricted-imports": "off"
       }

@@ -14,7 +14,7 @@ import { useMonitor, useRobotPackage } from './monitor-context';
 import type { PinnedDemand, StreamDemand, StreamRequest } from './ports';
 import { useShell } from './state/shell-store';
 import { windowDemand } from './windows/registry';
-import type { WindowPayload } from './windows/types';
+import type { ShellWindow, WindowPayload } from './windows/types';
 
 /** The roles streamed whatever is on screen, and how often. */
 export const PINNED_RATES_HZ: readonly (readonly [role: Role, rateHz: number])[] = [
@@ -38,10 +38,15 @@ export function streamRequest(
   desktop: Desktop<WindowPayload>,
   pkg: RobotPackage | null
 ): StreamRequest {
-  const windows: StreamDemand[] = visibleWindows(desktop).flatMap((id) => {
-    const window = desktop.windows.get(id);
-    return window ? windowDemand(window, pkg) : [];
-  });
+  return requestFor(
+    visibleWindows(desktop).flatMap((id) => desktop.windows.get(id) ?? []),
+    pkg
+  );
+}
+
+/** What to stream for windows that are on screen and the package of the connected robot, if any. */
+export function requestFor(shown: readonly ShellWindow[], pkg: RobotPackage | null): StreamRequest {
+  const windows: StreamDemand[] = shown.flatMap((window) => windowDemand(window, pkg));
   const pinned: PinnedDemand[] = PINNED_RATES_HZ.flatMap(([role, rateHz]) => {
     const variable = pkg?.roles[role];
     return variable === undefined ? [] : [{ role, variable, rateHz }];
@@ -54,12 +59,14 @@ export function streamRequest(
  * Keeps the stream port told what the visible windows and the pinned roles want, again after
  * every change of the desktop or the package; the planner leaves the robot alone when the groups
  * come out the same.
+ *
+ * @param phone The windows of the phone view, which stand for the desktop while it is drawn.
  */
-export function useStreamDemand(): void {
+export function useStreamDemand(phone: readonly ShellWindow[] | null = null): void {
   const { streams } = useMonitor().ports;
   const desktop = useShell((state) => state.desktop);
   const pkg = useRobotPackage()?.package ?? null;
-  const request = streamRequest(desktop, pkg);
+  const request = phone === null ? streamRequest(desktop, pkg) : requestFor(phone, pkg);
 
   useEffect(() => streams.request(request), [streams, request]);
 }

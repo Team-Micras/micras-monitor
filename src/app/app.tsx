@@ -15,12 +15,17 @@ import { TooltipProvider } from './components/ui/tooltip';
 import { LazyPart } from './lib/lazy-part';
 import { useEver } from './lib/use-ever';
 import { nothingToStop, stopAnswered, stopSent } from './lib/stop-outcome';
-import { MonitorContext, useMonitor } from './monitor-context';
+import { MonitorContext, useMonitor, useRobotPackage, useVariables } from './monitor-context';
 import { PackageSelector } from './package-selection';
+import { phonePlan, planWindows } from './phone/phone-plan';
+import { PhoneView } from './phone/phone-view';
+import { usePhone } from './phone/use-phone';
+import type { AppUpdates } from './pwa/app-updates';
 import type { MonitorPorts } from './ports';
 import { DeletedNotice } from './shell/deleted-notice';
 import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
 import { LazyLauncher, LazyVariableDrawer } from './shell/lazy-shell';
+import { useReloadBlocked } from './shell/reload-guard';
 import { StatusBar } from './shell/status-bar';
 import { StopActionContext } from './shell/stop-action';
 import { TopBar } from './shell/top-bar';
@@ -52,10 +57,19 @@ export interface AppProps {
    * swapped for a robot's layout nor saved. Nothing coordinates two tabs: the last write wins.
    */
   readonly layouts?: LayoutStorage;
+  /** Where new builds of the app come from, such as the service worker; none without one. */
+  readonly updates?: AppUpdates;
 }
 
 /** The monitor: top bar, tiling of workspaces, status bar, drawer and launcher. */
-export function App({ ports, robots, synthetic = false, store: given, layouts }: AppProps) {
+export function App({
+  ports,
+  robots,
+  synthetic = false,
+  store: given,
+  layouts,
+  updates,
+}: AppProps) {
   const [store] = useState(
     () => given ?? createShellStore({ theme: initialTheme(), keyOverrides: initialKeyOverrides() })
   );
@@ -65,7 +79,7 @@ export function App({ ports, robots, synthetic = false, store: given, layouts }:
     <MonitorContext value={{ ports, robots, selection, synthetic }}>
       <ShellStoreContext value={store}>
         <TooltipProvider>
-          <Shell layouts={layouts ?? null} />
+          <Shell layouts={layouts ?? null} updates={updates} />
         </TooltipProvider>
       </ShellStoreContext>
     </MonitorContext>
@@ -92,7 +106,13 @@ function focusWindowElement(store: ShellStore): void {
   }
 }
 
-function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
+function Shell({
+  layouts,
+  updates,
+}: {
+  readonly layouts: LayoutStorage | null;
+  readonly updates: AppUpdates | undefined;
+}) {
   const store = useShellStore();
   const { ports, selection } = useMonitor();
   const theme = useShell((state) => state.theme);
@@ -102,6 +122,9 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
   const launcherOpen = useShell((state) => state.overlay === 'launcher');
   const launcherWanted = useEver(launcherOpen);
   const presses = useRef(0);
+  const phone = usePhone();
+  const plan = phonePlan(useRobotPackage()?.package ?? null, useVariables());
+  const reloadBlocked = useReloadBlocked();
 
   useEffect(() => applyTheme(theme), [theme]);
   useEffect(() => whenIdle(() => void prefetchAll()), []);
@@ -178,31 +201,35 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
   };
 
   useKeymap(bindings, onAction, onType);
-  useStreamDemand();
+  useStreamDemand(phone ? planWindows(plan) : null);
   useLayouts(layouts);
 
   return (
     <StopActionContext value={() => void stop()}>
-      <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
-        <TopBar onStop={() => void stop()} />
-        <main className="relative min-h-0 flex-1">
-          <TilingView />
-          {drawerOpen ? (
-            <LazyPart fallback={<DrawerFailed />} resetKey={drawerOpen} retryOnMount>
-              <LazyVariableDrawer />
+      {phone ? (
+        <PhoneView plan={plan} />
+      ) : (
+        <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
+          <TopBar onStop={() => void stop()} />
+          <main className="relative min-h-0 flex-1">
+            <TilingView />
+            {drawerOpen ? (
+              <LazyPart fallback={<DrawerFailed />} resetKey={drawerOpen} retryOnMount>
+                <LazyVariableDrawer />
+              </LazyPart>
+            ) : null}
+          </main>
+          <StatusBar />
+          {launcherWanted ? (
+            <LazyPart fallback={null} resetKey={launcherOpen}>
+              <LazyLauncher onAction={onAction} />
             </LazyPart>
           ) : null}
-        </main>
-        <StatusBar />
-        {launcherWanted ? (
-          <LazyPart fallback={null} resetKey={launcherOpen}>
-            <LazyLauncher onAction={onAction} />
-          </LazyPart>
-        ) : null}
-        <DeletedNotice />
-        <UpdateNotice />
-        <DragGhost />
-      </div>
+          <DragGhost />
+        </div>
+      )}
+      <DeletedNotice />
+      <UpdateNotice updates={updates} reloadBlocked={reloadBlocked} />
     </StopActionContext>
   );
 }

@@ -24,7 +24,7 @@ export function ReadoutsWindow({ window }: WindowViewProps) {
   }
 
   return (
-    <dl className="grid h-full auto-rows-min grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] content-center gap-x-6 gap-y-7 overflow-auto px-6 py-5">
+    <dl className="grid h-full auto-rows-min grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] content-center gap-x-6 gap-y-7 overflow-auto px-6 py-5">
       {presented.map((entry) => (
         <Readout key={entry.name} entry={entry} sessionEndUs={sessionEndUs} live={live} />
       ))}

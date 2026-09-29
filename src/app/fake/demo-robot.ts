@@ -50,7 +50,8 @@ const step = (t: number) => (Math.floor(t / 2.7) % 3 === 1 ? 0.3 : 0.6);
 const wall = (phase: number) => (t: number) =>
   0.14 + 0.1 * Math.sin(t * 0.9 + phase) + 0.004 * Math.sin(t * 13 + phase);
 
-const VARIABLES: readonly FakeVariable[] = [
+/** The variables of the demo robot. */
+export const DEMO_VARIABLES: readonly FakeVariable[] = [
   { name: 'state', type: TypeCode.U8, access: STREAM, signal: bootSequence },
   ...[0, 1, 2, 3].map((i) => f32(`wall/${i}`, wall(i * 1.7))),
   ...[0, 1, 2, 3].map((i) => f32(`wall_dark/${i}`, (t) => 0.01 + 0.002 * Math.sin(t + i))),
@@ -136,7 +137,7 @@ export function createDemoRobot(options: Partial<FakeRobotOptions> = {}): FakeRo
   return new FakeRobot({
     name: 'micras',
     schemaHash: 0x3f9a1c07,
-    variables: VARIABLES,
+    variables: DEMO_VARIABLES,
     answer: (code, _argument, robot) => {
       if (code === STOP) {
         robot.log('info', 'STOP: braking to a standstill');
@@ -151,7 +152,7 @@ export function createDemoRobot(options: Partial<FakeRobotOptions> = {}): FakeRo
         : { status: 'refused', reason: NOT_IDLE };
     },
     answerWrite: (name, _value, robot) =>
-      VARIABLES.find((variable) => variable.name === name)?.access.idle === true &&
+      DEMO_VARIABLES.find((variable) => variable.name === name)?.access.idle === true &&
       robot.valueOf('state') !== IDLE
         ? { status: 'refused', reason: 'needs-idle' }
         : { status: 'confirmed' },

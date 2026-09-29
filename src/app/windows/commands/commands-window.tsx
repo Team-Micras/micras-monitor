@@ -39,9 +39,12 @@ const TONE_ICONS = { ok: CircleCheckIcon, refused: CircleAlertIcon, failed: Circ
  * The robot package's commands as buttons, with the emergency stop drawn big. A dangerous
  * command asks first; a button says when the robot's state is not one its table accepts it in,
  * and the robot's answer, a refusal with its reason included, shows below. The big STOP is the
- * shell's own stop, the one of the top bar and the keyboard, with its notice there.
+ * shell's own stop, the one of the top bar and the keyboard, with its notice there; a view that
+ * keeps a STOP of its own in reach, such as the phone's, hides it with `showStop`.
  */
-export function CommandsWindow(_props: WindowViewProps) {
+export function CommandsWindow({
+  showStop = true,
+}: WindowViewProps & { readonly showStop?: boolean }) {
   const { commands } = useMonitor().ports;
   const pkg = useRobotPackage()?.package ?? null;
   const status = useConnectionStatus();
@@ -128,7 +131,7 @@ export function CommandsWindow(_props: WindowViewProps) {
       {answer === null ? null : (
         <Answer message={answer} sequence={answers} onDismiss={() => setAnswer(null)} />
       )}
-      {emergency === null ? null : (
+      {emergency === null || !showStop ? null : (
         <button
           type="button"
           disabled={!underWay}
@@ -172,7 +175,7 @@ function CommandButton({
       data-hint={availability.hint}
       disabled={!availability.enabled}
       className={cn(
-        'h-10 justify-start',
+        'h-10 justify-start pointer-coarse:h-12',
         availability.hint === 'not-accepted' && 'text-muted-foreground'
       )}
       onClick={onPress}
