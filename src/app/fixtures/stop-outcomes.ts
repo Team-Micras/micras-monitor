@@ -7,18 +7,18 @@
  * @module
  */
 
+import { onTestFinished } from 'vitest';
+import type { Locator } from 'vitest/browser';
+
 /**
- * Starts recording the texts the Stop outcome shows.
+ * Starts recording the texts the Stop outcome shows, until the test finishes.
  *
+ * @param outcome - The Stop outcome, found the way a reader finds it:
+ *   `getByRole('status', { name: 'Stop outcome' })`. It must be on screen already.
  * @returns What it showed so far, one notice per line.
  */
-export function recordStopOutcomes(): () => string {
-  const output = document.querySelector('output[aria-label="Stop outcome"]');
-
-  if (output === null) {
-    throw new Error('The top bar has no Stop outcome');
-  }
-
+export function recordStopOutcomes(outcome: Locator): () => string {
+  const output = outcome.element();
   const shown: string[] = [];
   const record = () => {
     const text = output.textContent ?? '';
@@ -27,11 +27,9 @@ export function recordStopOutcomes(): () => string {
       shown.push(text);
     }
   };
-  new MutationObserver(record).observe(output, {
-    childList: true,
-    subtree: true,
-    characterData: true,
-  });
+  const observer = new MutationObserver(record);
+  observer.observe(output, { childList: true, subtree: true, characterData: true });
+  onTestFinished(() => observer.disconnect());
   record();
   return () => shown.join('\n');
 }

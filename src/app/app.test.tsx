@@ -9,6 +9,7 @@ import { activeWorkspace, focusedWindow, leafIds, type Point, type Rect } from '
 
 import { App } from './app';
 import { createDemoRobot } from './fake/demo-robot';
+import { settled } from './fixtures/animations';
 import { recordStopOutcomes } from './fixtures/stop-outcomes';
 import type { FakeRobot, FakeRobotOptions } from './fake/fake-robot';
 import { isTextField } from './keymap/use-keymap';
@@ -65,7 +66,13 @@ async function setup(options: SetupOptions = {}): Promise<Setup> {
   );
   await expect.element(screen.getByRole('region', { name: 'Workspace Overview' })).toBeVisible();
   await settled();
-  return { store, robot, sent, screen, outcomes: recordStopOutcomes() };
+  return {
+    store,
+    robot,
+    sent,
+    screen,
+    outcomes: recordStopOutcomes(screen.getByRole('status', { name: 'Stop outcome' })),
+  };
 }
 
 function shell({ store }: Setup): ShellStore {
@@ -137,16 +144,6 @@ function press(from: Point, to: Point): void {
       y: from.y + ((to.y - from.y) * step) / 6,
     });
   }
-}
-
-async function settled(): Promise<void> {
-  await new Promise((resolve) => requestAnimationFrame(resolve));
-  await Promise.all(
-    document
-      .getAnimations()
-      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-      .map((animation) => animation.finished.catch(() => undefined))
-  );
 }
 
 async function drag(from: Point, to: Point): Promise<void> {

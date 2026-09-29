@@ -10,6 +10,7 @@ import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/ti
 import { App } from '../app';
 import { createDemoRobot } from '../fake/demo-robot';
 import type { FakeRobot, FakeRobotOptions } from '../fake/fake-robot';
+import { settled } from '../fixtures/animations';
 import { recordStopOutcomes } from '../fixtures/stop-outcomes';
 import type { CommandOutcome, MonitorPorts, ReadOutcome } from '../ports';
 import { createShellStore, type ShellStore } from '../state/shell-store';
@@ -148,7 +149,7 @@ async function open({
   const screen = await render(
     <App ports={ports} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
   );
-  const outcomes = recordStopOutcomes();
+  const outcomes = recordStopOutcomes(screen.getByRole('status', { name: 'Stop outcome' }));
   robot.connect({ transport: 'websocket', url: 'ws://robot' });
   await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
   const readsOf = (name: string) => reads.filter((read) => read === name).length;
@@ -174,15 +175,6 @@ function frames(count: number): Promise<void> {
     };
     step(count);
   });
-}
-
-async function settled(): Promise<void> {
-  await Promise.all(
-    document
-      .getAnimations()
-      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-      .map((animation) => animation.finished.catch(() => undefined))
-  );
 }
 
 function batteryReadout(): string {
