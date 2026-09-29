@@ -24,9 +24,10 @@ wire layer and an empty app shell).
 | `bun run lint`         | oxlint, type-aware, with the React Compiler and layer rules |
 | `bun run format`       | Format with oxfmt                                           |
 | `bun run format:check` | Check formatting without writing                            |
-| `bun run test`         | Run every Vitest project once                               |
+| `bun run test`         | Unit and browser tests once (`test:e2e` runs on its own)    |
 | `bun run test:unit`    | Only the unit tests (Node)                                  |
 | `bun run test:browser` | Only the browser tests (Playwright Chromium)                |
+| `bun run test:e2e`     | Builds the app and checks the PWA in Chromium (about 20 s)  |
 | `bun run test:watch`   | Vitest in watch mode                                        |
 | `bun run simulate`     | Simulated robot on `ws://localhost:8080`                    |
 | `bun run check`        | Lint, format check, typecheck, tests and build, as in CI    |
@@ -54,6 +55,42 @@ with the map unchanged. With `--screens` it saves the maze window during and aft
 and light. It needs a run that stays up after the search, such as `explore_link` without its
 `[[events]]` and its `[stop]` (the robot left idle in the start cell) and `--monitor`, and a dev tree
 nobody edits meanwhile (Vite reloads the page). Also a manual check, not CI.
+
+## Phone and PWA
+
+The app is an installable PWA (`vite-plugin-pwa`, service worker in `sw/sw.ts`). The service worker
+precaches the app shell, every lazy chunk (windows, maze view, launcher, drawer, dialogs) and only the
+latin and latin-ext subsets of Geist and Geist Mono, so after the first load the app opens offline.
+Updates never reload by themselves: an "Update available" notice offers Reload, which stays disabled
+while a robot is linked and its state is not idle.
+
+Below 640 px of width the tiling gives way to a single column for the phone: status, the map, two
+values, the commands, a small plot and the writable labelled settings, above a STOP that is always on
+screen. It is drawn from the robot package's roles, presets and labels (`src/app/phone/phone-plan.ts`),
+so a robot with no package gets its first streamed numbers and its commands.
+
+The Pages workflow (`.github/workflows/pages.yml`) runs on `main`: lint, typecheck, tests, a build with
+`BASE_PATH=/<repository>/`, then the deploy. Build with another base by setting `BASE_PATH`.
+
+### Testing on an Android phone over Bluetooth
+
+Web Bluetooth needs Chrome on Android (iOS has none) and a secure context, so use the deployed HTTPS
+page, or the build served through USB debugging.
+
+1. On the phone, open the deployed page in Chrome, wait for it to load once, and use the menu's
+   "Install app" (or "Add to Home screen"). Open it from the new icon.
+2. Turn airplane mode on, then Bluetooth back on, and open the app again: it must load offline.
+3. Turn the robot on and tap the connection pill, choose Bluetooth and Connect. Chrome asks for the
+   robot; pick it. The status card must show the robot, the state and the battery.
+4. Check that the map, the two values and the plot move, that a command (Explore from idle) is
+   accepted, and that STOP stops the robot from the bar at the bottom, also while the page is scrolled.
+5. Lock and unlock the phone during a run and check that the link recovers or says why not.
+6. Push a new build with the robot linked and not idle: "Update available" must show with Reload
+   disabled; stop the robot and Reload must work.
+
+Without Pages: `bun run build && bun run preview --host`, `adb reverse tcp:4173 tcp:4173`, then open
+`http://localhost:4173` in the phone's Chrome (localhost counts as secure). The service worker only
+runs in the production build.
 
 ## Layout
 
