@@ -65,8 +65,9 @@ const LABEL_CHAR_PX = 6.7;
 const AXIS_PADDING_PX = 14;
 const MIN_COLUMNS = 2;
 
-function sameStatus(left: PlotStatus, right: PlotStatus): boolean {
+function sameStatus(left: PlotStatus | null, right: PlotStatus): boolean {
   return (
+    left !== null &&
     left.empty === right.empty &&
     left.dropped === right.dropped &&
     left.notStored === right.notStored
@@ -97,17 +98,21 @@ function valueLabels(splits: number[], increment: number): string[] {
 /** A plot of some variables over time, in a DOM element it owns. */
 export class PlotController {
   readonly #options: PlotControllerOptions;
-  readonly #names: readonly string[];
+  readonly #root: HTMLElement;
   readonly #data: PlotData;
-  readonly #plot: uPlot;
-  readonly #tooltip: Tooltip;
-  readonly #unsubscribe: () => void;
+  #variables: readonly PlotVariable[];
+  #theme: PlotTheme;
+  #names: readonly string[];
+  #plot: uPlot;
+  #tooltip: Tooltip;
+  #unsubscribe: () => void;
   #spanUs: number;
   #paused = false;
+  #visible = true;
   #hovered = false;
   #window: TimeRange | undefined;
   #spans: readonly GapSpan[] = [];
-  #status: PlotStatus = { empty: true, dropped: 0, notStored: 0 };
+  #status: PlotStatus | null = null;
 
   /**
    * @param root The element the chart fills; its size is the chart's until {@link resize}.
@@ -115,24 +120,58 @@ export class PlotController {
    */
   constructor(root: HTMLElement, options: PlotControllerOptions) {
     this.#options = options;
-    this.#names = options.variables.map((variable) => variable.name);
+    this.#root = root;
     this.#data = new PlotData(options.history);
     this.#spanUs = options.spanUs;
-    this.#tooltip = this.#createTooltip(root);
-    this.#plot = new uPlot(this.#config(root), [[]], root);
-    this.#plot.over.addEventListener('pointerenter', this.#enter);
-    this.#plot.over.addEventListener('pointerleave', this.#leave);
-    this.#unsubscribe = options.history.subscribe(this.#names, () => {
-      if (!this.#paused) {
-        this.draw();
-      }
-    });
+    this.#variables = options.variables;
+    this.#theme = options.theme;
+    this.#names = options.variables.map((variable) => variable.name);
+    this.#tooltip = this.#createTooltip();
+    this.#plot = this.#createPlot();
+    this.#unsubscribe = this.#follow();
     this.draw();
   }
 
-  /** Freezes the window where it is, or follows the newest samples again. */
-  setPaused(paused: boolean): void {
+  /**
+   * Draws other variables, or the same in other colors, keeping the window, the pause and the
+   * span, so that a paused plot stays where it was across a change of theme.
+   */
+  restyle(variables: readonly PlotVariable[], theme: PlotTheme): void {
+    this.#unmount();
+    this.#variables = variables;
+    this.#theme = theme;
+    this.#names = variables.map((variable) => variable.name);
+    this.#tooltip = this.#createTooltip();
+    this.#plot = this.#createPlot();
+    this.#unsubscribe = this.#follow();
+    this.draw();
+  }
+
+  /** The time window on screen, or undefined before the first sample. */
+  get window(): TimeRange | undefined {
+    return this.#window;
+  }
+
+  /**
+   * Freezes the window where it is, or follows the newest samples again.
+   *
+   * @param paused Whether to freeze it.
+   * @param window A window to freeze at instead, such as the one a previous chart of the same
+   *   window was frozen at.
+   */
+  setPaused(paused: boolean, window?: TimeRange): void {
     this.#paused = paused;
+
+    if (paused && window !== undefined) {
+      this.#window = window;
+    }
+
+    this.draw();
+  }
+
+  /** Stops drawing while the chart is off screen, and draws once when it comes back. */
+  setVisible(visible: boolean): void {
+    this.#visible = visible;
     this.draw();
   }
 
@@ -151,8 +190,12 @@ export class PlotController {
     this.draw();
   }
 
-  /** Draws the current window again from the history. */
+  /** Draws the current window again from the history, unless the chart is off screen. */
   draw(): void {
+    if (!this.#visible) {
+      return;
+    }
+
     const started = performance.now();
     const columns = Math.max(MIN_COLUMNS, Math.round(this.#plot.bbox.width / devicePixelRatio));
 
@@ -173,12 +216,33 @@ export class PlotController {
     this.#spans = gaps.spans;
     this.#plot.batch(() => this.#plot.setData(this.#data.build(this.#names, window, columns)));
     this.#setStatus({ empty: false, dropped: gaps.dropped, notStored: gaps.notStored });
+
     this.#options.onDraw?.(performance.now() - started);
   }
 
   /** Stops following the history and removes the chart. */
   destroy(): void {
+    this.#unmount();
+  }
+
+  #createPlot(): uPlot {
+    const plot = new uPlot(this.#config(this.#root), [[]], this.#root);
+    plot.over.addEventListener('pointerenter', this.#enter);
+    plot.over.addEventListener('pointerleave', this.#leave);
+    return plot;
+  }
+
+  #follow(): () => void {
+    return this.#options.history.subscribe(this.#names, () => {
+      if (!this.#paused) {
+        this.draw();
+      }
+    });
+  }
+
+  #unmount(): void {
     this.#unsubscribe();
+    this.#hovered = false;
     this.#plot.over.removeEventListener('pointerenter', this.#enter);
     this.#plot.over.removeEventListener('pointerleave', this.#leave);
     this.#plot.destroy();
@@ -186,7 +250,9 @@ export class PlotController {
   }
 
   #config(root: HTMLElement): uPlot.Options {
-    const { variables, theme, syncKey } = this.#options;
+    const variables = this.#variables;
+    const theme = this.#theme;
+    const { syncKey } = this.#options;
     const layout = layoutAxes(variables);
     const scales: uPlot.Scales = {
       x: { time: false, range: () => this.#xRange() },
@@ -267,7 +333,7 @@ export class PlotController {
     }
 
     const { ctx, bbox } = plot;
-    const { theme } = this.#options;
+    const theme = this.#theme;
     ctx.save();
     ctx.globalAlpha = GAP_ALPHA;
 
@@ -281,7 +347,7 @@ export class PlotController {
     ctx.restore();
   }
 
-  #createTooltip(root: HTMLElement): Tooltip {
+  #createTooltip(): Tooltip {
     const element = document.createElement('div');
     element.dataset.plotTooltip = '';
     element.className =
@@ -289,7 +355,7 @@ export class PlotController {
     const time = document.createElement('div');
     time.className = 'mb-1 tabular-nums';
     element.append(time);
-    const values = this.#options.variables.map((variable) => {
+    const values = this.#variables.map((variable) => {
       const row = document.createElement('div');
       row.className = 'flex items-center gap-2';
       const swatch = document.createElement('span');
@@ -304,7 +370,7 @@ export class PlotController {
       element.append(row);
       return value;
     });
-    root.append(element);
+    this.#root.append(element);
     return { element, time, values };
   }
 
@@ -320,7 +386,7 @@ export class PlotController {
     const seconds = plot.posToVal(left, 'x');
     const timeUs = toMicroseconds(seconds);
     time.textContent = `t ${formatClock(seconds * 1000)}`;
-    this.#options.variables.forEach((variable, index) => {
+    this.#variables.forEach((variable, index) => {
       const sample = this.#options.history.valueAt(variable.name, timeUs);
       values[index].textContent =
         sample === undefined || Number.isNaN(sample.value) ? '—' : sample.value.toFixed(3);
@@ -335,7 +401,7 @@ export class PlotController {
   }
 
   #setStatus(status: PlotStatus): void {
-    if (!sameStatus(status, this.#status)) {
+    if (!sameStatus(this.#status, status)) {
       this.#status = status;
       this.#options.onStatus?.(status);
     }

@@ -13,6 +13,7 @@ import {
 import { useMonitor } from '../../monitor-context';
 import { useResolvedColors } from '../shared/document-theme';
 import { usePresentedVariables } from '../shared/presented-variables';
+import type { HistoryPort } from '../../ports';
 import type { WindowViewProps } from '../types';
 import { PlotController, type PlotStatus, type PlotTheme } from './plot-controller';
 import { layoutAxes, type PlotVariable } from './plot-data';
@@ -33,13 +34,14 @@ const PLOT_FONT = '11px "Geist Mono Variable", ui-monospace, monospace';
  * A plot of the window's variables over the last seconds, one y axis per unit, drawn by uPlot
  * straight from the history. Paused, it keeps the window it had.
  */
-export function PlotWindow({ window, paused }: WindowViewProps) {
+export function PlotWindow({ window, paused, visible }: WindowViewProps) {
   const { history } = useMonitor().ports;
   const presented = usePresentedVariables(window.payload.variables);
   const [spanS, setSpanS] = useState<number>(DEFAULT_PLOT_SPAN_S);
   const [status, setStatus] = useState<PlotStatus>(NO_STATUS);
   const host = useRef<HTMLDivElement>(null);
   const controller = useRef<PlotController | null>(null);
+  const applied = useRef<string | null>(null);
   const colors = useResolvedColors([...THEME_COLORS, ...presented.map(({ color }) => color)]);
   const [axis, grid, dropped, notStored] = colors;
   const theme: PlotTheme = { axis, grid, dropped, notStored, font: PLOT_FONT };
@@ -48,7 +50,6 @@ export function PlotWindow({ window, paused }: WindowViewProps) {
     unit: presentation?.unit ?? null,
     color: colors[THEME_COLORS.length + index],
   }));
-  const signature = JSON.stringify({ variables, theme });
   const axes = layoutAxes(variables).axes;
   const leftUnit = axes[0]?.unit ?? null;
   const rightUnits = axes
@@ -56,9 +57,30 @@ export function PlotWindow({ window, paused }: WindowViewProps) {
     .map((right) => right.unit ?? '—')
     .join(' · ');
 
-  const configure = useEffectEvent((plot: PlotController) => {
-    plot.setSpan(spanS * 1e6);
+  const style = [...colors, ...variables.map(({ name, unit }) => `${name} ${unit ?? ''}`)].join(
+    '\n'
+  );
+
+  const create = useEffectEvent((element: HTMLElement, source: HistoryPort) => {
+    const plot = new PlotController(element, {
+      history: source,
+      variables,
+      spanUs: spanS * 1e6,
+      theme,
+      syncKey: PLOT_SYNC_KEY,
+      onStatus: setStatus,
+    });
     plot.setPaused(paused);
+    plot.setVisible(visible);
+    applied.current = style;
+    return plot;
+  });
+
+  const restyle = useEffectEvent((next: string) => {
+    if (controller.current !== null && applied.current !== next) {
+      controller.current.restyle(variables, theme);
+      applied.current = next;
+    }
   });
 
   useEffect(() => {
@@ -68,18 +90,8 @@ export function PlotWindow({ window, paused }: WindowViewProps) {
       return undefined;
     }
 
-    const described: { variables: readonly PlotVariable[]; theme: PlotTheme } =
-      JSON.parse(signature);
-    const plot = new PlotController(element, {
-      history,
-      variables: described.variables,
-      spanUs: DEFAULT_PLOT_SPAN_S * 1e6,
-      theme: described.theme,
-      syncKey: PLOT_SYNC_KEY,
-      onStatus: setStatus,
-    });
+    const plot = create(element, history);
     controller.current = plot;
-    configure(plot);
     const observer = new ResizeObserver(([entry]) => {
       plot.resize(entry.contentRect.width, entry.contentRect.height);
     });
@@ -90,9 +102,11 @@ export function PlotWindow({ window, paused }: WindowViewProps) {
       plot.destroy();
       controller.current = null;
     };
-  }, [history, signature]);
+  }, [history]);
 
+  useEffect(() => restyle(style), [style]);
   useEffect(() => controller.current?.setPaused(paused), [paused]);
+  useEffect(() => controller.current?.setVisible(visible), [visible]);
   useEffect(() => controller.current?.setSpan(spanS * 1e6), [spanS]);
 
   const hint =

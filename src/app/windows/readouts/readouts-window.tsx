@@ -2,7 +2,8 @@ import { useLiveValue } from '../../monitor-context';
 import { cn } from '../../lib/utils';
 import { usePresentedVariables, type PresentedVariable } from '../shared/presented-variables';
 import { formatReading, isStale } from '../shared/readings';
-import { useLinkLive, useSessionEnd } from '../shared/session-end';
+import { READOUT_RATE_HZ } from '../rates';
+import { useLinkLive, useSessionEnd, useStaleAfter } from '../shared/session-end';
 import type { WindowViewProps } from '../types';
 
 /**
@@ -41,7 +42,8 @@ function Readout({
   readonly live: boolean;
 }) {
   const latest = useLiveValue(entry.name);
-  const stale = isStale(latest, sessionEndUs, live);
+  const staleAfterUs = useStaleAfter(entry.name, READOUT_RATE_HZ);
+  const stale = isStale(latest, sessionEndUs, live, staleAfterUs);
   const unit = entry.presentation?.unit ?? null;
 
   return (

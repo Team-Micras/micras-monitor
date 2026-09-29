@@ -70,7 +70,7 @@ describe('outcomeMessage', () => {
     expect(outcomeMessage(GO, { status: 'refused', reason: 1 }, pkg, STATE)).toEqual({
       tone: 'refused',
       title: 'Refused — not idle',
-      detail: 'GO is accepted in IDLE.',
+      detail: 'Go is accepted in IDLE.',
     });
     expect(outcomeMessage(GO, { status: 'refused', reason: 9 }, pkg).title).toBe(
       'Refused — no reason given'

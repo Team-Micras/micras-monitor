@@ -1,6 +1,6 @@
 /**
  * What the variable editor needs without React: which control a variable gets, turning typed
- * text into a value its type holds, flipping a flag, and a refusal in words.
+ * text into a value its type holds, the value of an enum option, and a refusal in words.
  *
  * @module
  */
@@ -8,13 +8,13 @@
 import { TypeCode } from '@/protocol';
 import type { BitmaskType, EnumType } from '@/robot-kit';
 
-import type { TelemetryValue, WriteRefusal, WriteValue } from '../../ports';
+import type { WriteRefusal, WriteValue } from '../../ports';
 
 /** The control a variable is edited with. */
 export type EditorControl =
   | { readonly kind: 'bool' }
-  | { readonly kind: 'enum'; readonly labels: EnumType }
-  | { readonly kind: 'bitmask'; readonly labels: BitmaskType }
+  | { readonly kind: 'enum'; readonly labels: EnumType; readonly wide: boolean }
+  | { readonly kind: 'bitmask'; readonly labels: BitmaskType; readonly wide: boolean }
   | { readonly kind: 'number'; readonly type: TypeCode }
   | { readonly kind: 'none' };
 
@@ -59,11 +59,11 @@ export function editorControl(
   }
 
   if (labels?.kind === 'enum') {
-    return { kind: 'enum', labels };
+    return { kind: 'enum', labels, wide: WIDE.has(type) };
   }
 
   if (labels?.kind === 'bitmask') {
-    return { kind: 'bitmask', labels };
+    return { kind: 'bitmask', labels, wide: WIDE.has(type) };
   }
 
   return { kind: 'number', type };
@@ -114,36 +114,9 @@ export function parseValue(text: string, type: TypeCode): ParsedValue {
   return { ok: true, value: WIDE.has(type) ? value : Number(value) };
 }
 
-/** An integer with one bit set or cleared; exact for every integer a `number` holds. */
-export function withBit(value: number, bit: number, on: boolean): number {
-  const weight = 2 ** bit;
-  const set = Math.floor(value / weight) % 2 === 1;
-  return set === on ? value : on ? value + weight : value - weight;
-}
-
-/** A value the robot reports as a number, for the controls that need one. */
-export function numericValue(value: TelemetryValue | WriteValue | undefined): number | undefined {
-  if (typeof value === 'number') {
-    return value;
-  }
-
-  if (typeof value === 'boolean') {
-    return value ? 1 : 0;
-  }
-
-  return typeof value === 'bigint' ? Number(value) : undefined;
-}
-
-/** Whether two values are the same write, across number, bigint and boolean. */
-export function sameValue(
-  left: TelemetryValue | WriteValue | undefined,
-  right: TelemetryValue | WriteValue | undefined
-): boolean {
-  if (left === undefined || right === undefined) {
-    return left === right;
-  }
-
-  return numericValue(left) === numericValue(right);
+/** The value an enum option is written as: a bigint for the 64 bit types. */
+export function optionValue(value: number, wide: boolean): WriteValue {
+  return wide ? BigInt(value) : value;
 }
 
 /** Why the robot refused a write, in words. */

@@ -27,6 +27,7 @@ import {
   useRobotPackage,
 } from '../../monitor-context';
 import type { CommandOutcome } from '../../ports';
+import { useStopAction } from '../../shell/stop-action';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
 import { commandIcon } from './command-icons';
@@ -42,7 +43,8 @@ const TONE_ICONS = { ok: CircleCheckIcon, refused: CircleAlertIcon, failed: Circ
 /**
  * The robot package's commands as buttons, with the emergency stop drawn big. A dangerous
  * command asks first; a button says when the robot's state is not one its table accepts it in,
- * and the robot's answer, a refusal with its reason included, shows below.
+ * and the robot's answer, a refusal with its reason included, shows below. The big STOP is the
+ * shell's own stop, the one of the top bar and the keyboard, with its notice there.
  */
 export function CommandsWindow(_props: WindowViewProps) {
   const { commands } = useMonitor().ports;
@@ -54,6 +56,8 @@ export function CommandsWindow(_props: WindowViewProps) {
   const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
   const [answer, setAnswer] = useState<OutcomeMessage | null>(null);
   const [confirming, setConfirming] = useState<CommandSpec | null>(null);
+  const [asking, setAsking] = useState(false);
+  const stop = useStopAction();
 
   const linked = status.kind === 'linked';
 
@@ -93,6 +97,7 @@ export function CommandsWindow(_props: WindowViewProps) {
       void send(command);
     } else {
       setConfirming(command);
+      setAsking(true);
     }
   };
 
@@ -118,32 +123,33 @@ export function CommandsWindow(_props: WindowViewProps) {
       {emergency === null ? null : (
         <button
           type="button"
-          disabled={!underWay || inFlight.has(emergency.code)}
+          disabled={!underWay}
           title={emergency.description}
-          onClick={() => void send(emergency)}
+          onClick={stop}
           className="mt-auto flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-destructive/85 text-base font-semibold text-white shadow-sm transition-colors hover:bg-destructive focus-visible:ring-[3px] focus-visible:ring-destructive/40 focus-visible:outline-none disabled:opacity-45"
         >
           <CircleXIcon className="size-5" aria-hidden />
           {emergency.label}
         </button>
       )}
-      <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+      <Dialog open={asking} onOpenChange={setAsking}>
         <DialogContent showCloseButton={false} className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{confirming?.label}</DialogTitle>
             <DialogDescription>{confirming?.confirm}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirming(null)}>
+            <Button variant="ghost" onClick={() => setAsking(false)}>
               Cancel
             </Button>
             <Button
+              variant="destructive"
               onClick={() => {
                 if (confirming !== null) {
                   void send(confirming);
                 }
 
-                setConfirming(null);
+                setAsking(false);
               }}
             >
               {confirming?.label}

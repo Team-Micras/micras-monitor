@@ -112,7 +112,7 @@ export function outcomeMessage(
       return {
         tone: 'refused',
         title: `Refused — ${reason ?? 'no reason given'}`,
-        detail: `${command.name} is accepted in ${acceptedStatesText(command, stateLabels)}.`,
+        detail: `${command.label} is accepted in ${acceptedStatesText(command, stateLabels)}.`,
       };
     }
     default:

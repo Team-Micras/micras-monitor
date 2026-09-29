@@ -9,7 +9,8 @@ import { useLinkUp, useLiveValue, useMonitor, useRobotPackage } from '../../moni
 import type { HistoryPort } from '../../ports';
 import { usePresentedVariables } from '../shared/presented-variables';
 import { isStale } from '../shared/readings';
-import { useLinkLive, useSessionEnd } from '../shared/session-end';
+import { READOUT_RATE_HZ } from '../rates';
+import { useLinkLive, useSessionEnd, useStaleAfter } from '../shared/session-end';
 import type { WindowViewProps } from '../types';
 import { TransitionTracker, type Transition } from './transitions';
 
@@ -63,6 +64,7 @@ export function RobotWindow(_props: WindowViewProps) {
   const sessionEndUs = useSessionEnd();
   const live = useLinkLive();
   const linked = useLinkUp();
+  const stateStaleAfterUs = useStaleAfter(stateName, READOUT_RATE_HZ);
 
   if (pkg === null) {
     return (
@@ -76,7 +78,7 @@ export function RobotWindow(_props: WindowViewProps) {
 
   const since = transitions.at(-1);
   const shown = transitions.slice(-SHOWN_TRANSITIONS);
-  const stale = isStale(current, sessionEndUs, live);
+  const stale = isStale(current, sessionEndUs, live, stateStaleAfterUs);
 
   return (
     <div className="flex h-full flex-col justify-between gap-6 overflow-auto px-5 pt-2 pb-5">
@@ -149,7 +151,8 @@ function Battery({
 }) {
   const latest = useLiveValue(name);
   const value = latest?.value;
-  const stale = isStale(latest, sessionEndUs, live);
+  const staleAfterUs = useStaleAfter(name, READOUT_RATE_HZ);
+  const stale = isStale(latest, sessionEndUs, live, staleAfterUs);
 
   return (
     <div data-battery className="flex items-center gap-2 border-t pt-4">

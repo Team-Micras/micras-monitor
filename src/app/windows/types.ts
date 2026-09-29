@@ -22,4 +22,6 @@ export interface WindowViewProps {
   readonly window: ShellWindow;
   /** Whether the user paused the window, which freezes what it shows. */
   readonly paused: boolean;
+  /** Whether the window is on screen; a window on a hidden workspace can skip drawing. */
+  readonly visible: boolean;
 }

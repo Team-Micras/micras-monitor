@@ -186,16 +186,6 @@ export class PlotData {
     return [this.#x, ...ys.map((line) => line.y)];
   }
 
-  /** Forgets the variables no longer plotted. */
-  retain(names: readonly string[]): void {
-    for (const name of this.#decimations.keys()) {
-      if (!names.includes(name)) {
-        this.#decimations.delete(name);
-        this.#lines.delete(name);
-      }
-    }
-  }
-
   #line(name: string, window: TimeRange, pixels: number): LineSeries {
     const decimation = this.#history.decimate(name, window.startUs, window.endUs, pixels, {
       into: this.#decimations.get(name),

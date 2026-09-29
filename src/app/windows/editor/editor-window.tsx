@@ -1,24 +1,21 @@
 import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from 'lucide-react';
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
 
-import { hasBit } from '@/robot-kit';
-
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Switch } from '../../components/ui/switch';
 import { cn } from '../../lib/utils';
 import { useLinkUp, useLiveValue, useMonitor } from '../../monitor-context';
-import type { TelemetryValue, WriteOutcome, WriteValue } from '../../ports';
+import type { WriteOutcome, WriteValue } from '../../ports';
 import { usePresentedVariables, type PresentedVariable } from '../shared/presented-variables';
+import { bitSet, integerValue, sameInteger, withBit, type IntegerValue } from '../shared/bits';
 import { formatReading } from '../shared/readings';
 import type { WindowViewProps } from '../types';
 import {
   editorControl,
-  numericValue,
+  optionValue,
   parseValue,
   refusalText,
-  sameValue,
-  withBit,
   type EditorControl,
 } from './editor-value';
 
@@ -117,8 +114,8 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
       </header>
       <Control
         control={control}
-        confirmed={confirmed === undefined ? undefined : numericValue(confirmed)}
-        pending={pending === undefined ? undefined : numericValue(pending)}
+        confirmed={integerValue(confirmed)}
+        pending={integerValue(pending)}
         disabled={disabledReason !== null}
         onWrite={write}
       />
@@ -129,8 +126,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
         disabledReason={disabledReason}
         pending={pending}
         last={last}
-        confirmed={confirmed}
-        describe={(value) => formatReading(numericValue(value), presentation.labels)}
+        describe={(value) => formatReading(integerValue(value) ?? value, presentation.labels)}
       />
     </section>
   );
@@ -144,8 +140,8 @@ function Control({
   onWrite,
 }: {
   readonly control: EditorControl;
-  readonly confirmed: number | undefined;
-  readonly pending: number | undefined;
+  readonly confirmed: IntegerValue | undefined;
+  readonly pending: IntegerValue | undefined;
   readonly disabled: boolean;
   readonly onWrite: (value: WriteValue) => void;
 }) {
@@ -155,7 +151,7 @@ function Control({
         <FlagRow
           label="value"
           checked={confirmed === 1}
-          pending={pending !== undefined && pending !== confirmed}
+          pending={pending !== undefined && !sameInteger(pending, confirmed)}
           disabled={disabled || confirmed === undefined}
           onChange={(on) => onWrite(on)}
         />
@@ -169,11 +165,11 @@ function Control({
               key={flag.bit}
               label={flag.label}
               detail={`bit ${flag.bit}`}
-              checked={confirmed !== undefined && hasBit(confirmed, flag.bit)}
+              checked={confirmed !== undefined && bitSet(confirmed, flag.bit)}
               pending={
                 pending !== undefined &&
                 confirmed !== undefined &&
-                hasBit(pending, flag.bit) !== hasBit(confirmed, flag.bit)
+                bitSet(pending, flag.bit) !== bitSet(confirmed, flag.bit)
               }
               disabled={disabled || base === undefined}
               onChange={(on) => {
@@ -186,31 +182,32 @@ function Control({
         </div>
       );
     }
-    case 'enum':
+    case 'enum': {
+      const awaits = (value: number) =>
+        sameInteger(pending, value) && !sameInteger(pending, confirmed);
       return (
         <div className="flex flex-wrap gap-1.5">
           {control.labels.options.map((option) => (
             <Button
               key={option.value}
-              aria-pressed={confirmed === option.value}
-              variant={confirmed === option.value ? 'secondary' : 'ghost'}
+              aria-pressed={sameInteger(confirmed, option.value)}
+              variant={sameInteger(confirmed, option.value) ? 'secondary' : 'ghost'}
               size="sm"
               disabled={disabled}
               className={cn(
                 'font-mono',
-                confirmed === option.value && 'border border-foreground/20',
-                pending === option.value && pending !== confirmed && 'border border-dashed'
+                sameInteger(confirmed, option.value) && 'border border-foreground/20',
+                awaits(option.value) && 'border border-dashed'
               )}
-              onClick={() => onWrite(option.value)}
+              onClick={() => onWrite(optionValue(option.value, control.wide))}
             >
-              {pending === option.value && pending !== confirmed ? (
-                <LoaderCircleIcon className="animate-spin" />
-              ) : null}
+              {awaits(option.value) ? <LoaderCircleIcon className="animate-spin" /> : null}
               {option.label}
             </Button>
           ))}
         </div>
       );
+    }
     case 'number':
       return <NumberField type={control.type} disabled={disabled} onWrite={onWrite} />;
     default:
@@ -327,13 +324,11 @@ function WriteNote({
   disabledReason,
   pending,
   last,
-  confirmed,
   describe,
 }: {
   readonly disabledReason: string | null;
   readonly pending: WriteValue | undefined;
   readonly last: LastWrite | null;
-  readonly confirmed: TelemetryValue | undefined;
   readonly describe: (value: WriteValue) => string;
 }) {
   let note: ReactNode = null;
@@ -364,7 +359,7 @@ function WriteNote({
         Not written: {last.outcome.message}
       </span>
     );
-  } else if (last?.outcome?.status === 'confirmed' && sameValue(last.value, confirmed)) {
+  } else if (last?.outcome?.status === 'confirmed') {
     note = (
       <span className="flex items-center gap-2 text-muted-foreground">
         <CheckIcon className="size-3.5 shrink-0" />

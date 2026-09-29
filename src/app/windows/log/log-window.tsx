@@ -122,8 +122,9 @@ export function LogWindow({ paused }: WindowViewProps) {
                   'size-1.5 shrink-0 translate-y-[-1px] rounded-full',
                   SEVERITY_DOTS[entry.severity]
                 )}
-                aria-label={entry.severity}
+                aria-hidden
               />
+              <span className="sr-only">{entry.severity}</span>
               <span
                 className={cn(
                   'min-w-0 break-words',

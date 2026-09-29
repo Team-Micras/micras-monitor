@@ -27,6 +27,7 @@ export class TransitionTracker {
   #transitions: readonly Transition[] = [];
   #lastValue: number | undefined;
   #scannedUs = Number.NEGATIVE_INFINITY;
+  #firstUs = Number.POSITIVE_INFINITY;
 
   constructor(history: HistoryPort, name: string) {
     this.#history = history;
@@ -34,11 +35,23 @@ export class TransitionTracker {
   }
 
   /**
-   * Scans the samples that arrived since the last scan.
+   * Scans the samples that arrived since the last scan. A history that lost its end or gained a
+   * start before the one it had, as after a reset of the store, is scanned again from the start.
    *
-   * @returns The transitions, oldest first; the same array until one is added.
+   * @returns The transitions, oldest first; the same array until one is added or they restart.
    */
   update(): readonly Transition[] {
+    const range = this.#history.timeRange(this.#name);
+
+    if (range === undefined || range.endUs < this.#scannedUs || range.startUs < this.#firstUs) {
+      this.#restart();
+    }
+
+    if (range === undefined) {
+      return this.#transitions;
+    }
+
+    this.#firstUs = range.startUs;
     const found: Transition[] = [];
 
     for (const run of this.#history.samples(
@@ -70,5 +83,15 @@ export class TransitionTracker {
     }
 
     return this.#transitions;
+  }
+
+  #restart(): void {
+    if (this.#transitions.length > 0) {
+      this.#transitions = [];
+    }
+
+    this.#lastValue = undefined;
+    this.#scannedUs = Number.NEGATIVE_INFINITY;
+    this.#firstUs = Number.POSITIVE_INFINITY;
   }
 }

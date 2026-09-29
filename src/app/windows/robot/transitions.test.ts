@@ -36,4 +36,33 @@ describe('TransitionTracker', () => {
     expect(tracker.update().at(-1)).toEqual({ value: 3, timeUs: 11_000 });
     expect(tracker.update()).toHaveLength(3);
   });
+
+  test('starts over when the store is reset and the timeline restarts', () => {
+    const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+    store.setSchema([{ id: 0, name: 'state', type: TypeCode.U8 }]);
+    store.openEpoch({
+      epochId: 1,
+      groupId: 0,
+      variables: [{ id: 0, type: TypeCode.U8 }],
+      firstSequence: 0,
+    });
+    [1, 2].forEach((value, index) => store.append(1, index, 50_000 + index * 1000, [value]));
+    const tracker = new TransitionTracker(store, 'state');
+    expect(tracker.update()).toHaveLength(2);
+
+    store.reset();
+    expect(tracker.update()).toEqual([]);
+    store.setSchema([{ id: 0, name: 'state', type: TypeCode.U8 }]);
+    store.openEpoch({
+      epochId: 2,
+      groupId: 0,
+      variables: [{ id: 0, type: TypeCode.U8 }],
+      firstSequence: 0,
+    });
+    [2, 2, 3].forEach((value, index) => store.append(2, index, index * 1000, [value]));
+    expect(tracker.update()).toEqual([
+      { value: 2, timeUs: 0 },
+      { value: 3, timeUs: 2000 },
+    ]);
+  });
 });

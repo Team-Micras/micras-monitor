@@ -236,7 +236,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
         </DropdownMenu>
       </header>
       <div className="min-h-0 flex-1">
-        <View window={window} paused={paused} />
+        <View window={window} paused={paused} visible={visible} />
       </div>
       {floating ? (
         <div

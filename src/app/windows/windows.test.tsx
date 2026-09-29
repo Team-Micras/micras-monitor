@@ -11,7 +11,7 @@ import { App } from '../app';
 import { createDemoRobot } from '../fake/demo-robot';
 import type { FakeRobot, FakeRobotOptions } from '../fake/fake-robot';
 import type { CommandOutcome, MonitorPorts } from '../ports';
-import { createShellStore } from '../state/shell-store';
+import { createShellStore, type ShellStore } from '../state/shell-store';
 import '../styles.css';
 import type { ShellWindow } from './types';
 
@@ -24,7 +24,12 @@ const STATE: EnumType = {
 const PACKAGE: RobotPackage<string> = mouse({
   id: 'micras',
   displayName: 'Micras',
-  roles: { state: 'state', battery: 'battery_voltage' },
+  roles: {
+    state: 'state',
+    battery: 'battery_voltage',
+    map: 'maze',
+    'map.revision': 'maze/revision',
+  },
   variables: {
     state: { labels: STATE },
     battery_voltage: { unit: 'V' },
@@ -69,6 +74,8 @@ const PACKAGE: RobotPackage<string> = mouse({
 interface Options {
   readonly windows: readonly ShellWindow[];
   readonly root: TileNode;
+  /** A second workspace, opened in the background. */
+  readonly hidden?: TileNode;
   readonly robot?: Partial<FakeRobotOptions>;
   readonly send?: (code: number) => Promise<CommandOutcome>;
 }
@@ -76,6 +83,8 @@ interface Options {
 interface Harness {
   readonly robot: FakeRobot;
   readonly sent: number[];
+  readonly readsOf: (name: string) => number;
+  readonly store: ShellStore;
   readonly screen: Awaited<ReturnType<typeof render>>;
 }
 
@@ -89,7 +98,7 @@ function win(id: string, kind: string, variables: readonly string[] = []): Shell
   return { id, kind, payload: { variables } };
 }
 
-async function open({ windows, root, robot: overrides, send }: Options): Promise<Harness> {
+async function open({ windows, root, hidden, robot: overrides, send }: Options): Promise<Harness> {
   const robot = createDemoRobot({
     connectMs: 5,
     handshakeMs: 10,
@@ -100,8 +109,15 @@ async function open({ windows, root, robot: overrides, send }: Options): Promise
   });
   robots.push(robot);
   const sent: number[] = [];
+  const reads: string[] = [];
   const ports: MonitorPorts = {
     ...robot.ports,
+    reads: {
+      read: (name) => {
+        reads.push(name);
+        return robot.ports.reads.read(name);
+      },
+    },
     commands: {
       send: (code, argument) => {
         sent.push(code);
@@ -111,14 +127,20 @@ async function open({ windows, root, robot: overrides, send }: Options): Promise
   };
   const store = createShellStore({
     theme: 'dark',
-    desktop: createDesktop([createWorkspace('Test', root)], windows),
+    desktop: createDesktop(
+      hidden === undefined
+        ? [createWorkspace('Test', root)]
+        : [createWorkspace('Test', root), createWorkspace('Hidden', hidden)],
+      windows
+    ),
   });
   const screen = await render(
     <App ports={ports} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
   );
   robot.connect({ transport: 'websocket', url: 'ws://robot' });
   await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
-  return { robot, sent, screen };
+  const readsOf = (name: string) => reads.filter((read) => read === name).length;
+  return { robot, sent, readsOf, store, screen };
 }
 
 function query(selector: string): HTMLElement | null {
@@ -169,6 +191,66 @@ describe('Plot', () => {
 
     await screen.getByRole('button', { name: 'Resume Plot' }).click();
     await expect.poll(canvasImage, { timeout: 2000 }).not.toBe(paused);
+  });
+
+  test('keeps its frozen window across a change of theme', async () => {
+    const { screen, store } = await open({
+      windows: [win('plot', 'plot', ['pose/linear_speed'])],
+      root: leaf('plot'),
+    });
+    await expect.poll(() => query('[data-plot]')?.dataset.empty).toBe('false');
+    await screen.getByRole('button', { name: 'Pause Plot' }).click();
+    await frames(2);
+    const redraw = async () => {
+      const dark = canvasImage();
+      store.getState().setTheme('light');
+      await expect.poll(canvasImage).not.toBe(dark);
+      const light = canvasImage();
+      store.getState().setTheme('dark');
+      await expect.poll(canvasImage).not.toBe(light);
+      return canvasImage();
+    };
+    const paused = await redraw();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(await redraw()).toBe(paused);
+  });
+
+  test('keeps the tooltip on the moment under the cursor while the plot scrolls', async () => {
+    await open({
+      windows: [win('plot', 'plot', ['pose/linear_speed'])],
+      root: leaf('plot'),
+    });
+    await expect.poll(() => query('[data-plot]')?.dataset.empty).toBe('false');
+    const over = query('[data-plot] .u-over');
+    const box = over?.getBoundingClientRect();
+    over?.dispatchEvent(new PointerEvent('pointerenter'));
+    over?.dispatchEvent(
+      new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: (box?.x ?? 0) + (box?.width ?? 0) * 0.98,
+        clientY: (box?.y ?? 0) + (box?.height ?? 0) / 2,
+      })
+    );
+    const time = () => query('[data-plot-tooltip] div')?.textContent ?? '';
+    await expect.poll(time).toMatch(/^t \d\d:\d\d\.\d$/);
+    const first = time();
+    await expect.poll(time, { timeout: 2000 }).not.toBe(first);
+  });
+
+  test('does not draw on a hidden workspace, and draws once shown', async () => {
+    const { store } = await open({
+      windows: [win('values', 'readouts', ['state']), win('plot', 'plot', ['pose/linear_speed'])],
+      root: leaf('values'),
+      hidden: leaf('plot'),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const hidden = canvasImage();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(canvasImage()).toBe(hidden);
+
+    store.getState().run({ type: 'switchWorkspace', index: 1 });
+    await expect.poll(() => query('[data-plot]')?.dataset.empty).toBe('false');
+    await expect.poll(canvasImage).not.toBe(hidden);
   });
 
   test('changes the length of its live window', async () => {
@@ -267,6 +349,50 @@ describe('Editor', () => {
   });
 });
 
+describe('Editor of a float', () => {
+  test('says the robot confirmed a value an f32 cannot hold exactly', async () => {
+    const { screen } = await open({
+      windows: [win('edit', 'editor', ['speed'])],
+      root: leaf('edit'),
+      robot: {
+        variables: [
+          { name: 'speed', type: TypeCode.F32, access: decodeAccess(0x03), signal: () => 0.5 },
+        ],
+      },
+    });
+    await screen.getByRole('textbox', { name: 'New value' }).fill('0.1');
+    await userEvent.keyboard('{Enter}');
+    await expect.element(screen.getByText('confirmed by the robot')).toBeVisible();
+  });
+});
+
+describe('Type view', () => {
+  test('reads the blob again only when the value of its revision changes', async () => {
+    const { readsOf } = await open({
+      windows: [win('maze', 'type-view', ['maze'])],
+      root: leaf('maze'),
+      robot: {
+        variables: [
+          { name: 'maze', type: TypeCode.BLOB, access: decodeAccess(0x08), typeTag: 'maze-grid' },
+          {
+            name: 'maze/revision',
+            type: TypeCode.U32,
+            access: decodeAccess(0x01),
+            signal: (seconds) => (seconds < 1.5 ? 1 : 2),
+          },
+        ],
+      },
+    });
+    await expect.poll(() => query('[data-hex-dump]')?.textContent ?? '').toContain('0000');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(readsOf('maze')).toBe(1);
+
+    await expect.poll(() => readsOf('maze'), { timeout: 2000 }).toBe(2);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(readsOf('maze')).toBe(2);
+  });
+});
+
 describe('Commands', () => {
   test('asks before a dangerous command and shows the refusal with its reason', async () => {
     const { screen, sent } = await open({
@@ -289,6 +415,26 @@ describe('Commands', () => {
 
     await screen.getByRole('main').getByRole('button', { name: 'Stop' }).click();
     expect(sent).toEqual([3, 5]);
+    await expect
+      .element(screen.getByRole('status', { name: 'Stop outcome' }))
+      .toHaveTextContent('Stop refused');
+  });
+
+  test('sends STOP through the shell, again while a STOP still waits for its answer', async () => {
+    const { screen, sent } = await open({
+      windows: [win('commands', 'commands')],
+      root: leaf('commands'),
+      send: (code) =>
+        code === 5 ? new Promise(() => undefined) : Promise.resolve({ status: 'ok', reason: 0 }),
+    });
+    const stop = screen.getByRole('main').getByRole('button', { name: 'Stop' });
+    await stop.click();
+    await expect.element(stop).toBeEnabled();
+    await stop.click();
+    expect(sent).toEqual([5, 5]);
+    await expect
+      .element(screen.getByRole('status', { name: 'Stop outcome' }))
+      .toHaveTextContent('Stop');
   });
 
   test('keeps the buttons through a reconfiguration and hides them without a robot', async () => {

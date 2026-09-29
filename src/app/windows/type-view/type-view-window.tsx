@@ -1,5 +1,5 @@
 import { RefreshCwIcon } from 'lucide-react';
-import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
 import { roleVariable, type SerializableType } from '@/robot-kit';
 
@@ -8,6 +8,7 @@ import { useLinkUp, useLiveValue, useMonitor, useRobotPackage } from '../../moni
 import type { ReactRobotPackage } from '../../monitor-context';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
+import { CoalescedReads } from './coalesced-reads';
 import { hexRows } from './hex-dump';
 
 type Decoded =
@@ -28,8 +29,8 @@ function revisionOf(pkg: ReactRobotPackage | null, name: string): string | null 
 
 /**
  * A blob through the view of its serializable type, or as a hexadecimal dump when no package
- * decodes it. The blob is read on demand when it is not streamed, and read again whenever the
- * package's revision of it changes.
+ * decodes it. The blob is read on demand when it is not streamed, and read again when the value
+ * of the package's revision of it changes from one it had, one READ at a time.
  */
 export function TypeViewWindow({ window }: WindowViewProps) {
   const { reads, values } = useMonitor().ports;
@@ -42,32 +43,56 @@ export function TypeViewWindow({ window }: WindowViewProps) {
   const [failure, setFailure] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
 
+  const reader = useRef<CoalescedReads | null>(null);
+
   const request = (variable: string) =>
     reads.read(variable).then((outcome) => {
       setReading(false);
       setFailure(outcome.status === 'failed' ? outcome.message : null);
     });
 
-  const readAgain = (variable: string) => {
+  const readAgain = () => {
     setReading(true);
-    void request(variable);
+    reader.current?.request();
   };
 
-  const readNow = useEffectEvent((variable: string) => void request(variable));
+  const readerFor = useEffectEvent(
+    (variable: string) => new CoalescedReads(() => request(variable))
+  );
 
   useEffect(() => {
-    if (linked && name !== null) {
-      readNow(name);
-    }
-  }, [linked, name]);
-
-  useEffect(() => {
-    if (!linked || name === null || revision === null) {
+    if (!linked || name === null) {
       return undefined;
     }
 
-    return values.subscribe([revision], () => readNow(name));
-  }, [values, linked, name, revision]);
+    const blob = readerFor(name);
+    reader.current = blob;
+    blob.request();
+    return () => {
+      blob.close();
+      reader.current = null;
+    };
+  }, [linked, name]);
+
+  useEffect(() => {
+    if (!linked || revision === null) {
+      return undefined;
+    }
+
+    let seen = values.latest(revision)?.value;
+    return values.subscribe([revision], () => {
+      const value = values.latest(revision)?.value;
+
+      if (value !== seen) {
+        const known = seen !== undefined;
+        seen = value;
+
+        if (known) {
+          reader.current?.request();
+        }
+      }
+    });
+  }, [values, linked, revision]);
 
   if (entry === undefined) {
     return (
@@ -93,7 +118,7 @@ export function TypeViewWindow({ window }: WindowViewProps) {
           className="ml-auto"
           aria-label={`Read ${entry.name} again`}
           disabled={!linked || reading}
-          onClick={() => readAgain(entry.name)}
+          onClick={readAgain}
         >
           <RefreshCwIcon className={reading ? 'animate-spin' : undefined} />
         </Button>
@@ -104,7 +129,7 @@ export function TypeViewWindow({ window }: WindowViewProps) {
             {linked ? 'Reading…' : 'Connect to a robot to read it.'}
           </p>
         ) : decoded?.kind === 'value' && serializable !== null ? (
-          <SerializableView key={serializable.tag} type={serializable} value={decoded.value} />
+          <serializable.View key={serializable.tag} value={decoded.value} />
         ) : (
           <>
             {decoded?.kind === 'error' ? (
@@ -118,16 +143,6 @@ export function TypeViewWindow({ window }: WindowViewProps) {
       </div>
     </div>
   );
-}
-
-function SerializableView({
-  type,
-  value,
-}: {
-  readonly type: SerializableType<unknown, ReactNode>;
-  readonly value: unknown;
-}) {
-  return type.View({ value });
 }
 
 function HexDump({ bytes }: { readonly bytes: Uint8Array }) {

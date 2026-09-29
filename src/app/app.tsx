@@ -14,6 +14,7 @@ import { PackageSelector } from './package-selection';
 import type { MonitorPorts } from './ports';
 import { Launcher } from './shell/launcher';
 import { StatusBar } from './shell/status-bar';
+import { StopActionContext } from './shell/stop-action';
 import { TopBar } from './shell/top-bar';
 import { DRAWER_SEARCH_SELECTOR, VariableDrawer } from './shell/variable-drawer';
 import { useStreamDemand } from './stream-demand';
@@ -153,15 +154,17 @@ function Shell() {
   useStreamDemand();
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
-      <TopBar onStop={() => void stop()} />
-      <main className="relative min-h-0 flex-1">
-        <TilingView />
-        {drawerOpen ? <VariableDrawer /> : null}
-      </main>
-      <StatusBar />
-      <Launcher onAction={onAction} />
-      <DragGhost />
-    </div>
+    <StopActionContext value={() => void stop()}>
+      <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
+        <TopBar onStop={() => void stop()} />
+        <main className="relative min-h-0 flex-1">
+          <TilingView />
+          {drawerOpen ? <VariableDrawer /> : null}
+        </main>
+        <StatusBar />
+        <Launcher onAction={onAction} />
+        <DragGhost />
+      </div>
+    </StopActionContext>
   );
 }

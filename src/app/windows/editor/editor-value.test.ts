@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { TypeCode } from '@/protocol';
 import type { BitmaskType, EnumType } from '@/robot-kit';
 
-import { editorControl, parseValue, refusalText, sameValue, withBit } from './editor-value';
+import { editorControl, optionValue, parseValue, refusalText } from './editor-value';
 
 const STATE: EnumType = { kind: 'enum', name: 'State', options: [{ value: 0, label: 'IDLE' }] };
 const PROFILE: BitmaskType = {
@@ -15,8 +15,13 @@ const PROFILE: BitmaskType = {
 describe('editorControl', () => {
   test('picks the control by type and labels', () => {
     expect(editorControl(TypeCode.BOOL, null)).toEqual({ kind: 'bool' });
-    expect(editorControl(TypeCode.U8, STATE)).toEqual({ kind: 'enum', labels: STATE });
-    expect(editorControl(TypeCode.U8, PROFILE)).toEqual({ kind: 'bitmask', labels: PROFILE });
+    expect(editorControl(TypeCode.U8, STATE)).toEqual({ kind: 'enum', labels: STATE, wide: false });
+    expect(editorControl(TypeCode.U8, PROFILE)).toEqual({
+      kind: 'bitmask',
+      labels: PROFILE,
+      wide: false,
+    });
+    expect(editorControl(TypeCode.U64, PROFILE)).toMatchObject({ kind: 'bitmask', wide: true });
     expect(editorControl(TypeCode.F32, null)).toEqual({ kind: 'number', type: TypeCode.F32 });
     expect(editorControl(TypeCode.BLOB, STATE)).toEqual({ kind: 'none' });
   });
@@ -53,21 +58,10 @@ describe('parseValue', () => {
   });
 });
 
-describe('withBit', () => {
-  test('sets and clears one bit, leaving the others', () => {
-    expect(withBit(0b0101, 1, true)).toBe(0b0111);
-    expect(withBit(0b0101, 2, false)).toBe(0b0001);
-    expect(withBit(0b0101, 0, true)).toBe(0b0101);
-    expect(withBit(2 ** 40, 40, false)).toBe(0);
-  });
-});
-
-describe('sameValue', () => {
-  test('compares across number, bigint and boolean', () => {
-    expect(sameValue(true, 1)).toBe(true);
-    expect(sameValue(5n, 5)).toBe(true);
-    expect(sameValue(5, 6)).toBe(false);
-    expect(sameValue(undefined, 0)).toBe(false);
+describe('optionValue', () => {
+  test('writes the options of a 64 bit enum as bigints', () => {
+    expect(optionValue(2, true)).toBe(2n);
+    expect(optionValue(2, false)).toBe(2);
   });
 });
 

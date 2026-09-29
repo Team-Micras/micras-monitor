@@ -41,9 +41,10 @@ export interface SerializableType<T = unknown, Node = unknown> {
   readonly decode: (bytes: Uint8Array) => T;
   /**
    * Draws a decoded value; a React package returns a `ReactNode`. Declared as a method so that a
-   * package can list types of different values together as `SerializableType<unknown>`.
+   * package can list types of different values together as `SerializableType<unknown>`, and
+   * without `this`, so that the app renders it as a component.
    */
-  View(props: TypeViewProps<T>): Node;
+  View(this: void, props: TypeViewProps<T>): Node;
 }
 
 /** One value of an enum. */

@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
+import { roleVariable, type RobotPackage, type Role } from '@/robot-kit';
+
 import { DEFAULT_STREAM_RATE_HZ, type StreamDemand } from '../ports/streams';
 
 import { CommandsWindow } from './commands/commands-window';
@@ -27,6 +29,7 @@ import { LinkWindow } from './link/link-window';
 import { LogWindow } from './log/log-window';
 import { ViewPlaceholder } from './placeholder-window';
 import { PlotWindow } from './plot/plot-window';
+import { EDITOR_RATE_HZ, PLOT_RATE_HZ, READOUT_RATE_HZ, REVISION_RATE_HZ } from './rates';
 import { ReadoutsWindow } from './readouts/readouts-window';
 import { RobotWindow } from './robot/robot-window';
 import { TypeViewWindow } from './type-view/type-view-window';
@@ -41,24 +44,32 @@ export interface WindowKind {
   readonly component: ComponentType<WindowViewProps>;
   /** Whether a variable dropped on the window joins it; otherwise the drop opens a plot beside. */
   readonly acceptsVariables: boolean;
-  /** What the window wants streamed; without it, each of its variables at the default rate. */
-  readonly demand?: (window: ShellWindow) => readonly StreamDemand[];
+  /**
+   * What the window wants streamed, given the connected robot's package, or null in raw mode;
+   * without it, each of its variables at the default rate.
+   */
+  readonly demand?: (window: ShellWindow, pkg: RobotPackage | null) => readonly StreamDemand[];
 }
-
-/** Samples per second a plot asks for: a control loop's signals, drawn smoothly. */
-export const PLOT_RATE_HZ = 100;
-
-/** Samples per second a readout or the Robot window asks for: numbers change ten times a second. */
-export const READOUT_RATE_HZ = 10;
-
-/** Samples per second an editor asks for, to see the confirmed value soon after a write. */
-export const EDITOR_RATE_HZ = 5;
 
 const NOTHING: readonly StreamDemand[] = [];
 const nothing = () => NOTHING;
 
 function rate(window: ShellWindow, rateHz: number): readonly StreamDemand[] {
   return window.payload.variables.map((variable) => ({ variable, rateHz }));
+}
+
+function roles(pkg: RobotPackage | null, wanted: readonly Role[], rateHz: number): StreamDemand[] {
+  return wanted.flatMap((role) => {
+    const variable = roleVariable(pkg, role);
+    return variable === null ? [] : [{ variable, rateHz }];
+  });
+}
+
+function revisionDemand(window: ShellWindow, pkg: RobotPackage | null): readonly StreamDemand[] {
+  const [blob] = window.payload.variables;
+  return blob !== undefined && blob === roleVariable(pkg, 'map')
+    ? roles(pkg, ['map.revision'], REVISION_RATE_HZ)
+    : NOTHING;
 }
 
 /** The kind a variable dropped on the tiling opens. */
@@ -100,7 +111,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     icon: MapIcon,
     component: TypeViewWindow,
     acceptsVariables: false,
-    demand: nothing,
+    demand: revisionDemand,
   },
   {
     id: 'robot',
@@ -109,7 +120,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     icon: BotIcon,
     component: RobotWindow,
     acceptsVariables: false,
-    demand: (window) => rate(window, READOUT_RATE_HZ),
+    demand: (_window, pkg) => roles(pkg, ['state', 'battery'], READOUT_RATE_HZ),
   },
   {
     id: 'commands',
@@ -161,11 +172,19 @@ export function windowTitle(window: ShellWindow): string {
   return window.payload.title ?? windowKind(window.kind).title;
 }
 
-/** What a window asks the link to stream, as its kind says. */
-export function windowDemand(window: ShellWindow): readonly StreamDemand[] {
+/**
+ * What a window asks the link to stream, as its kind says.
+ *
+ * @param window The window.
+ * @param pkg The connected robot's package, which the kinds that read roles need; null for none.
+ */
+export function windowDemand(
+  window: ShellWindow,
+  pkg: RobotPackage | null = null
+): readonly StreamDemand[] {
   const demand = windowKind(window.kind).demand;
 
   return demand
-    ? demand(window)
+    ? demand(window, pkg)
     : window.payload.variables.map((variable) => ({ variable, rateHz: DEFAULT_STREAM_RATE_HZ }));
 }
