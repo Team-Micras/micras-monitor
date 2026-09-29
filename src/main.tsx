@@ -2,7 +2,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
 import { safeLocalStorage } from '@/app/layouts/layout-book';
 import { LiveRobot } from '@/app/live/live-robot';
 import type { MonitorPorts } from '@/app/ports';
@@ -43,7 +42,9 @@ function liveRobot(connectTo: string | null): MonitorPorts {
 
 const query = new URLSearchParams(location.search);
 const synthetic = query.has('fake');
-const ports = synthetic ? createDemoRobot().ports : liveRobot(query.get('connect'));
+const ports = synthetic
+  ? (await import('@/app/fake/demo-robot')).createDemoRobot().ports
+  : liveRobot(query.get('connect'));
 const robots = new RobotRegistry([micras]);
 
 createRoot(root).render(

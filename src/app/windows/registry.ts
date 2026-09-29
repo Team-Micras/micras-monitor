@@ -1,7 +1,8 @@
 /**
  * The window kinds of the app: for each kind, its title, icon, the component that draws it and
- * what it asks the link to stream. A kind from an old layout that this build does not know
- * draws as a placeholder listing the window's variables.
+ * what it asks the link to stream. The components of the heavier kinds load on first use. A kind
+ * from an old layout that this build does not know draws as a placeholder listing the window's
+ * variables.
  *
  * @module
  */
@@ -17,7 +18,7 @@ import {
   ZapIcon,
   type LucideIcon,
 } from 'lucide-react';
-import type { ComponentType } from 'react';
+import { lazy, type ComponentType } from 'react';
 
 import { roleVariable, type RobotPackage, type Role } from '@/robot-kit';
 
@@ -25,12 +26,6 @@ import { DEFAULT_STREAM_RATE_HZ, type StreamDemand } from '../ports/streams';
 
 import { CommandsWindow } from './commands/commands-window';
 import { ViewPlaceholder } from './placeholder-window';
-import { PlotWindow } from './plot/plot-window';
-import { ReadoutsWindow } from './readouts/readouts-window';
-import { EditorWindow } from './editor/editor-window';
-import { TypeViewWindow } from './type-view/type-view-window';
-import { LogWindow } from './log/log-window';
-import { LinkWindow } from './link/link-window';
 import {
   BATTERY_RATE_HZ,
   EDITOR_RATE_HZ,
@@ -101,7 +96,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Plot',
     description: 'Variables over time',
     icon: ChartLineIcon,
-    component: PlotWindow,
+    component: lazy(() =>
+      import('./plot/plot-window').then((module) => ({ default: module.PlotWindow }))
+    ),
     acceptsVariables: true,
     demand: (window) => rate(window, PLOT_RATE_HZ),
   },
@@ -110,7 +107,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Readouts',
     description: 'Latest values, large',
     icon: GaugeIcon,
-    component: ReadoutsWindow,
+    component: lazy(() =>
+      import('./readouts/readouts-window').then((module) => ({ default: module.ReadoutsWindow }))
+    ),
     acceptsVariables: true,
     demand: (window) => rate(window, READOUT_RATE_HZ),
   },
@@ -119,7 +118,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Editor',
     description: 'Write a variable, by its type',
     icon: SlidersHorizontalIcon,
-    component: EditorWindow,
+    component: lazy(() =>
+      import('./editor/editor-window').then((module) => ({ default: module.EditorWindow }))
+    ),
     acceptsVariables: true,
     demand: (window) => rate(window, EDITOR_RATE_HZ),
   },
@@ -128,7 +129,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Type view',
     description: 'A serializable value, such as the maze',
     icon: MapIcon,
-    component: TypeViewWindow,
+    component: lazy(() =>
+      import('./type-view/type-view-window').then((module) => ({ default: module.TypeViewWindow }))
+    ),
     acceptsVariables: false,
     demand: typeViewDemand,
   },
@@ -158,7 +161,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Log',
     description: 'Robot log and link events',
     icon: ScrollTextIcon,
-    component: LogWindow,
+    component: lazy(() =>
+      import('./log/log-window').then((module) => ({ default: module.LogWindow }))
+    ),
     acceptsVariables: false,
     demand: nothing,
   },
@@ -167,7 +172,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Link',
     description: 'Rate, credit, drops and round trip',
     icon: RadioTowerIcon,
-    component: LinkWindow,
+    component: lazy(() =>
+      import('./link/link-window').then((module) => ({ default: module.LinkWindow }))
+    ),
     acceptsVariables: false,
     demand: nothing,
   },
