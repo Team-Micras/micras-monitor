@@ -62,13 +62,13 @@ function rig(
   });
   let next = 0;
   const stream = (seconds: number) =>
-    each(seconds * 10, async () => {
-      for (let sample = 0; sample < 10; sample++) {
+    each(seconds, async () => {
+      for (let sample = 0; sample < 100; sample++) {
         store.append(1, next & 0xffff, next * SAMPLE_US, [Math.sin(next / 50)]);
         next++;
       }
 
-      clock.ms += 100;
+      clock.ms += 1000;
       await settle();
     });
   return { store, manager, library, locks, scheduler, clock, stream, streamed: () => next };

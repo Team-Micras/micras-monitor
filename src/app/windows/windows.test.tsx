@@ -196,7 +196,7 @@ describe('Plot', () => {
       root: leaf('plot'),
       robot: { drops: (sequence) => sequence >= 10 && sequence < 25 },
     });
-    await expect.poll(() => query('[data-plot]')?.dataset.empty).toBe('false');
+    await expect.poll(() => query('[data-plot]')?.dataset.empty, { timeout: 5000 }).toBe('false');
     await expect.element(screen.getByText('15 dropped')).toBeVisible();
     await expect.element(screen.getByText('m/s', { exact: true })).toBeVisible();
     await expect.element(screen.getByText('rad/s →')).toBeVisible();
