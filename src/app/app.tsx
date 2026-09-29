@@ -16,6 +16,7 @@ import { Launcher } from './shell/launcher';
 import { StatusBar } from './shell/status-bar';
 import { TopBar } from './shell/top-bar';
 import { DRAWER_SEARCH_SELECTOR, VariableDrawer } from './shell/variable-drawer';
+import { useStreamDemand } from './stream-demand';
 import {
   createShellStore,
   ShellStoreContext,
@@ -149,6 +150,7 @@ function Shell() {
   };
 
   useKeymap(bindings, onAction, onType);
+  useStreamDemand();
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">

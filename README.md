@@ -34,6 +34,9 @@ wire layer and an empty app shell).
 The simulated robot listens on `MICRAS_SIM_PORT` when it is set. Flags shape its link and inject
 faults, for example `bun run simulate --throughput 3000 --latency 50 --corrupt 0.02`; the header of
 `tools/simulated-robot.ts` lists them all. Tests start it in-process on a free port.
+The app connects to a real robot by default; `?connect=ws://localhost:8080` connects on load, and
+`?fake` serves a synthetic robot from memory instead. `bun run dev` next to `bun run simulate` is
+the quickest way to see live values.
 `bun run bench:telemetry` measures the telemetry store's memory and query times at full size.
 
 `bun tools/check-live-session.ts --url ws://localhost:8080` connects a session to a live robot, such
@@ -48,7 +51,7 @@ keep their dependencies pointing one way; each planned layer gets its rule when 
 | Path              | Layer                                                     | May import                       |
 | ----------------- | --------------------------------------------------------- | -------------------------------- |
 | `src/protocol/`   | COBS, frames, message layouts and value codecs            | nothing else in the monitor      |
-| `src/link/`       | Transports (WebSocket, Bluetooth) and the session         | `protocol`                       |
+| `src/link/`       | Transports, the session and the stream planner            | `protocol`                       |
 | `src/telemetry/`  | Session store, history, decimation and recording format   | types of `protocol`              |
 | `src/tiling/`     | Tiling window engine, no DOM                              | nothing else in the monitor      |
 | `src/robot-kit/`  | Contracts for robot packages (planned)                    | `protocol`                       |

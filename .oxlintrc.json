@@ -262,6 +262,26 @@
       }
     },
     {
+      "files": ["tools/live-robot.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@/(tiling|robot-kit)|@robots|(\\.\\./)+(src/(tiling|robot-kit)|robots))(/|$)",
+                "message": "The live robot's test drives the app's live adapter against the simulated robot, and nothing else of the app."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Tools are Node scripts; no React."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["tools/bench-telemetry.ts"],
       "rules": {
         "no-restricted-imports": [
