@@ -6,9 +6,11 @@ import { safeLocalStorage } from '@/app/layouts/layout-book';
 import { LiveRobot } from '@/app/live/live-robot';
 import type { MonitorPorts } from '@/app/ports';
 import { serviceWorkerUpdates } from '@/app/pwa/app-updates';
-import { browserSessions } from '@/app/sessions/browser-sessions';
+import type { SessionManager } from '@/app/sessions/session-manager';
+import { startStorageWorker } from '@/app/sessions/storage-worker';
 import '@/app/styles.css';
 import type { BluetoothLike } from '@/link';
+import { whenIdle } from '@/lazy/idle';
 import { RobotRegistry } from '@/robot-kit';
 import type { Scheduler, TelemetryStore } from '@/telemetry';
 import { micras } from '@robots/micras';
@@ -60,19 +62,29 @@ const robot: { readonly ports: MonitorPorts; readonly store: TelemetryStore } = 
   ? (await import('@/app/fake/demo-robot')).createDemoRobot()
   : liveRobot(query.get('connect'), memoryCapBytes);
 const { ports } = robot;
-const sessions = browserSessions(robot.store, ports, FRAME_SCHEDULER, viewCapBytes);
+const storageWorker = startStorageWorker();
 const robots = new RobotRegistry([micras]);
 const updates = import.meta.env.PROD ? serviceWorkerUpdates(registerSW) : undefined;
+const reactRoot = createRoot(root);
 
-createRoot(root).render(
-  <StrictMode>
-    <App
-      ports={ports}
-      robots={robots}
-      synthetic={synthetic}
-      layouts={safeLocalStorage() ?? undefined}
-      updates={updates}
-      sessions={sessions}
-    />
-  </StrictMode>
-);
+function render(sessions?: SessionManager): void {
+  reactRoot.render(
+    <StrictMode>
+      <App
+        ports={ports}
+        robots={robots}
+        synthetic={synthetic}
+        layouts={safeLocalStorage() ?? undefined}
+        updates={updates}
+        sessions={sessions}
+      />
+    </StrictMode>
+  );
+}
+
+render();
+whenIdle(() => {
+  void import('@/app/sessions/browser-sessions').then(({ browserSessions }) =>
+    render(browserSessions(robot.store, ports, FRAME_SCHEDULER, storageWorker, viewCapBytes))
+  );
+});

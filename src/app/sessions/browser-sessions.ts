@@ -18,6 +18,7 @@ import {
   type SessionLocks,
 } from './session-library';
 import { recordedSchema, SessionManager, type RobotDescription } from './session-manager';
+import { startStorageWorker } from './storage-worker';
 
 interface NavigatorLike {
   readonly storage?: StorageManagerLike & { readonly getDirectory?: unknown };
@@ -29,22 +30,24 @@ function browserNavigator(): NavigatorLike {
   return typeof value === 'object' && value !== null ? value : {};
 }
 
-function storageWorker(): Worker {
-  return new Worker(new URL('./opfs.worker.ts', import.meta.url), {
-    type: 'module',
-    name: 'micras-monitor-storage',
-  });
-}
-
-function library(): SessionLibrary {
+function library(started: Worker | undefined): SessionLibrary {
   const { storage } = browserNavigator();
 
-  if (typeof Worker === 'undefined' || typeof storage?.getDirectory !== 'function') {
+  if (started === undefined || storage === undefined) {
     return new MemorySessionLibrary();
   }
 
-  const transport = new MessageTransport(storageWorker);
-  void transport.call({ op: 'list' }).catch(() => undefined);
+  let first: Worker | undefined = started;
+  const transport = new MessageTransport(() => {
+    const worker = first ?? startStorageWorker();
+    first = undefined;
+
+    if (worker === undefined) {
+      throw new Error('This browser cannot start the storage worker');
+    }
+
+    return worker;
+  });
   return new OpfsSessionLibrary(transport, storage);
 }
 
@@ -75,17 +78,20 @@ export function describeRobot(ports: MonitorPorts): RobotDescription {
  * @param store The live store.
  * @param ports The live robot's ports.
  * @param scheduler When opened sessions tell their readers about changes.
+ * @param worker The storage worker started with the page, if the browser has a file system for
+ *   sessions; they are kept in memory otherwise.
  * @param viewCapBytes The memory cap of an opened session; a share of the live store's otherwise.
  */
 export function browserSessions(
   store: TelemetryStore,
   ports: MonitorPorts,
   scheduler: Scheduler,
+  worker: Worker | undefined,
   viewCapBytes?: number
 ): SessionManager {
   const manager = new SessionManager({
     store,
-    library: library(),
+    library: library(worker),
     locks: locks(),
     scheduler,
     viewCapBytes,
