@@ -161,6 +161,7 @@ export class FakeDirectory implements OpfsDirectory {
  */
 export class DirectTransport implements HostTransport {
   #host: OpfsHost;
+  generation = 0;
 
   constructor(readonly root: FakeDirectory) {
     this.#host = new OpfsHost(() => Promise.resolve(root));
@@ -181,6 +182,7 @@ export class DirectTransport implements HostTransport {
   /** Lose every open handle without closing it, and start a new host. */
   crash(): void {
     unlockAll(this.root);
+    this.generation++;
     this.#host = new OpfsHost(() => Promise.resolve(this.root));
   }
 }

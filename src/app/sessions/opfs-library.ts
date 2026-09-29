@@ -24,6 +24,12 @@ export type HostCall = HostRequest extends infer Request
 
 /** Carries requests to the host and brings back its answers. */
 export interface HostTransport {
+  /**
+   * Grows each time the host behind the transport starts over, as when its worker died, so that
+   * handles of files opened before can be told stale.
+   */
+  readonly generation: number;
+
   /** Send a request; `transfer` lists buffers to move rather than copy. */
   call(request: HostCall, transfer?: Transferable[]): Promise<HostValue>;
 }
@@ -33,7 +39,12 @@ export interface MessageTarget {
   postMessage(message: unknown, transfer: Transferable[]): void;
   addEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void;
   addEventListener(type: 'error', listener: (event: Event) => void): void;
+  /** Stops the worker; a message port has no such thing. */
+  terminate?(): void;
 }
+
+/** How long a request may go unanswered before the worker is taken for dead: 30 s. */
+export const DEFAULT_CALL_TIMEOUT_MS = 30_000;
 
 function isResponse(value: unknown): value is HostResponse {
   return typeof value === 'object' && value !== null && 'id' in value && 'ok' in value;
@@ -47,36 +58,79 @@ export class StorageError extends Error {
   }
 }
 
-/** A transport over `postMessage`, to a worker or a message port. */
+interface Pending {
+  readonly resolve: (value: HostValue) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * A transport over `postMessage` to a worker it starts. A worker that reports an error, as when
+ * its script cannot load, or leaves a request unanswered past the timeout, as when it hangs or
+ * was killed without a word, is taken for dead: every request waiting on it fails, it is stopped,
+ * and the next request starts a new one.
+ */
 export class MessageTransport implements HostTransport {
-  readonly #target: MessageTarget;
-  readonly #pending = new Map<
-    number,
-    { readonly resolve: (value: HostValue) => void; readonly reject: (error: Error) => void }
-  >();
+  readonly #start: () => MessageTarget;
+  readonly #timeoutMs: number;
+  readonly #pending = new Map<number, Pending>();
+  #target: MessageTarget | undefined;
+  #generation = 0;
   #nextId = 1;
 
-  constructor(target: MessageTarget) {
-    this.#target = target;
-    target.addEventListener('message', (event) => this.#receive(event.data));
-    target.addEventListener('error', () => this.#failAll('The storage worker stopped'));
+  /**
+   * @param start Starts a worker, or gives a port; called again after one is taken for dead.
+   * @param timeoutMs How long a request may go unanswered.
+   */
+  constructor(start: () => MessageTarget, timeoutMs = DEFAULT_CALL_TIMEOUT_MS) {
+    this.#start = start;
+    this.#timeoutMs = timeoutMs;
+  }
+
+  /** {@inheritDoc HostTransport.generation} */
+  get generation(): number {
+    return this.#generation;
   }
 
   call(request: HostCall, transfer: Transferable[] = []): Promise<HostValue> {
+    const target = this.#connect();
     const id = this.#nextId++;
     return new Promise((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
-      this.#target.postMessage({ ...request, id }, transfer);
+      const timer = setTimeout(() => {
+        this.#die(target, 'TimeoutError', `The storage worker did not answer ${request.op}`);
+      }, this.#timeoutMs);
+      this.#pending.set(id, { resolve, reject, timer });
+
+      try {
+        target.postMessage({ ...request, id }, transfer);
+      } catch (error) {
+        this.#settle(id);
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
-  #receive(data: unknown): void {
-    if (!isResponse(data)) {
+  #connect(): MessageTarget {
+    if (this.#target) {
+      return this.#target;
+    }
+
+    const target = this.#start();
+    this.#target = target;
+    target.addEventListener('message', (event) => this.#receive(target, event.data));
+    target.addEventListener('error', () =>
+      this.#die(target, 'AbortError', 'The storage worker stopped')
+    );
+    return target;
+  }
+
+  #receive(target: MessageTarget, data: unknown): void {
+    if (target !== this.#target || !isResponse(data)) {
       return;
     }
 
-    const pending = this.#pending.get(data.id);
-    this.#pending.delete(data.id);
+    const pending = this.#settle(data.id);
 
     if (data.ok) {
       pending?.resolve(data.value);
@@ -85,10 +139,31 @@ export class MessageTransport implements HostTransport {
     }
   }
 
-  #failAll(message: string): void {
+  #settle(id: number): Pending | undefined {
+    const pending = this.#pending.get(id);
+    this.#pending.delete(id);
+
+    if (pending) {
+      clearTimeout(pending.timer);
+    }
+
+    return pending;
+  }
+
+  #die(target: MessageTarget, name: string, message: string): void {
+    if (target !== this.#target) {
+      return;
+    }
+
+    this.#target = undefined;
+    this.#generation++;
+    target.terminate?.();
     const pending = [...this.#pending.values()];
     this.#pending.clear();
-    pending.forEach(({ reject }) => reject(new StorageError('AbortError', message)));
+    pending.forEach(({ reject, timer }) => {
+      clearTimeout(timer);
+      reject(new StorageError(name, message));
+    });
   }
 }
 
@@ -129,31 +204,41 @@ function expectList(value: HostValue): SessionInfo[] {
   return value;
 }
 
-/** A recording file the worker holds open. */
+/**
+ * A recording file the worker holds open. After the worker started over, the next access opens
+ * the file again in the new one, so a recording carries on at the position it had.
+ */
 class WorkerFile implements RecordingFile {
   #closed = false;
+  #handle: number;
+  #generation: number;
 
   constructor(
     private readonly transport: HostTransport,
-    private readonly handle: number
-  ) {}
+    private readonly session: string,
+    handle: number
+  ) {
+    this.#handle = handle;
+    this.#generation = transport.generation;
+  }
 
   async size(): Promise<number> {
-    return expectNumber(await this.transport.call({ op: 'size', handle: this.handle }));
+    return expectNumber(await this.transport.call({ op: 'size', handle: await this.#current() }));
   }
 
   async read(offset: number, length: number): Promise<Uint8Array> {
-    return expectBytes(
-      await this.transport.call({ op: 'read', handle: this.handle, offset, length })
-    );
+    const handle = await this.#current();
+    return expectBytes(await this.transport.call({ op: 'read', handle, offset, length }));
   }
 
   async write(offset: number, bytes: Uint8Array): Promise<void> {
-    await this.transport.call({ op: 'write', handle: this.handle, offset, bytes });
+    const handle = await this.#current();
+    await this.transport.call({ op: 'write', handle, offset, bytes });
   }
 
   async truncate(size: number): Promise<void> {
-    await this.transport.call({ op: 'truncate', handle: this.handle, size });
+    const handle = await this.#current();
+    await this.transport.call({ op: 'truncate', handle, size });
   }
 
   async close(): Promise<void> {
@@ -162,7 +247,24 @@ class WorkerFile implements RecordingFile {
     }
 
     this.#closed = true;
-    await this.transport.call({ op: 'close', handle: this.handle });
+
+    if (this.#generation === this.transport.generation) {
+      await this.transport.call({ op: 'close', handle: this.#handle });
+    }
+  }
+
+  async #current(): Promise<number> {
+    if (this.#closed) {
+      throw new StorageError('InvalidStateError', 'The recording file is closed');
+    }
+
+    if (this.#generation !== this.transport.generation) {
+      const generation = this.transport.generation;
+      this.#handle = expectNumber(await this.transport.call({ op: 'open', session: this.session }));
+      this.#generation = generation;
+    }
+
+    return this.#handle;
   }
 }
 
@@ -208,7 +310,7 @@ export class OpfsSessionLibrary implements SessionLibrary {
 
   async open(id: string): Promise<RecordingFile> {
     const handle = expectNumber(await this.#transport.call({ op: 'open', session: id }));
-    return new WorkerFile(this.#transport, handle);
+    return new WorkerFile(this.#transport, id, handle);
   }
 
   async update(id: string, update: SessionUpdate): Promise<SessionInfo> {

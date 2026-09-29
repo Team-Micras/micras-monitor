@@ -29,6 +29,13 @@ function browserNavigator(): NavigatorLike {
   return typeof value === 'object' && value !== null ? value : {};
 }
 
+function storageWorker(): Worker {
+  return new Worker(new URL('./opfs.worker.ts', import.meta.url), {
+    type: 'module',
+    name: 'micras-monitor-storage',
+  });
+}
+
 function library(): SessionLibrary {
   const { storage } = browserNavigator();
 
@@ -36,11 +43,9 @@ function library(): SessionLibrary {
     return new MemorySessionLibrary();
   }
 
-  const worker = new Worker(new URL('./opfs.worker.ts', import.meta.url), {
-    type: 'module',
-    name: 'micras-monitor-storage',
-  });
-  return new OpfsSessionLibrary(new MessageTransport(worker), storage);
+  const transport = new MessageTransport(storageWorker);
+  void transport.call({ op: 'list' }).catch(() => undefined);
+  return new OpfsSessionLibrary(transport, storage);
 }
 
 function locks(): SessionLocks {

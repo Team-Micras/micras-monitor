@@ -33,7 +33,7 @@ function tab(clock: { ms: number }) {
   });
   const manager = new SessionManager({
     store,
-    library: new OpfsSessionLibrary(new MessageTransport(worker), navigator.storage),
+    library: new OpfsSessionLibrary(new MessageTransport(() => worker), navigator.storage),
     locks: new MemoryLocks(),
     scheduler,
     now: () => clock.ms,

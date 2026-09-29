@@ -2,7 +2,12 @@ import { describe, expect, test } from 'vitest';
 
 import { DirectTransport, FakeDirectory, FakeFile } from './fake-opfs';
 import { isHostRequest, OpfsHost, type HostResponse } from './opfs-host';
-import { MessageTransport, OpfsSessionLibrary, type StorageManagerLike } from './opfs-library';
+import {
+  MessageTransport,
+  OpfsSessionLibrary,
+  type MessageTarget,
+  type StorageManagerLike,
+} from './opfs-library';
 import { sessionId, type SessionInfo } from './session-library';
 
 const NEW_SESSION: Omit<SessionInfo, 'updatedAtMs'> = {
@@ -187,7 +192,7 @@ describe('the message transport', () => {
     });
     channel.port2.start();
     channel.port1.start();
-    const sessions = new OpfsSessionLibrary(new MessageTransport(channel.port1));
+    const sessions = new OpfsSessionLibrary(new MessageTransport(() => channel.port1));
 
     const { info, file } = await sessions.create(NEW_SESSION);
     await file.write(0, new Uint8Array([3, 1, 4]));
@@ -195,5 +200,104 @@ describe('the message transport', () => {
     expect((await sessions.list()).map((session) => session.id)).toEqual([info.id]);
     await expect(sessions.open('missing')).rejects.toMatchObject({ name: 'NotFoundError' });
     channel.port1.close();
+  });
+});
+
+type Listener = ((event: MessageEvent<unknown>) => void) | ((event: Event) => void);
+
+class HostWorker implements MessageTarget {
+  readonly #host: OpfsHost;
+  readonly #listeners: { readonly type: string; readonly listener: Listener }[] = [];
+  silent = false;
+  terminated = false;
+
+  constructor(root: FakeDirectory) {
+    this.#host = new OpfsHost(() => Promise.resolve(root));
+  }
+
+  postMessage(message: unknown): void {
+    if (this.silent || this.terminated || !isHostRequest(message)) {
+      return;
+    }
+
+    void this.#host.handle(structuredClone(message)).then((response) => {
+      if (!this.terminated) {
+        this.#dispatch(new MessageEvent('message', { data: structuredClone(response) }));
+      }
+    });
+  }
+
+  addEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void;
+  addEventListener(type: 'error', listener: (event: Event) => void): void;
+  addEventListener(type: 'message' | 'error', listener: Listener): void {
+    this.#listeners.push({ type, listener });
+  }
+
+  fail(): void {
+    this.#dispatch(new MessageEvent('error'));
+  }
+
+  terminate(): void {
+    this.terminated = true;
+  }
+
+  #dispatch(event: MessageEvent<unknown>): void {
+    for (const { type, listener } of this.#listeners) {
+      if (type === event.type) {
+        listener(event);
+      }
+    }
+  }
+}
+
+function workers(root = new FakeDirectory()) {
+  const started: HostWorker[] = [];
+  const transport = new MessageTransport(() => {
+    const worker = new HostWorker(root);
+    started.push(worker);
+    return worker;
+  }, 200);
+  return { started, sessions: new OpfsSessionLibrary(transport), transport };
+}
+
+describe('the message transport to a worker that dies', () => {
+  test('fails what waits on a worker that reports an error, and starts another', async () => {
+    const { started, sessions } = workers();
+    await sessions.list();
+    started[0].silent = true;
+    const waiting = sessions.list();
+    started[0].fail();
+
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    expect(started[0].terminated).toBe(true);
+    expect(await sessions.list()).toEqual([]);
+    expect(started).toHaveLength(2);
+  });
+
+  test('takes a worker that never answers for dead after the timeout', async () => {
+    const { started, sessions, transport } = workers();
+    await sessions.list();
+    started[0].silent = true;
+
+    await expect(sessions.list()).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(started[0].terminated).toBe(true);
+    expect(transport.generation).toBe(1);
+    expect(await sessions.list()).toEqual([]);
+  });
+
+  test('opens a file again in the new worker, so a recording carries on', async () => {
+    const root = new FakeDirectory();
+    const { started, sessions } = workers(root);
+    const { info, file } = await sessions.create(NEW_SESSION);
+    await file.write(0, new Uint8Array([1, 2]));
+    started[0].silent = true;
+    await expect(file.write(2, new Uint8Array([3]))).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+    recordingOf(root, info.id).locked = false;
+
+    await file.write(2, new Uint8Array([3, 4]));
+    expect(await file.read(0, 4)).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(started).toHaveLength(2);
   });
 });
