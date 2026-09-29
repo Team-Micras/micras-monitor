@@ -100,6 +100,9 @@ export interface RecordingVariable {
 
   /** Its access byte, as the schema carries it. */
   readonly access?: number;
+
+  /** The type tag of a blob, as protocol v2 carries it. */
+  readonly typeTag?: string;
 }
 
 /**
@@ -347,7 +350,8 @@ function isRecordingVariable(value: unknown): value is RecordingVariable {
     typeof value.id === 'number' &&
     typeof value.name === 'string' &&
     typeof value.type === 'number' &&
-    (value.access === undefined || typeof value.access === 'number')
+    (value.access === undefined || typeof value.access === 'number') &&
+    (value.typeTag === undefined || typeof value.typeTag === 'string')
   );
 }
 
@@ -723,6 +727,18 @@ export function serializeRecording(recording: Recording): Uint8Array {
   }
 
   return bytes;
+}
+
+/**
+ * The header of a recording and where the records after it start.
+ *
+ * @throws If the bytes are not a recording, or its version is not 1.
+ */
+export function decodeRecordingHeader(bytes: Uint8Array): {
+  readonly header: RecordingHeader;
+  readonly end: number;
+} {
+  return decodeHeader(bytes);
 }
 
 function decodeHeader(bytes: Uint8Array): { header: RecordingHeader; end: number } {

@@ -35,6 +35,7 @@ export { MemoryRecordingFile, type RecordingFile } from './recording-file';
 export { SavedRecording, type RecordingSummary } from './recording-reader';
 export {
   decodeBlock,
+  decodeRecordingHeader,
   deserializeRecording,
   encodeBlock,
   encodeRecordingHeader,

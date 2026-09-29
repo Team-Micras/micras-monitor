@@ -9,6 +9,7 @@ import {
   type LocatedRecord,
   type RecordingDamage,
   type RecordingHeader,
+  type RecordingVariable,
 } from './recording';
 import type { RecordingFile } from './recording-file';
 import type { TelemetryStore } from './store';
@@ -45,6 +46,12 @@ export interface RecordingSummary {
 
   /** The span of its samples, if it holds any. */
   readonly range: TimeRange | undefined;
+
+  /**
+   * Every variable it holds, by name: the header's schema, and the variables of epochs and values
+   * it does not list, as when recording started before the schema was read.
+   */
+  readonly schema: readonly RecordingVariable[];
 }
 
 interface EpochParts {
@@ -152,6 +159,7 @@ export class SavedRecording {
       samples,
       unplaced,
       range: firstUs <= lastUs ? { startUs: firstUs, endUs: nextUp(lastUs) } : undefined,
+      schema: mergedSchema(scan.header.schema, epochs, values),
     };
     const session: StoredSession = {
       schema: scan.header.schema.map(({ id, name, type }) => ({ id, name, type })),
@@ -179,6 +187,34 @@ export class SavedRecording {
     this.session = undefined;
     return store.load(session, this.blocks);
   }
+}
+
+function mergedSchema(
+  header: readonly RecordingVariable[],
+  epochs: ReadonlyMap<number, EpochParts>,
+  values: readonly RecordedValue[]
+): RecordingVariable[] {
+  const byName = new Map(header.map((variable) => [variable.name, variable]));
+
+  for (const { epoch } of epochs.values()) {
+    for (const { id, name, type } of epoch.variables) {
+      if (!byName.has(name)) {
+        byName.set(name, { id, name, type });
+      }
+    }
+  }
+
+  for (const { variableId, name } of values) {
+    if (!byName.has(name)) {
+      const type = header.find((variable) => variable.id === variableId)?.type;
+
+      if (type !== undefined) {
+        byName.set(name, { id: variableId, name, type });
+      }
+    }
+  }
+
+  return [...byName.values()];
 }
 
 function storedEpoch(parts: EpochParts): StoredEpoch {
