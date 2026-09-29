@@ -88,7 +88,10 @@ export function LayoutsMenu() {
         align="end"
         className="flex w-80 flex-col gap-4 p-3"
         onEscapeKeyDown={(event) => {
-          if (store.getState().layoutsIntent?.kind === 'rename') {
+          const renaming = store.getState().layoutsIntent;
+
+          if (renaming?.kind === 'rename') {
+            wanted.current = renaming.name;
             event.preventDefault();
             store.getState().setLayoutsOpen(true);
           }

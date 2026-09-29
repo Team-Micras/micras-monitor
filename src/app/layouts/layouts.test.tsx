@@ -276,6 +276,7 @@ describe('layout presets', () => {
     await expect
       .element(screen.getByRole('textbox', { name: 'New name for Bench' }))
       .not.toBeInTheDocument();
+    await expect.element(screen.getByRole('button', { name: 'Bench', exact: true })).toHaveFocus();
     await expect.element(screen.getByRole('textbox', { name: 'Layout name' })).toBeVisible();
     expect(store.getState().layoutsOpen).toBe(true);
 

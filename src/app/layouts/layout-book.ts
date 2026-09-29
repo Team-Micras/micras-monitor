@@ -171,6 +171,12 @@ export class LayoutBook {
     }
   }
 
+  /** The variable names kept with the entry of a `signature:` key; none for other keys. */
+  savedNames(key: string): readonly string[] {
+    const raw = this.#read(key);
+    return (raw === null ? null : parse(raw))?.names ?? [];
+  }
+
   /** The key of the robot whose layout was saved last, or null. */
   last(): string | null {
     try {

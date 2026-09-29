@@ -214,22 +214,39 @@ describe('before the first link', () => {
     expect(new LayoutBook(storage).load('name:rover', [])?.presets).toHaveLength(1);
   });
 
-  test('adds the presets made to those the robot already had, and keeps its layout', () => {
+  test('keeps the edits made to the layout shown last when that robot links, and saves them', () => {
     session.follow(subject('name:rover', ['pose/x']));
     store.getState().savePreset('Old');
-    store.getState().savePreset('Shared');
     session.stop();
 
     const { shell, next } = reopened();
+    shell.getState().addWorkspace();
     shell.getState().deletePreset('Old');
     shell.getState().savePreset('Mine');
-    shell.getState().savePreset('Shared');
+    const edited = shell.getState().desktop;
     next.follow(subject('name:rover', ['pose/x']));
-    expect(shell.getState().presets.map((preset) => preset.name)).toEqual([
-      'Old',
-      'Shared',
-      'Mine',
-    ]);
+    expect(shell.getState().desktop).toBe(edited);
+    next.flush();
+    const saved = new LayoutBook(storage).load('name:rover', []);
+    expect(saved?.desktop?.workspaces).toHaveLength(3);
+    expect(saved?.presets.map((preset) => preset.name)).toEqual(['Mine']);
+  });
+
+  test('saves the edits for the last robot when another links, which starts from its own layout', () => {
+    session.follow(subject('name:rover', ['pose/x']));
+    store.getState().savePreset('Rover only');
+    session.stop();
+
+    const { shell, next } = reopened();
+    shell.getState().addWorkspace();
+    shell.getState().savePreset('Made since');
+    next.follow(subject('name:crawler', ['leg/a']));
+    expect(workspaceNames(shell)).toEqual(['Overview', 'Leg']);
+    expect(shell.getState().presets.map((preset) => preset.name)).toEqual(['Made since']);
+
+    const rover = new LayoutBook(storage).load('name:rover', []);
+    expect(rover?.desktop?.workspaces).toHaveLength(3);
+    expect(rover?.presets.map((preset) => preset.name)).toEqual(['Rover only', 'Made since']);
   });
 
   test('does not carry the presets of the last robot to another that links first', () => {
