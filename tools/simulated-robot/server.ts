@@ -59,7 +59,7 @@ export async function startSimulatedRobot(
   let latest: Robot | undefined;
 
   server.on('connection', (socket) => {
-    latest = runRobot(socket, settings, stats);
+    latest = runRobot(overWebSocket(socket), settings, stats);
     socket.on('close', () => {
       latest = undefined;
     });
@@ -79,13 +79,37 @@ export async function startSimulatedRobot(
   };
 }
 
-function runRobot(socket: WebSocket, settings: SimulatedRobotOptions, stats: RobotStats): Robot {
+/** One end of a connection to a monitor, as the robot sees it. */
+export interface RobotConnection {
+  /** Hand bytes to the monitor. */
+  send(bytes: Uint8Array): void;
+
+  /** Be told about the bytes the monitor sends. */
+  onMessage(listener: (bytes: Uint8Array) => void): void;
+
+  /** Be told once the connection closes. */
+  onClose(listener: () => void): void;
+}
+
+/**
+ * Run a robot, fresh from boot, over a connection until it closes.
+ *
+ * @param connection The connection to the monitor.
+ * @param settings The link and its faults.
+ * @param stats Where to count what the robot does.
+ * @returns The robot.
+ */
+export function runRobot(
+  connection: RobotConnection,
+  settings: SimulatedRobotOptions,
+  stats: RobotStats
+): Robot {
   settings.log('application connected');
 
   const wire = new Wire(
     settings,
     stats,
-    (bytes) => socket.send(bytes),
+    (bytes) => connection.send(bytes),
     (bytes) => robot.receive(bytes)
   );
   const robot = new Robot(wire, settings, stats, settings.log);
@@ -101,14 +125,22 @@ function runRobot(socket: WebSocket, settings: SimulatedRobotOptions, stats: Rob
       ? undefined
       : setTimeout(() => robot.reboot(), settings.rebootAfterSeconds * 1000);
 
-  socket.on('message', (data: Buffer) => wire.receive(new Uint8Array(data)));
-  socket.on('close', () => {
+  connection.onMessage((bytes) => wire.receive(bytes));
+  connection.onClose(() => {
     settings.log('application disconnected');
     clearInterval(timer);
     clearTimeout(reboot);
   });
 
   return robot;
+}
+
+function overWebSocket(socket: WebSocket): RobotConnection {
+  return {
+    send: (bytes) => socket.send(bytes),
+    onMessage: (listener) => socket.on('message', (data: Buffer) => listener(new Uint8Array(data))),
+    onClose: (listener) => socket.on('close', listener),
+  };
 }
 
 async function closeServer(server: WebSocketServer): Promise<void> {

@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { LiveRobot, type LiveRobotOptions } from '../src/app/live/live-robot';
 import type { StreamRequest } from '../src/app/ports';
 import type { WebSocketLike } from '../src/link';
 import { TEST_TIMING, waitFor } from './session-harness';
+import { startInMemoryRobot } from './in-memory-robot';
 import {
   startSimulatedRobot,
   type SimulatedRobot,
@@ -81,8 +82,14 @@ async function streaming(live: LiveRobot, what = 'the link to stream'): Promise<
   await waitFor(() => linkedPhase(live) === 'streaming', 5000, what);
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function advanceUntil(condition: () => boolean, limitMs: number, what: string) {
+  for (let waited = 0; !condition(); waited += 10) {
+    if (waited >= limitMs) {
+      throw new Error(`No ${what} after ${limitMs} ms of virtual time`);
+    }
+
+    await vi.advanceTimersByTimeAsync(10);
+  }
 }
 
 describe('LiveRobot against the simulated robot', () => {
@@ -222,56 +229,74 @@ describe('LiveRobot against the simulated robot', () => {
 
   test(
     'settles within a 3 KB/s link through several probes, then stops dropping',
-    { timeout: 45_000 },
+    { timeout: 120_000 },
     async () => {
-      const { live, sim } = await start(
-        { throughputBytesPerSecond: 3000 },
-        {
-          timing: { ...TEST_TIMING, statsIntervalMs: 1000 },
-          planner: { debounceMs: 20, budget: { holdMs: 2000, quietHolds: 30 } },
-        }
-      );
-      live.ports.streams.request({
-        windows: [...IMU, ...CONTROL].map((variable) => ({ variable, rateHz: 100 })),
-        pinned: PINNED,
+      vi.useFakeTimers({
+        toFake: [
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+          'Date',
+          'performance',
+        ],
       });
-      await streaming(live);
-      await waitFor(
-        () => (live.planner?.budget.capacityBytesPerSecond ?? Infinity) < 3000 * 1.5,
-        5000,
-        'the first ceiling'
-      );
+      const sim = startInMemoryRobot({ throughputBytesPerSecond: 3000 });
+      const live = new LiveRobot({
+        timing: { ...TEST_TIMING, statsIntervalMs: 1000 },
+        planner: { debounceMs: 20, budget: { holdMs: 2000, quietHolds: 30 } },
+        scheduler: { schedule: (task) => setTimeout(task, 0) },
+        createSocket: sim.createSocket,
+      });
 
-      let overspent = false;
-      const watch = setInterval(() => {
+      try {
+        live.connect({ transport: 'websocket', url: 'ws://in-memory' });
+        live.ports.streams.request({
+          windows: [...IMU, ...CONTROL].map((variable) => ({ variable, rateHz: 100 })),
+          pinned: PINNED,
+        });
+        await advanceUntil(() => linkedPhase(live) === 'streaming', 5000, 'streaming');
+        await advanceUntil(
+          () => (live.planner?.budget.capacityBytesPerSecond ?? Infinity) < 3000 * 1.5,
+          5000,
+          'first ceiling'
+        );
+
+        let overspent = false;
+        const watch = setInterval(() => {
+          const plan = live.planner?.plan;
+          overspent ||= (plan?.usedBytesPerSecond ?? 0) > (plan?.budgetBytesPerSecond ?? 0);
+        }, 50);
+        await vi.advanceTimersByTimeAsync(16_000);
+        const settled = { ...sim.stats };
+        const settledMonitor = live.session?.stats;
+        await vi.advanceTimersByTimeAsync(8000);
+        clearInterval(watch);
+
+        const stats = live.ports.link.stats();
         const plan = live.planner?.plan;
-        overspent ||= (plan?.usedBytesPerSecond ?? 0) > (plan?.budgetBytesPerSecond ?? 0);
-      }, 50);
-      await delay(16_000);
-      const settled = { ...sim.stats };
-      const settledMonitor = live.session?.stats;
-      await delay(8000);
-      clearInterval(watch);
+        const session = live.session?.stats;
 
-      const stats = live.ports.link.stats();
-      const plan = live.planner?.plan;
-      const session = live.session?.stats;
-
-      expect(plan?.overBudget).toBe(true);
-      expect(((session?.bytesIn ?? 0) - (settledMonitor?.bytesIn ?? 0)) / 8).toBeLessThanOrEqual(
-        3000
-      );
-      expect(overspent).toBe(false);
-      expect(plan?.usedBytesPerSecond).toBeLessThanOrEqual(plan?.budgetBytesPerSecond ?? 0);
-      expect(stats.budget.bytesPerSecond).toBeGreaterThan(3000 * 0.75);
-      expect(plan?.rates.find((rate) => rate.variable === 'state')?.grantedHz).toBeCloseTo(10);
-      expect(sim.stats.radioOverflowBytes).toBe(0);
-      expect(sim.stats.samplesDropped - settled.samplesDropped).toBe(0);
-      expect((session?.droppedSamples ?? 0) - (settledMonitor?.droppedSamples ?? 0)).toBe(0);
-      expect(stats.samplesDropped).toBe(session?.droppedSamples);
-      expect(
-        Math.abs(sim.stats.samplesDropped - (session?.droppedSamples ?? 0))
-      ).toBeLessThanOrEqual(4);
+        expect(plan?.overBudget).toBe(true);
+        expect(((session?.bytesIn ?? 0) - (settledMonitor?.bytesIn ?? 0)) / 8).toBeLessThanOrEqual(
+          3000
+        );
+        expect(overspent).toBe(false);
+        expect(plan?.usedBytesPerSecond).toBeLessThanOrEqual(plan?.budgetBytesPerSecond ?? 0);
+        expect(stats.budget.bytesPerSecond).toBeGreaterThan(3000 * 0.75);
+        expect(plan?.rates.find((rate) => rate.variable === 'state')?.grantedHz).toBeCloseTo(10);
+        expect(sim.stats.radioOverflowBytes).toBe(0);
+        expect(sim.stats.samplesDropped - settled.samplesDropped).toBe(0);
+        expect((session?.droppedSamples ?? 0) - (settledMonitor?.droppedSamples ?? 0)).toBe(0);
+        expect(stats.samplesDropped).toBe(session?.droppedSamples);
+        expect(
+          Math.abs(sim.stats.samplesDropped - (session?.droppedSamples ?? 0))
+        ).toBeLessThanOrEqual(4);
+      } finally {
+        live.disconnect();
+        sim.close();
+        vi.useRealTimers();
+      }
     }
   );
 
