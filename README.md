@@ -57,11 +57,11 @@ and light. It needs a run that stays up after the search, such as `explore_link`
 nobody edits meanwhile (Vite reloads the page). Also a manual check, not CI.
 
 `bun tools/check-recording.ts --robot ws://localhost:8080 [--minutes 30] [--kill-at 15]
-[--memory-cap-mb <n>] [--view-cap-mb <n>] [--screens <dir>]` records a long session of the simulated robot through the
-app, kills the browser with SIGKILL at `--kill-at` minutes, reopens it on the same profile and
-checks that the recording is recovered with at most the last 5 s lost, then opens it, shows the
-whole history and scrolls through it while a second recording runs to `--minutes`. It prints the
-size, samples, recovered range and timings. A manual check, not CI.
+[--memory-cap-mb <n>] [--view-cap-mb <n>] [--screens <dir>]` records a long session of the
+simulated robot through the app, kills the browser with SIGKILL at `--kill-at` minutes, reopens it
+on the same profile and checks that the recording is recovered with at most the last 5 s lost,
+then opens it, shows the whole history and scrolls through it while a second recording runs to
+`--minutes`. It prints the size, samples, recovered range and timings. A manual check, not CI.
 
 ## Sessions and recording
 
