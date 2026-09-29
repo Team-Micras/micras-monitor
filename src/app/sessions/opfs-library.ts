@@ -212,6 +212,7 @@ class WorkerFile implements RecordingFile {
   #closed = false;
   #handle: number;
   #generation: number;
+  #reopening: Promise<void> | undefined;
 
   constructor(
     private readonly transport: HostTransport,
@@ -259,12 +260,19 @@ class WorkerFile implements RecordingFile {
     }
 
     if (this.#generation !== this.transport.generation) {
-      const generation = this.transport.generation;
-      this.#handle = expectNumber(await this.transport.call({ op: 'open', session: this.session }));
-      this.#generation = generation;
+      this.#reopening ??= this.#reopen().finally(() => {
+        this.#reopening = undefined;
+      });
+      await this.#reopening;
     }
 
     return this.#handle;
+  }
+
+  async #reopen(): Promise<void> {
+    const generation = this.transport.generation;
+    this.#handle = expectNumber(await this.transport.call({ op: 'open', session: this.session }));
+    this.#generation = generation;
   }
 }
 

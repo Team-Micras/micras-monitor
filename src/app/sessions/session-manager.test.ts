@@ -429,6 +429,47 @@ describe('recovering after the tab died', () => {
     expect(other.manager.state.sessions[0].state).toBe('recording');
   });
 
+  test('lets one of two tabs starting together recover a session, the other skipping it quietly', async () => {
+    const source = new MemorySessionLibrary(() => 5);
+    const saver = rig(source);
+    await saver.manager.start();
+    await saver.manager.startRecording();
+    await saver.stream(3);
+    const { id } = recordingState(saver.manager.state).session;
+    const dead = new MemorySessionLibrary(() => 5);
+    const [info] = await source.list();
+    dead.seed(info, source.contents(id));
+
+    const open = dead.open.bind(dead);
+    let openings = 0;
+    const release = { open: () => undefined as void };
+    const gate = new Promise<void>((resolve) => {
+      release.open = resolve;
+    });
+    dead.open = async (session) => {
+      openings++;
+      await gate;
+      return open(session);
+    };
+    const locks = new MemoryLocks();
+    const first = rig(dead, locks);
+    const second = rig(dead, locks);
+    const starting = first.manager.start();
+    await settle();
+    await second.manager.start();
+
+    expect(second.manager.state.error).toBeNull();
+    expect(second.manager.state.recovered).toEqual([]);
+    release.open();
+    await starting;
+
+    expect(openings).toBe(1);
+    expect(first.manager.state.error).toBeNull();
+    expect(first.manager.state.recovered).toHaveLength(1);
+    await second.manager.refresh();
+    expect(second.manager.state.sessions[0].state).toBe('saved');
+  });
+
   test('drops a session whose tab died before its header was written', async () => {
     const library = new MemorySessionLibrary();
     library.seed(

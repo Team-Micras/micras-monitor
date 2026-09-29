@@ -299,15 +299,18 @@ export class SessionManager {
 
   /**
    * List the saved sessions, recovering first each recording cut short: one left `recording`
-   * whose lock no tab holds. Its damaged tail is cut from the file and reported.
+   * whose lock no tab holds. The lock is kept while it is recovered, so that no other tab recovers
+   * it too. Its damaged tail is cut from the file and reported.
    */
   async start(): Promise<void> {
     try {
       const sessions = await this.#options.library.list();
       const unfinished = sessions.filter((session) => session.state === 'recording');
       const results = await Promise.allSettled(
-        unfinished.map(async (session) =>
-          (await this.#options.locks.held(session.id)) ? null : this.#recover(session)
+        unfinished.map(
+          async (session) =>
+            (await this.#options.locks.runIfFree(session.id, () => this.#recover(session)))
+              ?.value ?? null
         )
       );
       const recovered = results.flatMap((result) =>

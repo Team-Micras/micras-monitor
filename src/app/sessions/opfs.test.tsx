@@ -165,4 +165,19 @@ describe('sessions in the Origin Private File System of Chromium', () => {
     await until(() => true);
     expect(await locks.held('session-a')).toBe(false);
   });
+
+  test('holds a session lock for the whole task, and skips a session another tab holds', async () => {
+    const locks = new WebLocks(navigator.locks);
+    let inside = false;
+    const ran = await locks.runIfFree('session-c', async () => {
+      inside = await locks.held('session-c');
+      return Promise.resolve('done');
+    });
+
+    expect(ran).toEqual({ value: 'done' });
+    expect(inside).toBe(true);
+    const release = await locks.hold('session-d');
+    expect(await locks.runIfFree('session-d', () => Promise.resolve(1))).toBeNull();
+    release();
+  });
 });

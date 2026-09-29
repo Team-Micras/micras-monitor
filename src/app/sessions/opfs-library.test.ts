@@ -160,6 +160,19 @@ describe('the OPFS session library', () => {
     expect(await again.read(0, 2)).toEqual(new Uint8Array([1, 2]));
   });
 
+  test('opens a recording once when several accesses find the worker restarted', async () => {
+    const { transport, library: sessions } = library();
+    const { info, file } = await sessions.create(NEW_SESSION);
+    await file.write(0, new Uint8Array([1, 2, 3]));
+    transport.crash();
+
+    const [size, bytes] = await Promise.all([file.size(), file.read(0, 2)]);
+    expect(size).toBe(3);
+    expect(bytes).toEqual(new Uint8Array([1, 2]));
+    await file.close();
+    await expect(sessions.remove(info.id)).resolves.toBeUndefined();
+  });
+
   test('tells the quota and asks for persistence through the storage manager', async () => {
     let persisted = false;
     const storage: StorageManagerLike = {

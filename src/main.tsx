@@ -6,11 +6,12 @@ import { safeLocalStorage } from '@/app/layouts/layout-book';
 import { LiveRobot } from '@/app/live/live-robot';
 import type { MonitorPorts } from '@/app/ports';
 import { serviceWorkerUpdates } from '@/app/pwa/app-updates';
+import { PRELOAD_ERROR_EVENT } from '@/app/shell/update-notice';
 import type { SessionManager } from '@/app/sessions/session-manager';
 import { startStorageWorker } from '@/app/sessions/storage-worker';
 import '@/app/styles.css';
 import type { BluetoothLike } from '@/link';
-import { whenIdle } from '@/lazy/idle';
+import { importWhenIdle } from '@/lazy/idle';
 import { RobotRegistry } from '@/robot-kit';
 import type { Scheduler, TelemetryStore } from '@/telemetry';
 import { micras } from '@robots/micras';
@@ -83,8 +84,9 @@ function render(sessions?: SessionManager): void {
 }
 
 render();
-whenIdle(() => {
-  void import('@/app/sessions/browser-sessions').then(({ browserSessions }) =>
-    render(browserSessions(robot.store, ports, FRAME_SCHEDULER, storageWorker, viewCapBytes))
-  );
-});
+importWhenIdle(
+  () => import('@/app/sessions/browser-sessions'),
+  ({ browserSessions }) =>
+    render(browserSessions(robot.store, ports, FRAME_SCHEDULER, storageWorker, viewCapBytes)),
+  () => window.dispatchEvent(new Event(PRELOAD_ERROR_EVENT))
+);

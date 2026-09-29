@@ -113,6 +113,13 @@ export interface SessionLocks {
 
   /** Whether any tab holds a session's lock. */
   held(id: string): Promise<boolean>;
+
+  /**
+   * Run a task holding a session's lock, unless a tab already holds it.
+   *
+   * @returns What the task gave, or null when another tab held the lock and the task did not run.
+   */
+  runIfFree<T>(id: string, task: () => Promise<T>): Promise<{ readonly value: T } | null>;
 }
 
 /** Locks for one tab alone, for tests and for browsers without Web Locks. */
@@ -128,6 +135,21 @@ export class MemoryLocks implements SessionLocks {
   /** {@inheritDoc SessionLocks.held} */
   held(id: string): Promise<boolean> {
     return Promise.resolve(this.#held.has(id));
+  }
+
+  /** {@inheritDoc SessionLocks.runIfFree} */
+  async runIfFree<T>(id: string, task: () => Promise<T>): Promise<{ readonly value: T } | null> {
+    if (this.#held.has(id)) {
+      return null;
+    }
+
+    this.#held.add(id);
+
+    try {
+      return { value: await task() };
+    } finally {
+      this.#held.delete(id);
+    }
   }
 }
 
@@ -173,6 +195,15 @@ export class WebLocks implements SessionLocks {
   held(id: string): Promise<boolean> {
     return this.#locks.request(LOCK_PREFIX + id, { mode: 'exclusive', ifAvailable: true }, (lock) =>
       Promise.resolve(lock === null)
+    );
+  }
+
+  /** {@inheritDoc SessionLocks.runIfFree} */
+  runIfFree<T>(id: string, task: () => Promise<T>): Promise<{ readonly value: T } | null> {
+    return this.#locks.request(
+      LOCK_PREFIX + id,
+      { mode: 'exclusive', ifAvailable: true },
+      async (lock) => (lock === null ? null : { value: await task() })
     );
   }
 }
