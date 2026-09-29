@@ -54,6 +54,7 @@ export function CommandsWindow(_props: WindowViewProps) {
   const [confirming, setConfirming] = useState<CommandSpec | null>(null);
   const [asking, setAsking] = useState(false);
   const askedOnce = useEver(asking);
+  const [asks, setAsks] = useState(0);
   const stop = useStopAction();
 
   const linked = status.kind === 'linked';
@@ -90,11 +91,18 @@ export function CommandsWindow(_props: WindowViewProps) {
     setAnswers((count) => count + 1);
   };
 
+  const confirmFailed = () => {
+    setAsking(false);
+    setAnswer({ tone: 'failed', title: "Couldn't open the confirmation — reload", detail: null });
+    setAnswers((count) => count + 1);
+  };
+
   const press = (command: CommandSpec) => {
     if (command.confirm === undefined) {
       void send(command);
     } else {
       setConfirming(command);
+      setAsks((count) => count + 1);
       setAsking(true);
     }
   };
@@ -133,7 +141,7 @@ export function CommandsWindow(_props: WindowViewProps) {
         </button>
       )}
       {askedOnce ? (
-        <LazyPart fallback={null} resetKey={asking}>
+        <LazyPart fallback={null} resetKey={asks} onError={confirmFailed}>
           <LazyCommandConfirm
             open={asking}
             command={confirming}

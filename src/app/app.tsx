@@ -72,6 +72,17 @@ export function App({ ports, robots, synthetic = false, store: given, layouts }:
   );
 }
 
+function DrawerFailed() {
+  return (
+    <div
+      role="alert"
+      className="absolute inset-y-0 left-0 z-30 flex w-72 items-center justify-center border-r bg-popover p-4 text-center text-sm text-muted-foreground"
+    >
+      Couldn&apos;t load the variables — close and open the drawer to try again
+    </div>
+  );
+}
+
 function focusWindowElement(store: ShellStore): void {
   const id = focusedWindow(activeWorkspace(store.getState().desktop));
   const element = id === null ? null : document.querySelector(`[data-window="${CSS.escape(id)}"]`);
@@ -177,7 +188,7 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
         <main className="relative min-h-0 flex-1">
           <TilingView />
           {drawerOpen ? (
-            <LazyPart fallback={null} resetKey={drawerOpen}>
+            <LazyPart fallback={<DrawerFailed />} resetKey={drawerOpen} retryOnMount>
               <LazyVariableDrawer />
             </LazyPart>
           ) : null}

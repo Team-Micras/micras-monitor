@@ -6,7 +6,7 @@ import {
   PlayIcon,
   XIcon,
 } from 'lucide-react';
-import { Suspense, type PointerEvent as ReactPointerEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import type { DesktopWindow, Rect } from '@/tiling';
 
@@ -238,9 +238,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
       </header>
       <div className="min-h-0 flex-1">
         <WindowErrorBoundary>
-          <Suspense fallback={null}>
-            <View window={window} paused={paused} visible={visible} />
-          </Suspense>
+          <View window={window} paused={paused} visible={visible} />
         </WindowErrorBoundary>
       </div>
       {floating ? (

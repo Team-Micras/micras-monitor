@@ -7,38 +7,46 @@ interface LazyPartProps {
   readonly fallback: ReactNode;
   /** A change of this value tries a failed load again. */
   readonly resetKey?: unknown;
+  /** Whether a failed load is tried again as soon as this part mounts, such as an opened overlay. */
+  readonly retryOnMount?: boolean;
+  /** Called when the code fails to load. */
+  readonly onError?: () => void;
   readonly children: ReactNode;
 }
 
 interface LoadGuardState {
   readonly failed: boolean;
-  readonly key: unknown;
 }
 
 class LoadGuard extends Component<LazyPartProps, LoadGuardState> {
-  override state: LoadGuardState = { failed: false, key: this.props.resetKey };
+  override state: LoadGuardState = { failed: false };
 
-  static getDerivedStateFromProps(
-    props: LazyPartProps,
-    state: LoadGuardState
-  ): Partial<LoadGuardState> | null {
-    if (props.resetKey === state.key) {
-      return null;
-    }
+  constructor(props: LazyPartProps) {
+    super(props);
 
-    if (state.failed) {
+    if (props.retryOnMount === true) {
       retryFailedLoads();
     }
-
-    return { failed: false, key: props.resetKey };
   }
 
-  static getDerivedStateFromError(): Partial<LoadGuardState> {
+  static getDerivedStateFromError(): LoadGuardState {
     return { failed: true };
   }
 
   override componentDidCatch(error: unknown): void {
     console.error('A part of the shell failed to load', error);
+    this.props.onError?.();
+  }
+
+  override componentDidUpdate(previous: LazyPartProps): void {
+    if (this.state.failed && previous.resetKey !== this.props.resetKey) {
+      retryFailedLoads();
+      this.recover();
+    }
+  }
+
+  private recover(): void {
+    this.setState({ failed: false });
   }
 
   override render(): ReactNode {
@@ -50,9 +58,14 @@ class LoadGuard extends Component<LazyPartProps, LoadGuardState> {
  * Shows a part of the shell whose code loads on demand. While it loads, or if it fails, the
  * fallback stays in its place, so a chunk that does not arrive never takes the app down.
  */
-export function LazyPart({ fallback, resetKey, children }: LazyPartProps) {
+export function LazyPart({ fallback, resetKey, retryOnMount, onError, children }: LazyPartProps) {
   return (
-    <LoadGuard fallback={fallback} resetKey={resetKey}>
+    <LoadGuard
+      fallback={fallback}
+      resetKey={resetKey}
+      retryOnMount={retryOnMount}
+      onError={onError}
+    >
       <Suspense fallback={fallback}>{children}</Suspense>
     </LoadGuard>
   );

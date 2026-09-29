@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react';
 
 import { retryFailedLoads } from '@/lazy/lazy-with-retry';
 
@@ -14,6 +14,11 @@ interface WindowErrorBoundaryState {
   readonly again: boolean;
 }
 
+function Loaded({ onLoaded }: { readonly onLoaded: () => void }) {
+  useEffect(onLoaded, [onLoaded]);
+  return null;
+}
+
 /**
  * Keeps a window whose code failed to load, or whose view threw, from taking the app down: the
  * window says so and offers a retry, which imports the code again, while the frame, the other
@@ -25,6 +30,10 @@ export class WindowErrorBoundary extends Component<
 > {
   override state: WindowErrorBoundaryState = { failed: false, again: false };
   private retried = false;
+
+  private readonly loaded = () => {
+    this.retried = false;
+  };
 
   static getDerivedStateFromError(): Partial<WindowErrorBoundaryState> {
     return { failed: true };
@@ -46,7 +55,12 @@ export class WindowErrorBoundary extends Component<
 
   override render(): ReactNode {
     if (!this.state.failed) {
-      return this.props.children;
+      return (
+        <Suspense fallback={null}>
+          {this.props.children}
+          <Loaded onLoaded={this.loaded} />
+        </Suspense>
+      );
     }
 
     return (

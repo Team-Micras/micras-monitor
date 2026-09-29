@@ -6,7 +6,7 @@ import { Button } from '../components/ui/button';
 export const PRELOAD_ERROR_EVENT = 'vite:preloadError';
 
 /**
- * The notice that a newer version of the app is available, shown when a chunk fails to load
+ * The notice that part of the app could not load, shown when a chunk fails to load
  * because the build it belongs to is gone from the server.
  */
 export function UpdateNotice() {
@@ -24,10 +24,10 @@ export function UpdateNotice() {
 
   return (
     <output
-      aria-label="Update available"
+      aria-label="Part of the app failed to load"
       className="fixed right-4 bottom-14 z-50 flex items-center gap-3 rounded-xl border bg-popover py-1.5 pr-1.5 pl-4 text-sm text-popover-foreground shadow-md"
     >
-      <span>A newer version is available</span>
+      <span>Couldn&apos;t load part of the app</span>
       <Button variant="outline" size="sm" onClick={() => location.reload()}>
         Reload
       </Button>

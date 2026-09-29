@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
@@ -23,7 +23,9 @@ async function show(
   return { store, screen };
 }
 
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('the notice of a deleted layout', () => {
   test('goes away after its time', async () => {
@@ -34,20 +36,23 @@ describe('the notice of a deleted layout', () => {
   });
 
   test('stays while the pointer is on it, and counts again once it leaves', async () => {
+    vi.useFakeTimers();
     const { store, screen } = await show();
     await userEvent.hover(screen.getByRole('button', { name: 'Undo' }));
-    await wait(DURATION_MS + 500);
+    await vi.advanceTimersByTimeAsync(DURATION_MS + 500);
     expect(store.getState().deletedPreset).not.toBeNull();
 
     await userEvent.unhover(screen.getByRole('button', { name: 'Undo' }));
-    await expect.poll(() => store.getState().deletedPreset, { timeout: 5000 }).toBeNull();
+    await vi.advanceTimersByTimeAsync(DURATION_MS + 500);
+    expect(store.getState().deletedPreset).toBeNull();
   });
 
   test('stays while it has the focus', async () => {
+    vi.useFakeTimers();
     const { store, screen } = await show();
     await userEvent.tab();
     await expect.element(screen.getByRole('button', { name: 'Undo' })).toHaveFocus();
-    await wait(DURATION_MS + 500);
+    await vi.advanceTimersByTimeAsync(DURATION_MS + 500);
     expect(store.getState().deletedPreset).not.toBeNull();
   });
 
