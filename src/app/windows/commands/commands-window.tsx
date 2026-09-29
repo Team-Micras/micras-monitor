@@ -1,0 +1,242 @@
+import {
+  CircleAlertIcon,
+  CircleCheckIcon,
+  CircleXIcon,
+  LoaderCircleIcon,
+  XIcon,
+} from 'lucide-react';
+import { createElement, useState } from 'react';
+
+import { emergencyCommand, roleVariable, type CommandSpec } from '@/robot-kit';
+
+import { Button } from '../../components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { cn } from '../../lib/utils';
+import {
+  useConnectionStatus,
+  useLiveValue,
+  useMonitor,
+  useRobotPackage,
+} from '../../monitor-context';
+import type { CommandOutcome } from '../../ports';
+import { usePresentedVariables } from '../shared/presented-variables';
+import type { WindowViewProps } from '../types';
+import { commandIcon } from './command-icons';
+import {
+  commandAvailability,
+  outcomeMessage,
+  type CommandAvailability,
+  type OutcomeMessage,
+} from './command-state';
+
+const TONE_ICONS = { ok: CircleCheckIcon, refused: CircleAlertIcon, failed: CircleXIcon } as const;
+
+/**
+ * The robot package's commands as buttons, with the emergency stop drawn big. A dangerous
+ * command asks first; a button says when the robot's state is not one its table accepts it in,
+ * and the robot's answer, a refusal with its reason included, shows below.
+ */
+export function CommandsWindow(_props: WindowViewProps) {
+  const { commands } = useMonitor().ports;
+  const pkg = useRobotPackage()?.package ?? null;
+  const status = useConnectionStatus();
+  const stateName = roleVariable(pkg, 'state');
+  const [state] = usePresentedVariables(stateName === null ? [] : [stateName]);
+  const stateValue = useLiveValue(stateName)?.value;
+  const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
+  const [answer, setAnswer] = useState<OutcomeMessage | null>(null);
+  const [confirming, setConfirming] = useState<CommandSpec | null>(null);
+
+  const linked = status.kind === 'linked';
+
+  if (pkg === null) {
+    return (
+      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+        {linked
+          ? 'No robot package gives the commands of this robot'
+          : 'Connect to a robot to send its commands'}
+      </div>
+    );
+  }
+
+  const underWay = status.kind !== 'disconnected' && status.kind !== 'failed';
+  const labels = state?.presentation?.labels?.kind === 'enum' ? state.presentation.labels : null;
+  const emergency = emergencyCommand(pkg);
+  const buttons = pkg.commands.filter((command) => command !== emergency);
+
+  const send = async (command: CommandSpec) => {
+    setInFlight((current) => new Set(current).add(command.code));
+    const outcome: CommandOutcome = await commands
+      .send(command.code, command.argument?.default)
+      .catch((error: unknown) => ({
+        status: 'failed' as const,
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    setInFlight((current) => {
+      const next = new Set(current);
+      next.delete(command.code);
+      return next;
+    });
+    setAnswer(outcomeMessage(command, outcome, pkg, labels));
+  };
+
+  const press = (command: CommandSpec) => {
+    if (command.confirm === undefined) {
+      void send(command);
+    } else {
+      setConfirming(command);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col gap-4 overflow-auto px-5 pt-1 pb-5">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
+        {buttons.map((command) => (
+          <CommandButton
+            key={command.code}
+            command={command}
+            availability={commandAvailability(command, {
+              linked,
+              state: typeof stateValue === 'number' ? stateValue : null,
+              stateLabels: labels,
+              inFlight: inFlight.has(command.code),
+            })}
+            waiting={inFlight.has(command.code)}
+            onPress={() => press(command)}
+          />
+        ))}
+      </div>
+      {answer === null ? null : <Answer message={answer} onDismiss={() => setAnswer(null)} />}
+      {emergency === null ? null : (
+        <button
+          type="button"
+          disabled={!underWay || inFlight.has(emergency.code)}
+          title={emergency.description}
+          onClick={() => void send(emergency)}
+          className="mt-auto flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-destructive/85 text-base font-semibold text-white shadow-sm transition-colors hover:bg-destructive focus-visible:ring-[3px] focus-visible:ring-destructive/40 focus-visible:outline-none disabled:opacity-45"
+        >
+          <CircleXIcon className="size-5" aria-hidden />
+          {emergency.label}
+        </button>
+      )}
+      <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{confirming?.label}</DialogTitle>
+            <DialogDescription>{confirming?.confirm}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirming(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (confirming !== null) {
+                  void send(confirming);
+                }
+
+                setConfirming(null);
+              }}
+            >
+              {confirming?.label}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CommandButton({
+  command,
+  availability,
+  waiting,
+  onPress,
+}: {
+  readonly command: CommandSpec;
+  readonly availability: CommandAvailability;
+  readonly waiting: boolean;
+  readonly onPress: () => void;
+}) {
+  const button = (
+    <Button
+      variant="outline"
+      data-command={command.name}
+      data-hint={availability.hint}
+      disabled={!availability.enabled}
+      className={cn(
+        'h-10 justify-start',
+        availability.hint === 'not-accepted' && 'text-muted-foreground'
+      )}
+      onClick={onPress}
+    >
+      {waiting ? (
+        <LoaderCircleIcon className="animate-spin" aria-hidden />
+      ) : (
+        createElement(commandIcon(command.icon), { 'aria-hidden': true })
+      )}
+      {command.label}
+    </Button>
+  );
+
+  if (availability.reason === null && command.description === undefined) {
+    return button;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="grid">{button}</span>
+      </TooltipTrigger>
+      <TooltipContent>{availability.reason ?? command.description}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function Answer({
+  message,
+  onDismiss,
+}: {
+  readonly message: OutcomeMessage;
+  readonly onDismiss: () => void;
+}) {
+  const Icon = TONE_ICONS[message.tone];
+
+  return (
+    <div
+      role={message.tone === 'ok' ? 'status' : 'alert'}
+      data-tone={message.tone}
+      className={cn(
+        'relative flex gap-3 rounded-lg border px-4 py-3 text-sm',
+        message.tone === 'ok' ? 'text-foreground' : 'border-destructive/40 text-destructive'
+      )}
+    >
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <div className="flex flex-col gap-0.5 pr-6">
+        <span className="font-medium">{message.title}</span>
+        {message.detail === null ? null : (
+          <span className={cn(message.tone === 'ok' && 'text-muted-foreground')}>
+            {message.detail}
+          </span>
+        )}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label="Dismiss"
+        className="absolute top-2 right-2"
+        onClick={onDismiss}
+      >
+        <XIcon />
+      </Button>
+    </div>
+  );
+}

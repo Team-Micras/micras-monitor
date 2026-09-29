@@ -20,11 +20,16 @@ const WINDOWS: readonly ShellWindow[] = [
   win('robot', 'robot', ['state', 'battery_voltage']),
   win('commands', 'commands'),
   win('angular', 'plot', ['pose/angular_speed', 'reference/angular_speed'], 'Angular speed'),
-  win('errors', 'plot', ['control/orientation_error'], 'Errors'),
+  win(
+    'errors',
+    'plot',
+    ['control/along_error', 'control/across_error', 'control/orientation_error'],
+    'Errors'
+  ),
   win('walls', 'plot', ['wall/0', 'wall/1', 'wall/2', 'wall/3'], 'Walls'),
   win('imu', 'readouts', ['imu/gyro_z', 'imu/accel_x', 'imu/accel_y'], 'IMU'),
   win('maze-run', 'type-view', ['maze'], 'Maze'),
-  win('run-robot', 'robot', ['state', 'battery_voltage']),
+  win('run-profile', 'editor', ['run_profile'], 'Run profile'),
   win('log', 'log'),
 ];
 
@@ -41,11 +46,11 @@ export function defaultDesktop(): Desktop<WindowPayload> {
           split('row', 0.6, leaf('robot'), leaf('commands'))
         )
       ),
-      createWorkspace('Tracking', split('column', 0.6, leaf('angular'), leaf('errors'))),
-      createWorkspace('Sensors', split('row', 0.6, leaf('walls'), leaf('imu'))),
+      createWorkspace('Tracking', split('column', 0.5, leaf('angular'), leaf('errors'))),
+      createWorkspace('Sensors', split('row', 0.64, leaf('walls'), leaf('imu'))),
       createWorkspace(
         'Maze run',
-        split('row', 0.62, leaf('maze-run'), split('column', 0.5, leaf('run-robot'), leaf('log')))
+        split('row', 0.6, leaf('maze-run'), split('column', 0.5, leaf('run-profile'), leaf('log')))
       ),
     ],
     WINDOWS

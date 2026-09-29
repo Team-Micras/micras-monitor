@@ -1,7 +1,7 @@
 /**
- * The window kinds of the app: for each kind, its title, icon and the component that draws it.
- * The generic windows arrive in slice 5; until then every kind draws a placeholder that lists
- * the window's variables with their latest values, and the kinds that take variables say so.
+ * The window kinds of the app: for each kind, its title, icon, the component that draws it and
+ * what it asks the link to stream. A kind from an old layout that this build does not know
+ * draws as a placeholder listing the window's variables.
  *
  * @module
  */
@@ -21,7 +21,15 @@ import type { ComponentType } from 'react';
 
 import { DEFAULT_STREAM_RATE_HZ, type StreamDemand } from '../ports/streams';
 
-import { PlaceholderWindow, ViewPlaceholder } from './placeholder-window';
+import { CommandsWindow } from './commands/commands-window';
+import { EditorWindow } from './editor/editor-window';
+import { LinkWindow } from './link/link-window';
+import { LogWindow } from './log/log-window';
+import { ViewPlaceholder } from './placeholder-window';
+import { PlotWindow } from './plot/plot-window';
+import { ReadoutsWindow } from './readouts/readouts-window';
+import { RobotWindow } from './robot/robot-window';
+import { TypeViewWindow } from './type-view/type-view-window';
 import type { ShellWindow, WindowViewProps } from './types';
 
 /** A kind of window. */
@@ -37,6 +45,22 @@ export interface WindowKind {
   readonly demand?: (window: ShellWindow) => readonly StreamDemand[];
 }
 
+/** Samples per second a plot asks for: a control loop's signals, drawn smoothly. */
+export const PLOT_RATE_HZ = 100;
+
+/** Samples per second a readout or the Robot window asks for: numbers change ten times a second. */
+export const READOUT_RATE_HZ = 10;
+
+/** Samples per second an editor asks for, to see the confirmed value soon after a write. */
+export const EDITOR_RATE_HZ = 5;
+
+const NOTHING: readonly StreamDemand[] = [];
+const nothing = () => NOTHING;
+
+function rate(window: ShellWindow, rateHz: number): readonly StreamDemand[] {
+  return window.payload.variables.map((variable) => ({ variable, rateHz }));
+}
+
 /** The kind a variable dropped on the tiling opens. */
 export const PLOT_KIND = 'plot';
 
@@ -47,64 +71,72 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Plot',
     description: 'Variables over time',
     icon: ChartLineIcon,
-    component: PlaceholderWindow,
+    component: PlotWindow,
     acceptsVariables: true,
+    demand: (window) => rate(window, PLOT_RATE_HZ),
   },
   {
     id: 'readouts',
     title: 'Readouts',
     description: 'Latest values, large',
     icon: GaugeIcon,
-    component: PlaceholderWindow,
+    component: ReadoutsWindow,
     acceptsVariables: true,
+    demand: (window) => rate(window, READOUT_RATE_HZ),
   },
   {
     id: 'editor',
     title: 'Editor',
     description: 'Write a variable, by its type',
     icon: SlidersHorizontalIcon,
-    component: PlaceholderWindow,
+    component: EditorWindow,
     acceptsVariables: true,
+    demand: (window) => rate(window, EDITOR_RATE_HZ),
   },
   {
     id: 'type-view',
     title: 'Type view',
     description: 'A serializable value, such as the maze',
     icon: MapIcon,
-    component: ViewPlaceholder,
+    component: TypeViewWindow,
     acceptsVariables: false,
+    demand: nothing,
   },
   {
     id: 'robot',
     title: 'Robot',
     description: 'State, transitions and battery',
     icon: BotIcon,
-    component: ViewPlaceholder,
+    component: RobotWindow,
     acceptsVariables: false,
+    demand: (window) => rate(window, READOUT_RATE_HZ),
   },
   {
     id: 'commands',
     title: 'Commands',
     description: 'The robot commands, STOP drawn big',
     icon: ZapIcon,
-    component: ViewPlaceholder,
+    component: CommandsWindow,
     acceptsVariables: false,
+    demand: nothing,
   },
   {
     id: 'log',
     title: 'Log',
     description: 'Robot log and link events',
     icon: ScrollTextIcon,
-    component: ViewPlaceholder,
+    component: LogWindow,
     acceptsVariables: false,
+    demand: nothing,
   },
   {
     id: 'link',
     title: 'Link',
     description: 'Rate, credit, drops and round trip',
     icon: RadioTowerIcon,
-    component: ViewPlaceholder,
+    component: LinkWindow,
     acceptsVariables: false,
+    demand: nothing,
   },
 ];
 

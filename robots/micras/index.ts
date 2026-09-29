@@ -164,6 +164,8 @@ export const micras: RobotPackage<ReactNode> = {
     'imu/accel_z': { unit: 'm/s²' },
     'loop/elapsed_time': { unit: 's' },
     'loop/worst_time_us': { unit: 'µs' },
+    'control/along_error': { unit: 'm' },
+    'control/across_error': { unit: 'm' },
     'control/orientation_error': { unit: 'rad' },
     'link/credit': { unit: 'B' },
   },

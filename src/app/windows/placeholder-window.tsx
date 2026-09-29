@@ -8,22 +8,8 @@ import type { RobotVariable } from '../ports';
 import type { WindowViewProps } from './types';
 
 /**
- * Stands in for a window kind that shows variables until its view lands: the window's variables
- * with their latest values, or a hint to drop one in.
- */
-export function PlaceholderWindow({ window }: WindowViewProps) {
-  return (
-    <VariableList names={window.payload.variables}>
-      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-        Drag a variable here from the drawer
-      </div>
-    </VariableList>
-  );
-}
-
-/**
- * Stands in for a window kind that draws a view of its own, which variables dropped on it do
- * not join: the window's variables with their latest values, and nothing when it has none.
+ * Stands in for a window kind this build does not know, as from a newer layout: the window's
+ * variables with their latest values, and nothing when it has none.
  */
 export function ViewPlaceholder({ window }: WindowViewProps) {
   return <VariableList names={window.payload.variables}>{null}</VariableList>;

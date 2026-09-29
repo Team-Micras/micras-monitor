@@ -239,13 +239,17 @@ describe('STOP', () => {
     await userEvent.keyboard(' ');
     await expect.element(stopOutcome(context)).toHaveTextContent('Nothing to stop');
     expect(context.sent).toEqual([]);
-    await expect.element(context.screen.getByRole('button', { name: /^Stop/ })).toBeDisabled();
+    await expect
+      .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
+      .toBeDisabled();
   });
 
   test('is not sent to a robot no package describes', async () => {
     const context = await setup({ packages: [] });
     await connect(context);
-    await expect.element(context.screen.getByRole('button', { name: /^Stop/ })).toBeDisabled();
+    await expect
+      .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
+      .toBeDisabled();
     await userEvent.keyboard(' ');
     await expect.element(stopOutcome(context)).toHaveTextContent('Nothing to stop');
     expect(context.sent).toEqual([]);
@@ -258,7 +262,7 @@ describe('STOP', () => {
     await expect
       .poll(() => context.robot.ports.connection.status())
       .toMatchObject({ phase: 'configuring' });
-    await context.screen.getByRole('button', { name: /^Stop/ }).click();
+    await context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }).click();
     expect(context.sent).toEqual([STOP]);
     await expect.element(stopOutcome(context)).toHaveTextContent('Stop accepted');
   });
