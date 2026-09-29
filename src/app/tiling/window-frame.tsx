@@ -255,7 +255,11 @@ function SeriesChip({ name, color }: { readonly name: string; readonly color: st
   const linked = useLinkUp();
 
   return (
-    <span className="flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 font-mono text-xs">
+    <span
+      data-series={name}
+      data-value={typeof value === 'number' ? value : undefined}
+      className="flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 font-mono text-xs"
+    >
       <span className={cn('size-2 shrink-0 rounded-[2px]', color)} aria-hidden />
       <span className="text-muted-foreground">{name}</span>
       <span className={cn('tabular-nums', !linked && 'text-muted-foreground')}>

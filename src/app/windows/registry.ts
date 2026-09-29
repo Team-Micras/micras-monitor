@@ -24,22 +24,22 @@ import { roleVariable, type RobotPackage, type Role } from '@/robot-kit';
 import { DEFAULT_STREAM_RATE_HZ, type StreamDemand } from '../ports/streams';
 
 import { CommandsWindow } from './commands/commands-window';
-import { EditorWindow } from './editor/editor-window';
-import { LinkWindow } from './link/link-window';
-import { LogWindow } from './log/log-window';
 import { ViewPlaceholder } from './placeholder-window';
 import { PlotWindow } from './plot/plot-window';
+import { ReadoutsWindow } from './readouts/readouts-window';
+import { EditorWindow } from './editor/editor-window';
+import { TypeViewWindow } from './type-view/type-view-window';
+import { LogWindow } from './log/log-window';
+import { LinkWindow } from './link/link-window';
 import {
   BATTERY_RATE_HZ,
   EDITOR_RATE_HZ,
   PLOT_RATE_HZ,
-  POSE_RATE_HZ,
+  FOLLOW_RATE_HZ,
   READOUT_RATE_HZ,
   REVISION_RATE_HZ,
 } from './rates';
-import { ReadoutsWindow } from './readouts/readouts-window';
 import { RobotWindow } from './robot/robot-window';
-import { TypeViewWindow } from './type-view/type-view-window';
 import type { ShellWindow, WindowViewProps } from './types';
 
 /** A kind of window. */
@@ -72,14 +72,23 @@ function roles(pkg: RobotPackage | null, wanted: readonly Role[], rateHz: number
   });
 }
 
-function mapDemand(window: ShellWindow, pkg: RobotPackage | null): readonly StreamDemand[] {
+function followedRoles(pkg: RobotPackage | null, blob: string): readonly Role[] {
+  const tag = pkg?.variables[blob]?.serializable;
+  return pkg?.types.find((type) => type.tag === tag)?.follows ?? [];
+}
+
+function typeViewDemand(window: ShellWindow, pkg: RobotPackage | null): readonly StreamDemand[] {
   const [blob] = window.payload.variables;
-  return blob !== undefined && blob === roleVariable(pkg, 'map')
-    ? [
-        ...roles(pkg, ['map.revision'], REVISION_RATE_HZ),
-        ...roles(pkg, ['pose.x', 'pose.y', 'pose.heading'], POSE_RATE_HZ),
-      ]
-    : NOTHING;
+
+  if (blob === undefined) {
+    return NOTHING;
+  }
+
+  const revision = blob === roleVariable(pkg, 'map') ? ['map.revision' as const] : [];
+  return [
+    ...roles(pkg, revision, REVISION_RATE_HZ),
+    ...roles(pkg, followedRoles(pkg, blob), FOLLOW_RATE_HZ),
+  ];
 }
 
 /** The kind a variable dropped on the tiling opens. */
@@ -121,7 +130,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     icon: MapIcon,
     component: TypeViewWindow,
     acceptsVariables: false,
-    demand: mapDemand,
+    demand: typeViewDemand,
   },
   {
     id: 'robot',

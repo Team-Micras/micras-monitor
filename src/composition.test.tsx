@@ -3,7 +3,7 @@ import { render } from 'vitest-browser-react';
 
 import { App } from '@/app/app';
 import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot, FakeVariable } from '@/app/fake/fake-robot';
+import type { FakeRobot, FakeRobotOptions, FakeVariable } from '@/app/fake/fake-robot';
 import { createShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
 import type { ShellWindow } from '@/app/windows/types';
@@ -32,7 +32,13 @@ const f32 = (name: string, value: number): FakeVariable => ({
   signal: () => value,
 });
 
-async function openMaze(variables: readonly FakeVariable[]): Promise<FakeRobot> {
+const ROBOT_WINDOW: ShellWindow = { id: 'robot', kind: 'robot', payload: { variables: [] } };
+
+async function openMaze(
+  variables: readonly FakeVariable[],
+  options: Partial<FakeRobotOptions> = {},
+  window: ShellWindow = MAZE_WINDOW
+): Promise<FakeRobot> {
   const robot = createDemoRobot({
     connectMs: 5,
     handshakeMs: 10,
@@ -40,11 +46,12 @@ async function openMaze(variables: readonly FakeVariable[]): Promise<FakeRobot> 
     commandMs: 5,
     tickMs: 20,
     variables,
+    ...options,
   });
   robots.push(robot);
   const store = createShellStore({
     theme: 'dark',
-    desktop: createDesktop([createWorkspace('Maze run', leaf('maze'))], [MAZE_WINDOW]),
+    desktop: createDesktop([createWorkspace('Test', leaf(window.id))], [window]),
   });
   await render(
     <App ports={robot.ports} robots={new RobotRegistry([micras])} store={store} synthetic />
@@ -55,6 +62,12 @@ async function openMaze(variables: readonly FakeVariable[]): Promise<FakeRobot> 
 
 function maze(): SVGSVGElement | null {
   return document.querySelector<SVGSVGElement>('[data-maze]');
+}
+
+function timeline(): string {
+  return [...document.querySelectorAll('ol[aria-label="State transitions"] li span.truncate')]
+    .map((item) => item.textContent)
+    .join(' ');
 }
 
 describe('the Micras package in the app', () => {
@@ -79,9 +92,9 @@ describe('the Micras package in the app', () => {
       },
     ]);
 
-    await expect.poll(() => maze()?.dataset.walls).toBe('65');
+    await expect.poll(() => maze()?.dataset.walls, { timeout: 5000 }).toBe('65');
     expect(maze()?.dataset.explored).toBe('1');
-    await expect.poll(() => maze()?.dataset.robotCell).toBe('0,1');
+    await expect.poll(() => maze()?.dataset.robotCell, { timeout: 3000 }).toBe('0,1');
 
     await expect.poll(() => maze()?.dataset.walls, { timeout: 3000 }).toBe('68');
     expect(maze()?.dataset.explored).toBe('2');
@@ -98,7 +111,7 @@ describe('the Micras package in the app', () => {
       },
     ]);
 
-    await expect.poll(() => maze()?.dataset.walls).toBe('65');
+    await expect.poll(() => maze()?.dataset.walls, { timeout: 5000 }).toBe('65');
     const frame = document.querySelector('[data-maze]')?.closest('section, [data-window]');
     const box = maze()?.getBoundingClientRect();
     const walls = maze()?.querySelector('path.stroke-foreground')?.getBoundingClientRect();
@@ -109,5 +122,29 @@ describe('the Micras package in the app', () => {
     expect(walls?.bottom ?? Infinity).toBeLessThanOrEqual(
       frame?.getBoundingClientRect().bottom ?? 0
     );
+  });
+
+  test('keeps a state shorter than a sample on the timeline, from the robot log', async () => {
+    await openMaze(
+      [
+        {
+          name: 'state',
+          type: TypeCode.U8,
+          access: decodeAccess(0x01),
+          signal: (seconds) => (seconds < 0.4 ? 3 : 1),
+        },
+      ],
+      {
+        logs: [
+          { atSeconds: 0.3, severity: 'info', text: 'state SAVE' },
+          { atSeconds: 0.31, severity: 'info', text: 'state RUN' },
+          { atSeconds: 0.4, severity: 'info', text: 'state IDLE' },
+        ],
+      },
+      ROBOT_WINDOW
+    );
+
+    await expect.poll(timeline, { timeout: 3000 }).toBe('RUN SAVE RUN IDLE');
+    expect(document.querySelector('[data-robot-state]')?.textContent).toBe('IDLE');
   });
 });

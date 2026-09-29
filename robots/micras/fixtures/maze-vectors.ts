@@ -26,5 +26,8 @@ export const EXPLORED_16 = new Uint8Array([
   136, 136, 136, 136, 136, 136, 136, 168,
 ]);
 
-/** A 3 × 3 maze, an odd number of cells: start at 0,0 facing right, goal 2,1, 1,1 up wall, 1,0 up open. */
+/**
+ * A 3 × 3 maze, an odd number of cells: start at 0,0 facing right, the goal at the center 1,1 as
+ * the decoder computes it, 1,1 up wall and 1,0 up open.
+ */
 export const SMALL_3 = new Uint8Array([1, 3, 3, 73, 2, 40, 136, 10]);

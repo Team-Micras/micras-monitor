@@ -29,7 +29,7 @@ int main() {
     maze.set_wall({.position = {5, 9}, .orientation = Side::LEFT}, true);
     maze.set_wall({.position = {15, 15}, .orientation = Side::DOWN}, false);
     print("explored16", maze.serialize(), false);
-    constexpr std::array<GridPoint, 1> goal3{{{2, 1}}};
+    constexpr std::array<GridPoint, 1> goal3{{{1, 1}}};
     TMaze<3, 3> small({.start = {.position = {0, 0}, .orientation = Side::RIGHT}, .goal = goal3});
     small.set_wall({.position = {1, 1}, .orientation = Side::UP}, true);
     small.set_wall({.position = {1, 0}, .orientation = Side::UP}, false);

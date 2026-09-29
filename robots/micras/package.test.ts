@@ -21,7 +21,7 @@ import {
   STATE_NAMES,
   VARIABLE_NAMES,
 } from './fixtures/firmware';
-import { FsmState, RunProfileBit } from './labels';
+import { FsmState, RunProfileBit, stateFromLog } from './labels';
 import { micras } from './index';
 
 function labels(name: string): EnumType {
@@ -106,6 +106,14 @@ describe('the labels, against the firmware', () => {
     expect(labels('state').options.map((option) => option.label)).toEqual([...STATE_NAMES]);
     STATE_NAMES.forEach((name, id) => expect(enumLabel(labels('state'), id)).toBe(name));
     expect(FsmState.BRAKE).toBe(13);
+  });
+
+  test('read the transitions the firmware logs, and no other line', () => {
+    STATE_NAMES.forEach((name, id) => expect(micras.stateLog?.(`state ${name}`)).toBe(id));
+    expect(stateFromLog('state BRAKE')).toBe(FsmState.BRAKE);
+    expect(stateFromLog('state NAPPING')).toBeNull();
+    expect(stateFromLog('the state IDLE')).toBeNull();
+    expect(stateFromLog('state IDLE now')).toBeNull();
   });
 
   test('number the objectives and the faults as the firmware', () => {

@@ -1,7 +1,8 @@
 /**
  * Follow an exploration of Micras in the simulation through the monitor itself, headless, and
  * check what slice 8 promises: the maze updates by its revision, the state and its transitions
- * are right, STOP brakes the robot to IDLE, and SAVE outside IDLE is refused with its reason.
+ * are right, STOP brakes the robot to a standstill in IDLE, and SAVE outside IDLE is refused with
+ * its reason.
  *
  * ```
  * bun tools/check-micras-sim.ts --robot ws://127.0.0.1:8080 [--screens <dir>] [--minutes 25]
@@ -10,8 +11,9 @@
  * It serves the app with Vite, opens it at `?connect=<robot>` in Chromium and drives it with the
  * mouse and the keyboard, as a person would: Explore from IDLE (or follow an exploration already
  * running), Save during the run, wait for the search to end in IDLE, Explore again and press
- * Space. With `--screens` it saves the maze window during and after the search, dark and light.
- * It exits non-zero when a check fails. It is a manual check, not part of CI.
+ * Space. It reads what the windows on screen show, through the attributes they carry. With
+ * `--screens` it saves the maze window during and after the search, dark and light. It exits
+ * non-zero when a check fails. It is a manual check, not part of CI.
  *
  * @module
  */
@@ -20,7 +22,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { chromium, type Page } from 'playwright';
+import { chromium, type Locator, type Page } from 'playwright';
 import { createServer } from 'vite';
 
 const { values: args } = parseArgs({
@@ -33,15 +35,22 @@ const { values: args } = parseArgs({
 });
 
 const deadline = Date.now() + Number(args.minutes) * 60_000;
+const REST_DISPLACEMENT_M = 0.005;
+const REST_SPEED_M_S = 0.01;
 
+/** What the windows on screen show at one moment. */
 interface Snapshot {
-  readonly atMs: number;
   readonly state: string;
+  readonly revision: number | null;
   readonly walls: number | null;
   readonly explored: number | null;
   readonly robotCell: string | null;
+  readonly poseX: number | null;
+  readonly poseY: number | null;
+  readonly speed: number | null;
   readonly logStates: readonly string[];
   readonly timeline: readonly string[];
+  readonly answers: number;
 }
 
 interface Check {
@@ -59,57 +68,67 @@ function check(name: string, passed: boolean, detail: string): void {
   console.log(`${passed ? 'PASS' : 'FAIL'}  ${name}: ${detail}`);
 }
 
-function note(name: string, detail: string): void {
-  console.log(`NOTE  ${name}: ${detail}`);
-}
-
 function elapsed(): string {
   return `${((Date.now() - started) / 1000).toFixed(1)} s`;
 }
 
-const LOGGED_STATE = /state ([A-Z_]+)$/;
-
-function numberOrNull(value: string | null): number | null {
-  return value === null ? null : Number(value);
-}
-
-async function attribute(page: Page, selector: string, name: string): Promise<string | null> {
-  const element = page.locator(selector);
-  return (await element.count()) === 0 ? null : element.first().getAttribute(name);
-}
-
-async function snapshot(page: Page): Promise<Snapshot> {
-  const maze = '[data-window="maze"] [data-maze]';
-  const state = page.locator('[data-robot-state]');
-  const logLines = await page.locator('ol[aria-label="Log"] li').allTextContents();
+const SNAPSHOT_SCRIPT = `(() => {
+  const visible = (selector) =>
+    [...document.querySelectorAll(selector)].find((element) => element.checkVisibility({ visibilityProperty: true }));
+  const number = (value) => (value === undefined || value === '' ? null : Number(value));
+  const maze = visible('[data-maze]');
+  const typeView = maze?.closest('[data-revision]') ?? null;
+  const answers = [...document.querySelectorAll('[data-answer]')].map((element) =>
+    Number(element.dataset.answer)
+  );
   return {
-    atMs: Date.now() - started,
-    state: (await state.count()) === 0 ? '' : ((await state.first().textContent()) ?? ''),
-    walls: numberOrNull(await attribute(page, maze, 'data-walls')),
-    explored: numberOrNull(await attribute(page, maze, 'data-explored')),
-    robotCell: await attribute(page, maze, 'data-robot-cell'),
-    logStates: logLines.flatMap((line) => LOGGED_STATE.exec(line.trim())?.[1] ?? []),
-    timeline: await page
-      .locator('ol[aria-label="State transitions"] li span.truncate')
-      .allTextContents(),
+    state: visible('[data-robot-state]')?.textContent ?? '',
+    revision: number(typeView?.dataset.revision),
+    walls: number(maze?.dataset.walls),
+    explored: number(maze?.dataset.explored),
+    robotCell: maze?.dataset.robotCell ?? null,
+    poseX: number(maze?.dataset.poseX),
+    poseY: number(maze?.dataset.poseY),
+    speed: number(visible('[data-series="pose/linear_speed"]')?.dataset.value),
+    logStates: [...document.querySelectorAll('ol[aria-label="Log"] li')].flatMap((item) => {
+      const match = /state ([A-Z_]+)$/.exec(item.textContent.trim());
+      return match === null ? [] : [match[1]];
+    }),
+    timeline: [
+      ...document.querySelectorAll('ol[aria-label="State transitions"] li span.truncate'),
+    ].map((item) => item.textContent),
+    answers: Math.max(0, ...answers),
   };
+})()`;
+
+function snapshot(page: Page): Promise<Snapshot> {
+  return page.evaluate<Snapshot>(SNAPSHOT_SCRIPT);
 }
 
-async function follow(page: Page, until: (latest: Snapshot) => boolean, what: string) {
+function changed(previous: Snapshot | undefined, latest: Snapshot): boolean {
+  return (
+    previous === undefined ||
+    previous.state !== latest.state ||
+    previous.revision !== latest.revision ||
+    previous.explored !== latest.explored ||
+    previous.walls !== latest.walls ||
+    previous.logStates.length !== latest.logStates.length ||
+    previous.timeline.join() !== latest.timeline.join()
+  );
+}
+
+async function follow(
+  page: Page,
+  until: (latest: Snapshot) => boolean,
+  what: string
+): Promise<Snapshot> {
   for (;;) {
     const latest = await snapshot(page);
-    const previous = snapshots.at(-1);
 
-    if (
-      previous === undefined ||
-      previous.state !== latest.state ||
-      previous.explored !== latest.explored ||
-      previous.walls !== latest.walls ||
-      previous.logStates.length !== latest.logStates.length
-    ) {
+    if (changed(snapshots.at(-1), latest)) {
       snapshots.push(latest);
       console.log(
-        `  ${elapsed()}  ${latest.state.padEnd(20)} maze ${latest.walls ?? '-'} walls, ${latest.explored ?? '-'} explored, robot ${latest.robotCell ?? '-'}`
+        `  ${elapsed()}  ${latest.state.padEnd(20)} revision ${latest.revision ?? '-'}, maze ${latest.walls ?? '-'} walls, ${latest.explored ?? '-'} explored, robot ${latest.robotCell ?? '-'}`
       );
     }
 
@@ -121,8 +140,15 @@ async function follow(page: Page, until: (latest: Snapshot) => boolean, what: st
       throw new Error(`Timed out waiting for ${what}`);
     }
 
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(50);
   }
+}
+
+function mazeWindow(page: Page): Locator {
+  return page
+    .locator('section[data-window]')
+    .filter({ has: page.locator('[data-maze]'), visible: true })
+    .first();
 }
 
 async function screenshot(page: Page, name: string): Promise<void> {
@@ -133,30 +159,23 @@ async function screenshot(page: Page, name: string): Promise<void> {
   const toggle = page.getByRole('button', { name: /Use the (light|dark) theme/ });
 
   for (const theme of ['dark', 'light'] as const) {
-    if (
-      ((await page.locator('html').getAttribute('class')) ?? '').split(' ').includes('dark') !==
-      (theme === 'dark')
-    ) {
+    const dark = ((await page.locator('html').getAttribute('class')) ?? '').split(' ');
+
+    if (dark.includes('dark') !== (theme === 'dark')) {
       await toggle.click();
       await page.waitForTimeout(300);
     }
 
-    await page
-      .locator('[data-window="maze"]')
-      .screenshot({ path: join(args.screens, `${name}-${theme}.png`) });
+    await mazeWindow(page).screenshot({ path: join(args.screens, `${name}-${theme}.png`) });
     await page.screenshot({ path: join(args.screens, `${name}-overview-${theme}.png`) });
   }
 
   await toggle.click();
 }
 
-async function answers(page: Page): Promise<readonly string[]> {
-  return page.locator('[data-tone]').allInnerTexts();
-}
-
 async function send(page: Page, command: string): Promise<string> {
-  const before = (await answers(page)).join('|');
-  await page.locator(`[data-command="${command}"]`).click();
+  const before = (await snapshot(page)).answers;
+  await page.locator(`[data-command="${command}"]`).filter({ visible: true }).first().click();
   const dialog = page.getByRole('dialog');
 
   if (
@@ -168,22 +187,43 @@ async function send(page: Page, command: string): Promise<string> {
     await dialog.getByRole('button').last().click();
   }
 
-  for (let tries = 0; tries < 100; tries++) {
-    const now = await answers(page);
-
-    if (now.join('|') !== before && now.length > 0) {
-      return now.at(-1) ?? '';
-    }
-
-    await page.waitForTimeout(100);
-  }
-
-  throw new Error(`No answer to ${command}`);
+  const answer = page.locator(`[data-answer="${before + 1}"]`);
+  await answer.waitFor({ timeout: 10_000 });
+  return (await answer.innerText()).replaceAll('\n', ' ');
 }
 
-function firstIndexAfter(states: readonly string[], state: string, from: number): number {
-  const index = states.indexOf(state, from);
-  return index < 0 ? Number.POSITIVE_INFINITY : index;
+function cellOf(cell: string | null): readonly [number, number] | null {
+  const [x, y] = (cell ?? '').split(',').map(Number);
+  return Number.isInteger(x) && Number.isInteger(y) ? [x, y] : null;
+}
+
+/**
+ * Counts the changes of the map in a stretch of snapshots, and those without a new revision since
+ * the previous change, seen in the same snapshot or the next (both are sampled ten times a second).
+ */
+function mapChanges(stretch: readonly Snapshot[]): { total: number; unannounced: number } {
+  let total = 0;
+  let unannounced = 0;
+  let revisionAtMap = stretch[0]?.revision ?? null;
+
+  stretch.forEach((latest, index) => {
+    const previous = stretch[index - 1];
+
+    if (previous === undefined || latest.walls === null || previous.walls === null) {
+      return;
+    }
+
+    if (latest.walls !== previous.walls || latest.explored !== previous.explored) {
+      total++;
+      const announcer = [latest, stretch[index + 1]].find(
+        (entry) => entry !== undefined && entry.revision !== revisionAtMap
+      );
+      unannounced += announcer === undefined ? 1 : 0;
+      revisionAtMap = announcer?.revision ?? latest.revision;
+    }
+  });
+
+  return { total, unannounced };
 }
 
 async function main(): Promise<void> {
@@ -215,7 +255,8 @@ async function main(): Promise<void> {
     await follow(page, (latest) => latest.walls !== null, 'the maze');
 
     if (first.state === 'IDLE') {
-      check('EXPLORE from IDLE', (await send(page, 'EXPLORE')).includes('accepted'), 'accepted');
+      const explore = await send(page, 'EXPLORE');
+      check('EXPLORE from IDLE', explore.includes('accepted'), explore);
     }
 
     await follow(page, (latest) => latest.state === 'RUN', 'RUN');
@@ -223,59 +264,52 @@ async function main(): Promise<void> {
     check(
       'SAVE outside IDLE is refused with its reason',
       refusal.includes('Refused — robot not idle'),
-      refusal.trim()
+      refusal
     );
 
-    const runStart = snapshots.length;
+    const runStart = snapshots.length - 1;
     await follow(
       page,
-      (latest) => (latest.explored ?? 0) >= (snapshots[runStart - 1]?.explored ?? 0) + 60,
+      (latest) => (latest.explored ?? 0) >= (snapshots[runStart]?.explored ?? 0) + 60,
       'the maze to fill in'
     );
     await screenshot(page, 'maze-during');
 
-    const done = await follow(page, (latest) => latest.state === 'IDLE', 'the end of the search');
+    await follow(page, (latest) => latest.state === 'IDLE', 'the end of the search');
     await page.waitForTimeout(3000);
-    const after = await follow(page, () => true, 'the last read of the maze');
+    const done = await follow(page, () => true, 'the last read of the maze');
     await screenshot(page, 'maze-after');
 
-    const explored = snapshots.slice(runStart).map((entry) => entry.explored ?? 0);
-    const updates = new Set(explored).size;
+    const search = snapshots.slice(runStart);
+    const explored = search.flatMap((entry) => (entry.explored === null ? [] : [entry.explored]));
+    const changes = mapChanges(search);
     check(
-      'the maze updates by revision during the search',
-      updates >= 10 &&
+      'the maze grows during the search and never goes back',
+      changes.total >= 10 &&
         explored.every((value, index) => index === 0 || value >= explored[index - 1]),
-      `${updates} distinct maps, ${explored[0]} → ${after.explored} cells explored, ${after.walls} walls`
+      `${changes.total} map changes, ${explored[0]} → ${done.explored} cells explored, ${done.walls} walls, revision ${search[0]?.revision} → ${done.revision}`
+    );
+    check(
+      'every change of the map follows a change of its revision',
+      changes.unannounced === 0,
+      `${changes.unannounced} of ${changes.total} changes without a new revision`
     );
 
     const searchLog = done.logStates;
     check(
-      'the robot log reports the transitions of the search',
-      firstIndexAfter(searchLog, 'RUN', 0) <
-        firstIndexAfter(searchLog, 'IDLE', firstIndexAfter(searchLog, 'RUN', 0)),
+      'the robot log reports the search, SAVE included',
+      searchLog.includes('RUN') && searchLog.includes('SAVE') && searchLog.at(-1) === 'IDLE',
       searchLog.join(' → ')
     );
-    const shown = snapshots
-      .map((entry) => entry.state)
-      .filter((state, index, all) => state !== all[index - 1] && state !== '' && state !== '—');
     check(
-      'every state shown is one the robot logged',
-      shown.every((state) => state === first.state || searchLog.includes(state)),
-      shown.join(' → ')
-    );
-    const unseen = [...new Set(searchLog)].filter((state) => !shown.includes(state));
-    note(
-      'states of the search too short for the 10 Hz state stream',
-      unseen.length === 0
-        ? 'none'
-        : `${unseen.join(', ')}: only in the robot log and not on the timeline`
+      'the Robot window timeline of the search is the robot log',
+      done.timeline.length > 0 &&
+        done.timeline.join(' ') === searchLog.slice(-done.timeline.length).join(' '),
+      `timeline ${done.timeline.join(' → ')}`
     );
 
-    check(
-      'EXPLORE again from IDLE',
-      (await send(page, 'EXPLORE')).includes('accepted'),
-      'accepted'
-    );
+    const explore = await send(page, 'EXPLORE');
+    check('EXPLORE again from IDLE', explore.includes('accepted'), explore);
     await follow(page, (latest) => latest.state === 'RUN', 'RUN again');
     await page.waitForTimeout(4000);
     const beforeStop = await follow(page, () => true, 'the run');
@@ -293,24 +327,42 @@ async function main(): Promise<void> {
       stopLog.join(' ') === 'BRAKE IDLE',
       `log after STOP: ${stopLog.join(' → ')}`
     );
-    const timeline = stopped.timeline;
     check(
-      'the Robot window timeline ends BRAKE, IDLE',
-      timeline.slice(-2).join(' ') === 'BRAKE IDLE',
-      timeline.join(' → ')
+      'the Robot window timeline after STOP is the robot log',
+      stopped.timeline.slice(-2).join(' ') === 'BRAKE IDLE' &&
+        stopped.timeline.join(' ') === stopped.logStates.slice(-stopped.timeline.length).join(' '),
+      `timeline ${stopped.timeline.join(' → ')}`
+    );
+
+    await page.waitForTimeout(500);
+    const rest = await follow(page, () => true, 'the robot at rest');
+    const revisionAtRest = rest.revision;
+    await page.waitForTimeout(2000);
+    const later = await follow(page, () => true, 'the robot still at rest');
+    const moved =
+      rest.poseX === null || rest.poseY === null || later.poseX === null || later.poseY === null
+        ? Number.POSITIVE_INFINITY
+        : Math.hypot(later.poseX - rest.poseX, later.poseY - rest.poseY);
+    check(
+      'STOP stops the robot',
+      moved < REST_DISPLACEMENT_M && later.speed !== null && Math.abs(later.speed) < REST_SPEED_M_S,
+      `moved ${(moved * 1000).toFixed(2)} mm in 2 s at rest, speed ${later.speed} m/s`
+    );
+    const stopCell = cellOf(beforeStop.robotCell);
+    const restCell = cellOf(later.robotCell);
+    check(
+      'the robot rests in the cell it was stopped in or the next one',
+      stopCell !== null &&
+        restCell !== null &&
+        Math.abs(stopCell[0] - restCell[0]) + Math.abs(stopCell[1] - restCell[1]) <= 1,
+      `cell ${beforeStop.robotCell} when Space was pressed, ${later.robotCell} at rest`
     );
     check(
-      'the Robot window timeline follows the robot log',
-      timeline.join(' ') === stopped.logStates.slice(-timeline.length).join(' '),
-      `log ${stopped.logStates.slice(-timeline.length).join(' → ')}`
-    );
-    const cellAtStop = beforeStop.robotCell;
-    await page.waitForTimeout(3000);
-    const rest = await follow(page, () => true, 'the rest');
-    check(
-      'the robot stays where it stopped',
-      rest.state === 'IDLE' && rest.robotCell !== null,
-      `cell ${cellAtStop} when Space was pressed, ${rest.robotCell} at rest`
+      'the map does not change while the robot is at rest',
+      later.walls === rest.walls &&
+        later.explored === rest.explored &&
+        later.revision === revisionAtRest,
+      `revision ${revisionAtRest} → ${later.revision}, ${rest.walls} → ${later.walls} walls`
     );
   } finally {
     await browser.close();

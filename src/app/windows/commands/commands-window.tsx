@@ -55,6 +55,7 @@ export function CommandsWindow(_props: WindowViewProps) {
   const stateValue = useLiveValue(stateName)?.value;
   const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
   const [answer, setAnswer] = useState<OutcomeMessage | null>(null);
+  const [answers, setAnswers] = useState(0);
   const [confirming, setConfirming] = useState<CommandSpec | null>(null);
   const [asking, setAsking] = useState(false);
   const stop = useStopAction();
@@ -90,6 +91,7 @@ export function CommandsWindow(_props: WindowViewProps) {
       return next;
     });
     setAnswer(outcomeMessage(command, outcome, pkg, labels));
+    setAnswers((count) => count + 1);
   };
 
   const press = (command: CommandSpec) => {
@@ -119,7 +121,9 @@ export function CommandsWindow(_props: WindowViewProps) {
           />
         ))}
       </div>
-      {answer === null ? null : <Answer message={answer} onDismiss={() => setAnswer(null)} />}
+      {answer === null ? null : (
+        <Answer message={answer} sequence={answers} onDismiss={() => setAnswer(null)} />
+      )}
       {emergency === null ? null : (
         <button
           type="button"
@@ -209,9 +213,12 @@ function CommandButton({
 
 function Answer({
   message,
+  sequence,
   onDismiss,
 }: {
   readonly message: OutcomeMessage;
+  /** How many answers the window has shown, this one included. */
+  readonly sequence: number;
   readonly onDismiss: () => void;
 }) {
   const Icon = TONE_ICONS[message.tone];
@@ -220,6 +227,7 @@ function Answer({
     <div
       role={message.tone === 'ok' ? 'status' : 'alert'}
       data-tone={message.tone}
+      data-answer={sequence}
       className={cn(
         'relative flex gap-3 rounded-lg border px-4 py-3 text-sm',
         message.tone === 'ok' ? 'text-foreground' : 'border-destructive/40 text-destructive'

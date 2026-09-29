@@ -44,4 +44,16 @@ describe('the maze view', () => {
     expect(document.querySelector('[data-robot]')).not.toBeNull();
     await expect.element(screen.getByText('cell 5,7 · W')).toBeVisible();
   });
+
+  test('draws no robot at the pose the firmware holds before its first run', async () => {
+    await render(
+      <MazeView
+        value={decodeMaze(FRESH_16)}
+        roles={{ 'pose.x': 0.0000042, 'pose.y': -1.1e-7, 'pose.heading': -0.02 }}
+      />
+    );
+
+    expect(document.querySelector('[data-robot]')).toBeNull();
+    expect(svg().dataset.robotCell).toBeUndefined();
+  });
 });

@@ -1,10 +1,16 @@
 import { RefreshCwIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { roleVariable, type Role, type SerializableType } from '@/robot-kit';
 
 import { Button } from '../../components/ui/button';
-import { useLinkUp, useLiveValue, useMonitor, useRobotPackage } from '../../monitor-context';
+import {
+  subscribeThrottled,
+  useLinkUp,
+  useLiveValue,
+  useMonitor,
+  useRobotPackage,
+} from '../../monitor-context';
 import type { ReactRobotPackage } from '../../monitor-context';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
@@ -27,26 +33,48 @@ function revisionOf(pkg: ReactRobotPackage | null, name: string): string | null 
   return roleVariable(pkg, 'map') === name ? roleVariable(pkg, 'map.revision') : null;
 }
 
-function useRoleValue(
-  pkg: ReactRobotPackage | null,
-  role: Role,
-  follow: boolean
-): number | undefined {
-  const value = useLiveValue(follow ? roleVariable(pkg, role) : null)?.value;
-  return typeof value === 'number' ? value : undefined;
-}
+const NO_ROLES: readonly Role[] = [];
 
-function definedRoles(
-  entries: readonly (readonly [Role, number | undefined])[]
+/**
+ * The latest numeric values of the roles a type follows, rendering again at most ten times a
+ * second while they change; a role without a variable or a numeric value is absent.
+ */
+function useFollowedRoles(
+  pkg: ReactRobotPackage | null,
+  follows: readonly Role[]
 ): Partial<Record<Role, number>> {
-  return Object.fromEntries(entries.filter(([, value]) => value !== undefined));
+  const { values } = useMonitor().ports;
+  const followed = follows.flatMap((role) => {
+    const variable = roleVariable(pkg, role);
+    return variable === null ? [] : [[role, variable] as const];
+  });
+  const key = useSyncExternalStore(
+    (listener) => {
+      const stops = followed.map(([, variable]) => subscribeThrottled(values, variable, listener));
+      return () => stops.forEach((stop) => stop());
+    },
+    () =>
+      followed
+        .map(([, variable]) => {
+          const value = values.latest(variable)?.value;
+          return typeof value === 'number' ? String(value) : '';
+        })
+        .join(' ')
+  );
+  const numbers = key.split(' ');
+
+  return Object.fromEntries(
+    followed.flatMap(([role], index) =>
+      numbers[index] === '' || numbers[index] === undefined ? [] : [[role, Number(numbers[index])]]
+    )
+  );
 }
 
 /**
  * A blob through the view of its serializable type, or as a hexadecimal dump when no package
  * decodes it. The blob is read once the schema has it, and read again when the value of the
- * package's revision of it changes from one it had, one READ at a time. The view of the map also
- * gets the robot's pose.
+ * package's revision of it changes from one it had, one READ at a time. The view gets the values
+ * of the roles its type follows.
  */
 export function TypeViewWindow({ window }: WindowViewProps) {
   const { reads, values } = useMonitor().ports;
@@ -55,12 +83,8 @@ export function TypeViewWindow({ window }: WindowViewProps) {
   const name = entry?.name ?? null;
   const latest = useLiveValue(name)?.value;
   const revision = name === null ? null : revisionOf(pkg, name);
-  const map = revision !== null;
-  const roles = definedRoles([
-    ['pose.x', useRoleValue(pkg, 'pose.x', map)],
-    ['pose.y', useRoleValue(pkg, 'pose.y', map)],
-    ['pose.heading', useRoleValue(pkg, 'pose.heading', map)],
-  ]);
+  const revisionValue = useLiveValue(revision)?.value;
+  const roles = useFollowedRoles(pkg, entry?.presentation?.serializable?.follows ?? NO_ROLES);
   const linked = useLinkUp();
   const [failure, setFailure] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -130,7 +154,10 @@ export function TypeViewWindow({ window }: WindowViewProps) {
   const decoded = bytes !== null && serializable !== null ? decode(serializable, bytes) : null;
 
   return (
-    <div className="flex h-full flex-col gap-3 px-5 pt-1 pb-5">
+    <div
+      data-revision={typeof revisionValue === 'number' ? revisionValue : undefined}
+      className="flex h-full flex-col gap-3 px-5 pt-1 pb-5"
+    >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span className="font-mono">{entry.presentation?.typeLabel ?? entry.name}</span>
         {entry.missing ? <span data-missing>· missing from the schema</span> : null}

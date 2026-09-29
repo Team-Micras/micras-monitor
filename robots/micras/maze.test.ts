@@ -105,5 +105,6 @@ describe('the goal', () => {
 
   test('is the center cell of an odd maze', () => {
     expect(goalCells(3, 3)).toEqual([{ x: 1, y: 1 }]);
+    expect(decodeMaze(SMALL_3).goal).toEqual([{ x: 1, y: 1 }]);
   });
 });

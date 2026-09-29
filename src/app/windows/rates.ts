@@ -19,5 +19,5 @@ export const EDITOR_RATE_HZ = 5;
 /** Samples per second a type view asks of the revision of its blob, to read it again soon. */
 export const REVISION_RATE_HZ = 2;
 
-/** Samples per second the view of a map asks of the robot's pose, to move the robot smoothly. */
-export const POSE_RATE_HZ = 10;
+/** Samples per second a type view asks of each role it follows, such as the pose over a map. */
+export const FOLLOW_RATE_HZ = 10;

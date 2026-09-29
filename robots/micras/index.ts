@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import type { RobotPackage, SerializableType } from '@/robot-kit';
 
 import { COMMANDS, REFUSAL_REASONS } from './commands';
+import { stateFromLog } from './labels';
 import { decodeMaze, MAZE_TYPE_TAG, type Maze } from './maze';
 import { MazeView } from './maze-view';
 import { PRESETS } from './presets';
@@ -21,6 +22,7 @@ export const MAZE_TYPE: SerializableType<Maze, ReactNode> = {
   kind: 'serializable',
   tag: MAZE_TYPE_TAG,
   name: 'Maze',
+  follows: ['pose.x', 'pose.y', 'pose.heading'],
   decode: decodeMaze,
   View: MazeView,
 };
@@ -45,5 +47,6 @@ export const micras: RobotPackage<ReactNode> = {
   types: [MAZE_TYPE],
   commands: COMMANDS,
   refusalReasons: REFUSAL_REASONS,
+  stateLog: stateFromLog,
   presets: PRESETS,
 };

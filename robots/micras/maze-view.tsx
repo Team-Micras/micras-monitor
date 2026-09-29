@@ -11,10 +11,13 @@ const MARGIN_EDGE = 0.25;
 const POST = 0.08;
 const HEADINGS = ['E', 'N', 'W', 'S'] as const;
 const MAX_GRID_INDEX = 255;
+const UNLOCALIZED_RADIUS_M = 0.001;
 
 /**
  * Where the robot is on the maze, in cells: 0.5 is the center of the first cell. Its cell is
- * clamped to the first quadrant, as `GridPoint::from_vector` does.
+ * clamped to the first quadrant, as `GridPoint::from_vector` does. A pose within a millimeter of
+ * 0, 0 is the one the firmware holds, drifting, before its first run: the corner post, where no
+ * robot fits, so it draws no robot.
  */
 interface GridPose {
   readonly x: number;
@@ -27,6 +30,10 @@ function gridPose(roles: TypeViewProps<Maze>['roles']): GridPose | null {
   const y = roles?.['pose.y'];
 
   if (x === undefined || y === undefined || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  if (Math.hypot(x, y) < UNLOCALIZED_RADIUS_M) {
     return null;
   }
 
@@ -150,6 +157,8 @@ export function MazeView({ value: maze, roles }: TypeViewProps<Maze>) {
         data-walls={paths.wallCount}
         data-explored={paths.exploredCount}
         data-robot-cell={inside ? `${cell.x},${cell.y}` : undefined}
+        data-pose-x={roles?.['pose.x']}
+        data-pose-y={roles?.['pose.y']}
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"
         className="min-h-0 w-full flex-1"
