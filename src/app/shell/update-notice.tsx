@@ -16,13 +16,19 @@ const NO_UPDATES: AppUpdates = {
 /** What the notice is about. */
 type Reason = 'update' | 'stale';
 
+const RELOAD_BLOCKS: Readonly<Record<ReloadBlock, string>> = {
+  recording: 'Stop recording to reload',
+  disconnect: 'Disconnect to reload',
+  'not-idle': 'Reload once the robot is idle',
+};
+
 /**
  * The notice that the app needs a reload: a new build is waiting, or part of the app could not
  * load because the build it belongs to is gone from the server. The page never reloads by itself,
  * and while a reload is blocked the button is disabled and the notice says what to do.
  *
  * @param updates Where new builds come from; none for an app without a service worker.
- * @param blockedBy Why a reload would cut a run short, or null when it would not.
+ * @param blockedBy Why a reload would cut a run or a recording short, or null when it would not.
  */
 export function UpdateNotice({
   updates = NO_UPDATES,
@@ -56,9 +62,7 @@ export function UpdateNotice({
       <span>
         {reason === 'update' ? 'Update available' : "Couldn't load part of the app"}
         {blockedBy === null ? null : (
-          <span className="block text-xs text-muted-foreground">
-            {blockedBy === 'disconnect' ? 'Disconnect to reload' : 'Reload once the robot is idle'}
-          </span>
+          <span className="block text-xs text-muted-foreground">{RELOAD_BLOCKS[blockedBy]}</span>
         )}
       </span>
       <Button variant="outline" size="sm" disabled={blockedBy !== null} onClick={reload}>

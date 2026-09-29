@@ -4,9 +4,13 @@ import { isIdleState, roleVariable } from '@/robot-kit';
 
 import { useConnectionStatus, useLiveValue, useRobotPackage } from '../monitor-context';
 import type { ConnectionStatus } from '../ports';
+import { useSessions } from '../sessions/sessions-context';
 
-/** Why a reload would be unsafe: the robot is not at rest, or the link is not settled to tell. */
-export type ReloadBlock = 'not-idle' | 'disconnect';
+/**
+ * Why a reload would be unsafe: a recording is under way, the robot is not at rest, or the link is
+ * not settled to tell.
+ */
+export type ReloadBlock = 'recording' | 'not-idle' | 'disconnect';
 
 /** What decides whether the page may reload. */
 export interface ReloadFacts {
@@ -17,16 +21,29 @@ export interface ReloadFacts {
   readonly hasPackage: boolean;
   /** Whether the last state seen on this link was idle; null when none was seen. */
   readonly lastIdle: boolean | null;
+  /** Whether REC is on, which a reload would cut short. */
+  readonly recording?: boolean;
 }
 
 /**
- * Tells whether reloading now could cut a run short. A linked robot must be idle, and with no
+ * Tells whether reloading now could cut a run or a recording short. A recording must be stopped
+ * first, whatever the robot does. A linked robot must be idle, and with no
  * package to tell, only leaving the link makes it safe. While the link connects or shakes hands
  * the robot may be running, and after it dropped the last state it was seen in decides.
  *
  * @returns The reason to hold the reload back, or null when it is safe.
  */
-export function reloadBlock({ link, idle, hasPackage, lastIdle }: ReloadFacts): ReloadBlock | null {
+export function reloadBlock({
+  link,
+  idle,
+  hasPackage,
+  lastIdle,
+  recording = false,
+}: ReloadFacts): ReloadBlock | null {
+  if (recording) {
+    return 'recording';
+  }
+
   switch (link) {
     case 'linked':
       if (!hasPackage) {
@@ -44,9 +61,10 @@ export function reloadBlock({ link, idle, hasPackage, lastIdle }: ReloadFacts): 
   }
 }
 
-/** {@link reloadBlock} for the connected robot, following the link and its state. */
+/** {@link reloadBlock} for the connected robot and REC, following the link and its state. */
 export function useReloadBlocked(): ReloadBlock | null {
   const status = useConnectionStatus();
+  const recording = (useSessions()?.recording ?? null) !== null;
   const pkg = useRobotPackage()?.package ?? null;
   const stateName = roleVariable(pkg, 'state');
   const value = useLiveValue(stateName)?.value;
@@ -68,5 +86,6 @@ export function useReloadBlocked(): ReloadBlock | null {
     idle,
     hasPackage: stateName !== null,
     lastIdle,
+    recording,
   });
 }

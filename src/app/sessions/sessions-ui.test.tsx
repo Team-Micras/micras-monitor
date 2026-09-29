@@ -9,6 +9,7 @@ import { activeWorkspace, focusedWindow } from '@/tiling';
 
 import { App } from '../app';
 import { createDemoRobot } from '../fake/demo-robot';
+import type { AppUpdates } from '../pwa/app-updates';
 import '../styles.css';
 import { createShellStore, type ShellStore } from '../state/shell-store';
 import { describeRobot } from './browser-sessions';
@@ -26,7 +27,7 @@ afterEach(() => {
   stop = undefined;
 });
 
-async function setup() {
+async function setup(updates?: AppUpdates) {
   const robot = createDemoRobot({ connectMs: 5, handshakeMs: 10, configureMs: 5, commandMs: 5 });
   const library = new MemorySessionLibrary();
   const sessions = new SessionManager({
@@ -44,6 +45,7 @@ async function setup() {
       robots={new RobotRegistry([MICRAS])}
       store={shell}
       sessions={sessions}
+      updates={updates}
       synthetic
     />
   );
@@ -103,6 +105,21 @@ describe('REC and the sessions', () => {
     await screen.getByRole('button', { name: 'Live', exact: true }).click();
     await expect.element(screen.getByTitle(`Saved session ${saved.name}`)).not.toBeInTheDocument();
     expect(sessions.state.viewing).toBeNull();
+  });
+
+  test('holds back an app update while recording, and lets it through once stopped', async () => {
+    const { sessions, screen } = await setup({
+      waiting: () => true,
+      subscribe: () => () => undefined,
+      apply: () => undefined,
+    });
+    await sessions.startRecording();
+    const notice = screen.getByRole('status', { name: 'Update available' });
+
+    await expect.element(notice).toHaveTextContent('Stop recording to reload');
+    await expect.element(notice.getByRole('button', { name: 'Reload' })).toBeDisabled();
+    await sessions.stopRecording();
+    await expect.element(notice).not.toHaveTextContent('Stop recording to reload');
   });
 
   test('renames a session in the list', async () => {

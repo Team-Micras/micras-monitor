@@ -35,6 +35,20 @@ describe('reloadBlock', () => {
     expect(reloadBlock({ ...linkedIdle, link: 'failed', idle: null, lastIdle: null })).toBeNull();
   });
 
+  test('holds back the reload while recording, whatever the robot does', () => {
+    expect(reloadBlock({ ...linkedIdle, recording: true })).toBe('recording');
+    expect(
+      reloadBlock({
+        link: 'disconnected',
+        idle: null,
+        hasPackage: false,
+        lastIdle: null,
+        recording: true,
+      })
+    ).toBe('recording');
+    expect(reloadBlock({ ...linkedIdle, recording: false })).toBeNull();
+  });
+
   test('lets the user reload after disconnecting on purpose', () => {
     expect(
       reloadBlock({ ...linkedIdle, link: 'disconnected', idle: null, lastIdle: null })

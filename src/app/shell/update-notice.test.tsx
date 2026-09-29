@@ -63,4 +63,16 @@ describe('UpdateNotice', () => {
     await expect.element(screen.getByRole('status')).toHaveTextContent('Disconnect to reload');
     await expect.element(screen.getByRole('button', { name: 'Reload' })).toBeDisabled();
   });
+
+  test('asks to stop recording before a reload', async () => {
+    const updates: AppUpdates = {
+      waiting: () => true,
+      subscribe: () => () => undefined,
+      apply: vi.fn<() => void>(),
+    };
+    const screen = await render(<UpdateNotice updates={updates} blockedBy="recording" />);
+
+    await expect.element(screen.getByRole('status')).toHaveTextContent('Stop recording to reload');
+    await expect.element(screen.getByRole('button', { name: 'Reload' })).toBeDisabled();
+  });
 });
