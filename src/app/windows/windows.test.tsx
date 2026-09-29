@@ -176,6 +176,15 @@ function frames(count: number): Promise<void> {
   });
 }
 
+async function settled(): Promise<void> {
+  await Promise.all(
+    document
+      .getAnimations()
+      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map((animation) => animation.finished.catch(() => undefined))
+  );
+}
+
 function batteryReadout(): string {
   return query('[data-readout="battery_voltage"]')?.textContent ?? '';
 }
@@ -513,9 +522,12 @@ describe('Commands', () => {
       .element(screen.getByRole('dialog'))
       .toHaveTextContent('Save the maze to the flash?');
     await screen.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+    await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument();
     expect(sent).toEqual([]);
 
     await save.click();
+    await expect.element(screen.getByRole('dialog')).toBeVisible();
+    await settled();
     await screen.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
     await expect.element(screen.getByRole('alert')).toHaveTextContent('Refused — robot not idle');
     expect(sent).toEqual([3]);
