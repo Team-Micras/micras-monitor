@@ -20,6 +20,10 @@ const MICRAS: RobotPackage<ReactNode> = mouse({ id: 'micras', displayName: 'Micr
 
 let robot: LiveRobot | undefined;
 
+function readout(): string {
+  return document.querySelector('[data-readout="imu/gyro_z"] dd')?.textContent ?? '';
+}
+
 afterEach(() => {
   robot?.disconnect();
   robot = undefined;
@@ -36,9 +40,8 @@ test('shows live values of the simulated robot over a WebSocket', async () => {
   robot.connect({ transport: 'websocket', url: `ws://127.0.0.1:${inject('simulatedRobotPort')}` });
 
   await expect.element(screen.getByText('· connected')).toBeVisible();
-  const row = screen.getByRole('listitem').filter({ hasText: 'imu/gyro_z' });
-  await expect.element(row).toHaveTextContent(/imu\/gyro_z-?\d+\.\d{3}/);
-  const first = row.element().textContent;
-  await expect.poll(() => row.element().textContent, { timeout: 3000 }).not.toBe(first);
+  await expect.poll(readout).toMatch(/^-?\d+\.\d{3}$/);
+  const first = readout();
+  await expect.poll(readout, { timeout: 3000 }).not.toBe(first);
   expect(robot.planner?.plan?.rates.map((rate) => rate.variable)).toContain('imu/gyro_z');
 });

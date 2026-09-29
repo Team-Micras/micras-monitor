@@ -40,7 +40,7 @@ export function streamRequest(
 ): StreamRequest {
   const windows: StreamDemand[] = visibleWindows(desktop).flatMap((id) => {
     const window = desktop.windows.get(id);
-    return window ? windowDemand(window) : [];
+    return window ? windowDemand(window, pkg) : [];
   });
   const pinned: PinnedDemand[] = PINNED_RATES_HZ.flatMap(([role, rateHz]) => {
     const variable = pkg?.roles[role];
