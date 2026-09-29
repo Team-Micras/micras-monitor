@@ -11,7 +11,7 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "test": "vitest run --project unit --project browser",
+    "test": "vitest run --project unit --project browser --project performance",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
     "test:browser": "vitest run --project browser --project performance",
