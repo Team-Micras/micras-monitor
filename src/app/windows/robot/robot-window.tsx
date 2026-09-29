@@ -6,12 +6,13 @@ import { enumLabel, roleVariable, type EnumType } from '@/robot-kit';
 import { formatClock, formatValue } from '../../lib/format';
 import { cn } from '../../lib/utils';
 import { useLinkUp, useLiveValue, useMonitor, useRobotPackage } from '../../monitor-context';
-import type { HistoryPort } from '../../ports';
+import type { HistoryPort, LogEntry } from '../../ports';
 import { usePresentedVariables } from '../shared/presented-variables';
 import { isStale } from '../shared/readings';
 import { READOUT_RATE_HZ } from '../rates';
 import { useLinkLive, useSessionEnd, useStaleAfter } from '../shared/session-end';
 import type { WindowViewProps } from '../types';
+import { loggedTransitions, mergeTransitions, type StateLogReader } from './logged-transitions';
 import { TransitionTracker, type Transition } from './transitions';
 
 const SHOWN_TRANSITIONS = 5;
@@ -44,13 +45,32 @@ function useTransitions(name: string | null): readonly Transition[] {
   );
 }
 
+const NO_ENTRIES: readonly LogEntry[] = [];
+
+function useLogEntries(follow: boolean): readonly LogEntry[] {
+  const { log } = useMonitor().ports;
+  return useSyncExternalStore(
+    (listener) => (follow ? log.subscribe(listener) : () => undefined),
+    () => (follow ? log.entries() : NO_ENTRIES)
+  );
+}
+
+function timelineOf(
+  sampled: readonly Transition[],
+  entries: readonly LogEntry[],
+  read: StateLogReader | undefined
+): readonly Transition[] {
+  return read === undefined ? sampled : mergeTransitions(loggedTransitions(entries, read), sampled);
+}
+
 function labelOf(labels: EnumType | null, value: number): string {
   return labels === null ? String(value) : enumLabel(labels, value);
 }
 
 /**
- * The robot by the roles its package gives: the state with its label, how long it has been in
- * it and the last transitions, and the battery.
+ * The robot by the roles its package gives: the state with its label and how long it has been in
+ * it, from the live value; the last transitions, from the robot's log when the package reads it
+ * and from the sampled state otherwise and where the log has gaps; and the battery.
  */
 export function RobotWindow(_props: WindowViewProps) {
   const pkg = useRobotPackage()?.package ?? null;
@@ -60,7 +80,10 @@ export function RobotWindow(_props: WindowViewProps) {
   const stateLabels =
     state.presentation?.labels?.kind === 'enum' ? state.presentation.labels : null;
   const current = useLiveValue(stateName);
-  const transitions = useTransitions(stateName);
+  const sampled = useTransitions(stateName);
+  const read = pkg?.stateLog;
+  const entries = useLogEntries(read !== undefined);
+  const transitions = timelineOf(sampled, entries, read);
   const sessionEndUs = useSessionEnd();
   const live = useLinkLive();
   const linked = useLinkUp();
@@ -76,7 +99,7 @@ export function RobotWindow(_props: WindowViewProps) {
     );
   }
 
-  const since = transitions.at(-1);
+  const since = sampled.at(-1);
   const shown = transitions.slice(-SHOWN_TRANSITIONS);
   const stale = isStale(current, sessionEndUs, live, stateStaleAfterUs);
 

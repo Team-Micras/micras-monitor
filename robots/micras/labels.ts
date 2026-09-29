@@ -62,6 +62,18 @@ function enumOf(
   };
 }
 
+const LOGGED_STATE = /^state ([A-Z_]+)$/;
+
+/**
+ * The state a line of the robot's log reports entering, as `Micras::report_state` writes it
+ * (`state <NAME>`), or null for any other line.
+ */
+export function stateFromLog(text: string): FsmState | null {
+  const name = LOGGED_STATE.exec(text)?.[1];
+  const entry = Object.entries(FsmState).find(([label]) => label === name);
+  return entry === undefined ? null : entry[1];
+}
+
 /** Labels of the `state` variable. */
 export const STATE_LABELS: EnumType = enumOf('FsmState', FsmState, STATE_DESCRIPTIONS);
 

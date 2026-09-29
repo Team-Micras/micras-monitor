@@ -39,6 +39,11 @@ export interface SerializableType<T = unknown, Node = unknown> {
   /** The name shown for the type, such as `Maze`. */
   readonly name: string;
   /**
+   * The numeric roles the view reads through `roles`, such as the pose over a map; the app streams
+   * and follows them while the view is on screen.
+   */
+  readonly follows?: readonly Role[];
+  /**
    * Turns the blob's bytes into a value.
    *
    * @throws {Error} When the bytes are not a valid encoding of the type.
@@ -181,6 +186,12 @@ export interface RobotPackage<Node = unknown> {
   readonly variables: Readonly<Record<string, VariableSpec>>;
   readonly types: readonly SerializableType<unknown, Node>[];
   readonly commands: readonly CommandSpec[];
+  /**
+   * Reads a line of the robot's log that reports a transition of its state, giving the value of
+   * the state it entered, or null for any other line. With it the Robot window takes the
+   * transitions from the robot's own timestamps, which keep states shorter than a sample.
+   */
+  readonly stateLog?: (text: string) => number | null;
   /** Why the robot refused a command, by the reason byte of COMMAND_ACK. */
   readonly refusalReasons: Readonly<Record<number, string>>;
   readonly presets: readonly LayoutPreset[];
