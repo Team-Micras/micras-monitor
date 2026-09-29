@@ -38,7 +38,7 @@ export function reloadBlock({ link, idle, hasPackage, lastIdle }: ReloadFacts): 
     case 'handshaking':
       return lastIdle === false ? 'not-idle' : 'disconnect';
     case 'failed':
-      return lastIdle === false ? 'not-idle' : null;
+      return lastIdle === false ? 'disconnect' : null;
     default:
       return null;
   }

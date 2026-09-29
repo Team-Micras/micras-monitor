@@ -27,9 +27,9 @@ describe('reloadBlock', () => {
     }
   );
 
-  test('holds back the reload after a drop from a state that was not idle', () => {
+  test('asks to disconnect after a drop from a state that was not idle', () => {
     expect(reloadBlock({ ...linkedIdle, link: 'failed', idle: null, lastIdle: false })).toBe(
-      'not-idle'
+      'disconnect'
     );
     expect(reloadBlock({ ...linkedIdle, link: 'failed', idle: null, lastIdle: true })).toBeNull();
     expect(reloadBlock({ ...linkedIdle, link: 'failed', idle: null, lastIdle: null })).toBeNull();
