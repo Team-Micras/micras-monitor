@@ -147,6 +147,6 @@ describe('the Micras package in the app', () => {
     );
 
     await expect.poll(timeline).toBe('RUN SAVE RUN IDLE');
-    expect(document.querySelector('[data-robot-state]')?.textContent).toBe('IDLE');
+    await expect.poll(() => document.querySelector('[data-robot-state]')?.textContent).toBe('IDLE');
   });
 });
