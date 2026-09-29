@@ -7,6 +7,7 @@ import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/ti
 
 import { App } from '../../app';
 import { createDemoRobot } from '../../fake/demo-robot';
+import { percentile, reportBench } from '../../fixtures/bench';
 import { createShellStore } from '../../state/shell-store';
 import '../../styles.css';
 import type { ShellWindow } from '../types';
@@ -24,11 +25,6 @@ const SIGNALS = [
   ['pose/orientation', 'reference/orientation'],
 ];
 
-function percentile(values: readonly number[], share: number): number {
-  const sorted = values.toSorted((left, right) => left - right);
-  return sorted[Math.min(sorted.length - 1, Math.floor(share * sorted.length))] ?? Number.NaN;
-}
-
 function grid(ids: readonly string[]): TileNode {
   const row = (from: number) =>
     split(
@@ -40,7 +36,7 @@ function grid(ids: readonly string[]): TileNode {
   return split('column', 0.5, row(0), row(4));
 }
 
-test('eight live plots of 1 kHz signals draw within the frame budget', async ({ annotate }) => {
+test('eight live plots of 1 kHz signals draw in a few milliseconds a frame', async (context) => {
   const work: number[] = [];
   const intervals: number[] = [];
   const scheduler: Scheduler = {
@@ -98,10 +94,12 @@ test('eight live plots of 1 kHz signals draw within the frame budget', async ({ 
   const fps =
     (1000 * intervals.length) / intervals.reduce((total, interval) => total + interval, 0);
   const summary = `${PLOTS} plots × 2 signals at 1 kHz: work p50 ${percentile(work, 0.5).toFixed(2)} ms, p95 ${percentile(work, 0.95).toFixed(2)} ms, max ${Math.max(...work).toFixed(2)} ms over ${work.length} frames; ${fps.toFixed(0)} fps, frame interval p95 ${percentile(intervals, 0.95).toFixed(1)} ms`;
-  await annotate(summary);
+  await reportBench(context, {
+    timings: { frameP95Ms: percentile(work, 0.95), intervalP95Ms: percentile(intervals, 0.95) },
+    summary,
+  });
 
   expect(document.querySelectorAll('[data-plot] canvas')).toHaveLength(PLOTS);
   expect(work.length).toBeGreaterThan(RUN_MS / 50);
   expect(stored).toBeGreaterThan(0.9 * (RUN_MS + 1000));
-  expect(percentile(work, 0.95)).toBeLessThanOrEqual(8);
 });

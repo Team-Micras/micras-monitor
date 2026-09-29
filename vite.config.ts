@@ -3,9 +3,9 @@ import tailwindcss from '@tailwindcss/vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { VitePWA } from 'vite-plugin-pwa';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
-const PERFORMANCE_TESTS = ['src/**/*-performance.test.tsx'];
+const PERFORMANCE_TESTS = ['src/**/*-performance.test.{ts,tsx}'];
 
 function chromium() {
   return {
@@ -81,6 +81,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['src/**/*.test.ts', 'robots/**/*.test.ts', 'tools/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...PERFORMANCE_TESTS],
           environment: 'node',
           testTimeout: 30_000,
         },
@@ -105,7 +106,7 @@ export default defineConfig({
             'src/*.test.tsx',
             'robots/**/*.test.tsx',
           ],
-          exclude: PERFORMANCE_TESTS,
+          exclude: [...configDefaults.exclude, ...PERFORMANCE_TESTS],
           globalSetup: ['tools/browser-setup.ts'],
           testTimeout: 60_000,
           hookTimeout: 60_000,
@@ -118,7 +119,9 @@ export default defineConfig({
         test: {
           name: 'performance',
           include: PERFORMANCE_TESTS,
+          globalSetup: ['tools/browser-setup.ts'],
           testTimeout: 60_000,
+          hookTimeout: 60_000,
           expect: { poll: { timeout: 10_000 } },
           sequence: { groupOrder: 1 },
           browser: chromium(),
