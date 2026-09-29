@@ -72,6 +72,7 @@ function timeline(): string {
 
 describe('the Micras package in the app', () => {
   test('draws the maze the robot sends and reads it again when its revision moves', async () => {
+    let explored = false;
     await openMaze([
       { name: 'state', type: TypeCode.U8, access: decodeAccess(0x01), signal: () => 3 },
       f32('pose/x', 0.09),
@@ -82,21 +83,22 @@ describe('the Micras package in the app', () => {
         type: TypeCode.BLOB,
         access: decodeAccess(0x08),
         typeTag: 'maze-grid',
-        bytes: (seconds) => (seconds < 1 ? FRESH_16 : EXPLORED_16),
+        bytes: () => (explored ? EXPLORED_16 : FRESH_16),
       },
       {
         name: 'maze/revision',
         type: TypeCode.U32,
         access: decodeAccess(0x01),
-        signal: (seconds) => (seconds < 1.2 ? 1 : 8),
+        signal: () => (explored ? 8 : 1),
       },
     ]);
 
-    await expect.poll(() => maze()?.dataset.walls, { timeout: 5000 }).toBe('65');
+    await expect.poll(() => maze()?.dataset.walls).toBe('65');
     expect(maze()?.dataset.explored).toBe('1');
-    await expect.poll(() => maze()?.dataset.robotCell, { timeout: 3000 }).toBe('0,1');
+    await expect.poll(() => maze()?.dataset.robotCell).toBe('0,1');
 
-    await expect.poll(() => maze()?.dataset.walls, { timeout: 3000 }).toBe('68');
+    explored = true;
+    await expect.poll(() => maze()?.dataset.walls).toBe('68');
     expect(maze()?.dataset.explored).toBe('2');
   });
 
@@ -111,7 +113,7 @@ describe('the Micras package in the app', () => {
       },
     ]);
 
-    await expect.poll(() => maze()?.dataset.walls, { timeout: 5000 }).toBe('65');
+    await expect.poll(() => maze()?.dataset.walls).toBe('65');
     const frame = document.querySelector('[data-maze]')?.closest('section, [data-window]');
     const box = maze()?.getBoundingClientRect();
     const walls = maze()?.querySelector('path.stroke-foreground')?.getBoundingClientRect();
@@ -144,7 +146,7 @@ describe('the Micras package in the app', () => {
       ROBOT_WINDOW
     );
 
-    await expect.poll(timeline, { timeout: 3000 }).toBe('RUN SAVE RUN IDLE');
+    await expect.poll(timeline).toBe('RUN SAVE RUN IDLE');
     expect(document.querySelector('[data-robot-state]')?.textContent).toBe('IDLE');
   });
 });
