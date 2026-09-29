@@ -39,10 +39,12 @@ export class LiveLog implements LogPort {
     this.#now = now;
   }
 
+  /** Every entry kept, oldest first; the same array until an entry arrives. */
   entries(): readonly LogEntry[] {
     return this.#entries;
   }
 
+  /** Calls `callback` after every entry that arrives; returns the function that stops it. */
   subscribe(callback: () => void): () => void {
     this.#listeners.add(callback);
     return () => this.#listeners.delete(callback);

@@ -221,37 +221,71 @@ describe('LiveRobot against the simulated robot', () => {
   });
 
   test(
-    'stays within a 3 KB/s link, and every sample the robot dropped shows in the stats',
-    { timeout: 20_000 },
+    'settles within a 3 KB/s link through several probes, then stops dropping',
+    { timeout: 45_000 },
     async () => {
-      const { live, sim } = await start({ throughputBytesPerSecond: 3000 });
+      const { live, sim } = await start(
+        { throughputBytesPerSecond: 3000 },
+        {
+          timing: { ...TEST_TIMING, statsIntervalMs: 1000 },
+          planner: { debounceMs: 20, budget: { holdMs: 2000 } },
+        }
+      );
       live.ports.streams.request({
         windows: [...IMU, ...CONTROL].map((variable) => ({ variable, rateHz: 100 })),
         pinned: PINNED,
       });
       await streaming(live);
-      await delay(6000);
+      await waitFor(
+        () => (live.planner?.budget.capacityBytesPerSecond ?? Infinity) < 3000 * 1.5,
+        5000,
+        'the first ceiling'
+      );
 
-      const settled = live.session?.stats;
-      await delay(5000);
+      let overspent = false;
+      const watch = setInterval(() => {
+        const plan = live.planner?.plan;
+        overspent ||= (plan?.usedBytesPerSecond ?? 0) > (plan?.budgetBytesPerSecond ?? 0);
+      }, 50);
+      await delay(16_000);
+      const settled = { ...sim.stats };
+      const settledMonitor = live.session?.stats;
+      await delay(8000);
+      clearInterval(watch);
 
       const stats = live.ports.link.stats();
       const plan = live.planner?.plan;
       const session = live.session?.stats;
-      const droppedAfter = (session?.droppedSamples ?? 0) - (settled?.droppedSamples ?? 0);
-      const receivedAfter = (session?.samples ?? 0) - (settled?.samples ?? 0);
 
       expect(plan?.overBudget).toBe(true);
-      expect(stats.budget.used).toBeLessThanOrEqual(stats.budget.bytesPerSecond);
-      expect(stats.budget.bytesPerSecond).toBeLessThan(3000);
-      expect(stats.bytesInPerSecond).toBeLessThan(3000 * 1.05);
+      expect(((session?.bytesIn ?? 0) - (settledMonitor?.bytesIn ?? 0)) / 8).toBeLessThanOrEqual(
+        3000
+      );
+      expect(overspent).toBe(false);
+      expect(plan?.usedBytesPerSecond).toBeLessThanOrEqual(plan?.budgetBytesPerSecond ?? 0);
+      expect(stats.budget.bytesPerSecond).toBeGreaterThan(3000 * 0.75);
       expect(plan?.rates.find((rate) => rate.variable === 'state')?.grantedHz).toBeCloseTo(10);
       expect(sim.stats.radioOverflowBytes).toBe(0);
+      expect(sim.stats.samplesDropped - settled.samplesDropped).toBe(0);
+      expect((session?.droppedSamples ?? 0) - (settledMonitor?.droppedSamples ?? 0)).toBe(0);
       expect(stats.samplesDropped).toBe(session?.droppedSamples);
       expect(
         Math.abs(sim.stats.samplesDropped - (session?.droppedSamples ?? 0))
       ).toBeLessThanOrEqual(4);
-      expect(droppedAfter).toBeLessThanOrEqual(receivedAfter * 0.01);
     }
   );
+
+  test('marks a boundary when a stalled link has to shake hands again', async () => {
+    const { live } = await start({ dropCredits: 40 });
+    live.ports.streams.request({ windows: [{ variable: 'imu/gyro_z', rateHz: 200 }], pinned: [] });
+    await streaming(live);
+
+    await waitFor(
+      () => live.store.boundaries().some((boundary) => boundary.kind === 'reconnect'),
+      8000,
+      'a boundary for the stall'
+    );
+
+    expect(live.ports.connection.status().kind).not.toBe('failed');
+  });
 });

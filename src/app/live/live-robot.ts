@@ -117,7 +117,12 @@ function toVariable(entry: SchemaEntry): RobotVariable {
 
 function rateRequests(request: StreamRequest): RateRequest[] {
   return [
-    ...request.pinned.map(({ variable, rateHz }) => ({ variable, rateHz, pinned: true })),
+    ...request.pinned.map(({ role, variable, rateHz }) => ({
+      variable,
+      rateHz,
+      pinned: true,
+      countsDrops: role === 'link.dropped',
+    })),
     ...request.windows.map(({ variable, rateHz }) => ({ variable, rateHz })),
   ];
 }
@@ -458,7 +463,10 @@ export class LiveRobot {
       this.log.link(state.kind === 'error' ? 'error' : 'info', text);
     }
 
-    if (state.kind === 'disconnected') {
+    if (
+      state.kind === 'disconnected' ||
+      (state.kind === 'handshaking' && state.attempt === 1 && state.reason !== 'connected')
+    ) {
       this.#markBoundary('reconnect');
     }
 
@@ -511,6 +519,11 @@ export class LiveRobot {
     }
   }
 
+  /**
+   * A reboot and a reset of the robot's clock both mark a `reboot` boundary: the store knows no
+   * kind for a clock that started over without the robot rebooting, and either way the times
+   * before and after belong to different runs of the clock.
+   */
   #onTimeline({ id, reason }: TimelineEvent): void {
     this.#currentTimeline = id;
 
@@ -540,7 +553,9 @@ export class LiveRobot {
     this.#epochTimelines.clear();
     const timeUs = this.#timeline.lastUs;
 
-    if (Number.isFinite(timeUs) && this.store.boundaries().at(-1)?.timeUs !== timeUs) {
+    const last = this.store.boundaries().at(-1);
+
+    if (Number.isFinite(timeUs) && (last?.timeUs !== timeUs || last.kind !== kind)) {
       this.store.markBoundary(kind, timeUs);
     }
   }
