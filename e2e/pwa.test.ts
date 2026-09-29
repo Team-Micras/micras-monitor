@@ -180,6 +180,57 @@ describe('the PWA', () => {
     await page.getByText('· connected').waitFor();
   });
 
+  test('records offline into the file system, through the storage worker from the cache', async () => {
+    const page = await fresh();
+    await page.goto(`${origin}?fake`);
+    await controlled(page);
+    const urls = await page.evaluate(async () => {
+      const names = await caches.keys();
+      const cache = await caches.open(names.find((name) => name.includes('precache')) ?? '');
+      return (await cache.keys()).map((request) => new URL(request.url).pathname);
+    });
+    expect(urls.some((url) => /opfs\.worker-.*\.js$/.test(url))).toBe(true);
+
+    await page.context().setOffline(true);
+    await page.reload();
+    await page
+      .getByRole('button', { name: /Connect/ })
+      .first()
+      .click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Connect' }).click();
+    await page.getByText('· connected').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('[data-rec]').click();
+    await page.getByRole('button', { name: 'Start recording' }).click();
+    await expect
+      .poll(
+        async () => Number(await page.locator('[data-rec]').getAttribute('data-recorded-samples')),
+        {
+          timeout: 20_000,
+        }
+      )
+      .toBeGreaterThan(0);
+
+    await page.locator('[data-rec]').click();
+    await page.getByRole('button', { name: /Sessions/ }).click();
+    const row = page.locator('[data-session]').first();
+    await row.waitFor();
+    expect(await page.getByText(/kept in this browser/).count()).toBeGreaterThan(0);
+    const stored = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const app = await root.getDirectoryHandle('micras-monitor');
+      const sessions = await app.getDirectoryHandle('sessions');
+      const names: string[] = [];
+
+      for await (const name of sessions.keys()) {
+        names.push(name);
+      }
+
+      return names;
+    });
+    expect(stored).toEqual([await row.getAttribute('data-session')]);
+  });
+
   test('offers an update without reloading, and refuses to reload while the robot runs', async () => {
     const copy = mkdtempSync(join(tmpdir(), 'micras-monitor-e2e-update-'));
     cpSync(dist, copy, { recursive: true });

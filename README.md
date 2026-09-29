@@ -87,6 +87,7 @@ on it; on start, a session still marked `recording` whose lock nobody holds was 
 damaged tail, if any, is cut from the file and reported, and it is listed as recovered. Export
 downloads the file with its current name in the header. Browsers without the file system keep
 sessions in memory for the life of the tab.
+
 ## Phone and PWA
 
 The app is an installable PWA (`vite-plugin-pwa`, service worker in `sw/sw.ts`). The service worker
