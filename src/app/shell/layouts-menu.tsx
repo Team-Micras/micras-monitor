@@ -30,9 +30,36 @@ export function LayoutsMenu() {
   const workspaceName = useShell((state) => activeWorkspace(state.desktop).name);
   const pkg = useRobotPackage()?.package ?? null;
   const [name, setName] = useState('');
+  const wanted = useRef<string | null | undefined>(undefined);
   const field = useRef<HTMLInputElement>(null);
-  const target = name.trim() === '' ? workspaceName : name.trim();
+  const content = useRef<HTMLDivElement>(null);
+  const packageNames = pkg?.presets.map((preset) => preset.name) ?? [];
+  const suggestion = packageNames.includes(workspaceName)
+    ? `${workspaceName} (mine)`
+    : workspaceName;
+  const target = name.trim() === '' ? suggestion : name.trim();
   const replaces = presets.some((preset) => preset.name === target);
+
+  useEffect(() => {
+    const focus = wanted.current;
+
+    if (focus === undefined) {
+      return;
+    }
+
+    wanted.current = undefined;
+    const row =
+      focus === null
+        ? null
+        : content.current?.querySelector(`[data-preset="${CSS.escape(focus)}"] [data-apply]`);
+    (row instanceof HTMLElement ? row : field.current)?.focus();
+  });
+
+  const remove = (preset: string) => {
+    const index = presets.findIndex((entry) => entry.name === preset);
+    wanted.current = (presets[index + 1] ?? presets[index - 1])?.name ?? null;
+    store.getState().deletePreset(preset);
+  };
 
   const apply = (preset: LayoutPreset) => {
     store.getState().applyPreset(preset);
@@ -57,8 +84,15 @@ export function LayoutsMenu() {
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        ref={content}
         align="end"
         className="flex w-80 flex-col gap-4 p-3"
+        onEscapeKeyDown={(event) => {
+          if (store.getState().layoutsIntent?.kind === 'rename') {
+            event.preventDefault();
+            store.getState().setLayoutsOpen(true);
+          }
+        }}
         onOpenAutoFocus={(event) => {
           if (store.getState().layoutsIntent?.kind === 'save') {
             event.preventDefault();
@@ -89,7 +123,11 @@ export function LayoutsMenu() {
           ) : (
             presets.map((preset) =>
               intent?.kind === 'rename' && intent.name === preset.name ? (
-                <RenameRow key={preset.name} name={preset.name} />
+                <RenameRow
+                  key={preset.name}
+                  name={preset.name}
+                  onDone={(focus) => (wanted.current = focus)}
+                />
               ) : (
                 <li
                   key={preset.name}
@@ -98,6 +136,7 @@ export function LayoutsMenu() {
                 >
                   <button
                     type="button"
+                    data-apply
                     onClick={() => apply(preset)}
                     className="flex h-9 min-w-0 flex-1 items-center rounded-lg px-2.5 text-left text-sm transition-colors hover:bg-muted"
                   >
@@ -119,7 +158,7 @@ export function LayoutsMenu() {
                     size="icon-sm"
                     className="text-muted-foreground"
                     aria-label={`Delete ${preset.name}`}
-                    onClick={() => store.getState().deletePreset(preset.name)}
+                    onClick={() => remove(preset.name)}
                   >
                     <Trash2Icon />
                   </Button>
@@ -134,7 +173,7 @@ export function LayoutsMenu() {
               ref={field}
               value={name}
               aria-label="Layout name"
-              placeholder={workspaceName}
+              placeholder={suggestion}
               onChange={(event) => setName(event.target.value)}
             />
             <Button type="submit" variant="outline">
@@ -142,7 +181,10 @@ export function LayoutsMenu() {
             </Button>
           </div>
           <p className="px-0.5 text-xs text-muted-foreground">
-            Saves the tiles of {workspaceName} as a layout.
+            Saves the tiles of {workspaceName} as a layout.{' '}
+            {target !== workspaceName && name.trim() === ''
+              ? 'A robot layout has that name.'
+              : null}
           </p>
         </form>
       </PopoverContent>
@@ -165,7 +207,13 @@ function Section({
   );
 }
 
-function RenameRow({ name }: { readonly name: string }) {
+function RenameRow({
+  name,
+  onDone,
+}: {
+  readonly name: string;
+  readonly onDone: (focus: string) => void;
+}) {
   const store = useShellStore();
   const [text, setText] = useState(name);
   const field = useRef<HTMLInputElement>(null);
@@ -174,13 +222,16 @@ function RenameRow({ name }: { readonly name: string }) {
 
   useEffect(() => field.current?.select(), []);
 
-  const finish = () => store.getState().setLayoutsOpen(true);
+  const finish = (focus: string) => {
+    store.getState().setLayoutsOpen(true);
+    onDone(focus);
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
 
     if (store.getState().renamePreset(name, text)) {
-      finish();
+      finish(text.trim());
     }
   };
 
@@ -193,12 +244,6 @@ function RenameRow({ name }: { readonly name: string }) {
           aria-invalid={taken}
           className="h-9 flex-1"
           onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.stopPropagation();
-              finish();
-            }
-          }}
           ref={field}
         />
         <Button
@@ -210,7 +255,13 @@ function RenameRow({ name }: { readonly name: string }) {
         >
           <CheckIcon />
         </Button>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="Cancel" onClick={finish}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Cancel"
+          onClick={() => finish(name)}
+        >
           <XIcon />
         </Button>
       </form>

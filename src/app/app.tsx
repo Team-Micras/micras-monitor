@@ -4,16 +4,17 @@ import type { RobotRegistry } from '@/robot-kit';
 import { emergencyCommand } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
-import type { LayoutStorage } from './layouts/layout-book';
-import { useLayouts } from './layouts/use-layouts';
 import { TooltipProvider } from './components/ui/tooltip';
 import type { KeyAction } from './keymap/keymap';
 import { tilingCommandFor } from './keymap/tiling-commands';
 import { useKeymap } from './keymap/use-keymap';
+import type { LayoutStorage } from './layouts/layout-book';
+import { useLayouts } from './layouts/use-layouts';
 import { nothingToStop, stopAnswered, stopSent } from './lib/stop-outcome';
 import { MonitorContext, useMonitor } from './monitor-context';
 import { PackageSelector } from './package-selection';
 import type { MonitorPorts } from './ports';
+import { DeletedNotice } from './shell/deleted-notice';
 import { Launcher } from './shell/launcher';
 import { StatusBar } from './shell/status-bar';
 import { StopActionContext } from './shell/stop-action';
@@ -43,7 +44,7 @@ export interface AppProps {
   readonly store?: ShellStore;
   /**
    * Where the layouts are kept per robot, such as `localStorage`. Without it the desktop is never
-   * swapped for a robot's layout nor saved.
+   * swapped for a robot's layout nor saved. Nothing coordinates two tabs: the last write wins.
    */
   readonly layouts?: LayoutStorage;
 }
@@ -171,6 +172,7 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
         </main>
         <StatusBar />
         <Launcher onAction={onAction} />
+        <DeletedNotice />
         <DragGhost />
       </div>
     </StopActionContext>

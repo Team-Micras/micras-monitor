@@ -3,14 +3,17 @@ import { describe, expect, test } from 'vitest';
 import { layoutKey, nameSetSignature, overlap } from './layout-key';
 
 describe('the key of a robot', () => {
-  test('is the package id when a package draws the robot, whatever it announced', () => {
+  test('is the announced name first, even when a package draws the robot', () => {
     expect(layoutKey({ packageId: 'micras', name: 'micras', variables: ['a'] })).toBe(
-      'package:micras'
+      'name:micras'
     );
+  });
+
+  test('is the package id when the package was matched by variables', () => {
     expect(layoutKey({ packageId: 'micras', name: null, variables: ['a'] })).toBe('package:micras');
   });
 
-  test('is the announced name in raw mode', () => {
+  test('is the announced name in raw mode too', () => {
     expect(layoutKey({ packageId: null, name: 'rover', variables: ['a'] })).toBe('name:rover');
   });
 

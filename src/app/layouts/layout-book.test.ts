@@ -1,9 +1,15 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test } from 'vitest';
 
 import { createDesktop, createWorkspace, leaf, serializeDesktop } from '@/tiling';
 
 import type { WindowPayload } from '../windows/types';
-import { LayoutBook, RECORD_VERSION, STORAGE_PREFIX } from './layout-book';
+import {
+  BACKUP_PREFIX,
+  LayoutBook,
+  RECORD_VERSION,
+  safeLocalStorage,
+  STORAGE_PREFIX,
+} from './layout-book';
 import { MemoryStorage } from './memory-storage';
 
 function desktop(...variables: string[]) {
@@ -136,12 +142,23 @@ describe('the layouts of a robot known only by its variable names', () => {
     expect(new LayoutBook(storage).load('signature:aaaa', NAMES)?.presets).toEqual(PRESETS);
   });
 
-  test('find the layout of a schema that gained a variable, and move it to the new key', () => {
+  test('find the layout of a schema that gained a variable, and copy it to the new key', () => {
     const storage = saved('signature:aaaa', NAMES);
     const book = new LayoutBook(storage);
     const loaded = book.load('signature:bbbb', [...NAMES, 'v10']);
     expect(loaded?.desktop).toEqual(desktop(...NAMES));
-    expect(storage.getItem(`${STORAGE_PREFIX}signature:aaaa`)).toBeNull();
+    expect(storage.getItem(`${STORAGE_PREFIX}signature:aaaa`)).not.toBeNull();
+  });
+
+  test('keep two similar robots apart once each has edited its copy', () => {
+    const storage = saved('signature:aaaa', NAMES);
+    const book = new LayoutBook(storage);
+    const other = [...NAMES, 'v10'];
+    book.load('signature:bbbb', other);
+    book.save('signature:bbbb', { desktop: desktop('only-b'), presets: [] }, other);
+
+    expect(book.load('signature:aaaa', NAMES)?.desktop).toEqual(desktop(...NAMES));
+    expect(book.load('signature:bbbb', other)?.desktop).toEqual(desktop('only-b'));
   });
 
   test('do not take the layout of a robot with mostly other variables', () => {
@@ -167,5 +184,59 @@ describe('the layouts of a robot known only by its variable names', () => {
   test('never adopt the layout of a key that is not a signature', () => {
     const storage = saved('signature:aaaa', NAMES);
     expect(new LayoutBook(storage).load('name:rover', NAMES)).toBeNull();
+  });
+});
+
+describe('the last robot', () => {
+  test('is remembered and read back', () => {
+    const book = new LayoutBook(new MemoryStorage());
+    expect(book.last()).toBeNull();
+    book.remember('name:rover');
+    expect(book.last()).toBe('name:rover');
+  });
+
+  test('is not taken for a robot when looking for near signatures', () => {
+    const storage = new MemoryStorage();
+    const book = new LayoutBook(storage);
+    book.remember('signature:aaaa');
+    expect(book.load('signature:bbbb', ['a'])).toBeNull();
+  });
+});
+
+describe('an entry that cannot be read', () => {
+  test('is told from a missing one, and copied aside on request', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(`${STORAGE_PREFIX}name:a`, JSON.stringify({ version: RECORD_VERSION + 1 }));
+    const book = new LayoutBook(storage);
+    expect(book.unreadable('name:a')).toBe(true);
+    expect(book.unreadable('name:missing')).toBe(false);
+    book.save('name:ok', { desktop: desktop('a'), presets: [] }, []);
+    expect(book.unreadable('name:ok')).toBe(false);
+
+    book.backup('name:a');
+    expect(storage.getItem(`${BACKUP_PREFIX}name:a`)).toBe(
+      storage.getItem(`${STORAGE_PREFIX}name:a`)
+    );
+    expect(() => book.backup('name:missing')).not.toThrow();
+  });
+});
+
+describe('the browser storage', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, 'localStorage');
+  });
+
+  test('is null where reading it throws', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get: () => {
+        throw new Error('blocked');
+      },
+    });
+    expect(safeLocalStorage()).toBeNull();
+  });
+
+  test('is null where there is none', () => {
+    expect(safeLocalStorage()).toBeNull();
   });
 });

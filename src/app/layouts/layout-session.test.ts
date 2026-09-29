@@ -5,7 +5,7 @@ import type { LayoutPreset, SchemaVariable } from '@/robot-kit';
 import { activeWorkspace, leafIds } from '@/tiling';
 
 import { createShellStore, type ShellStore } from '../state/shell-store';
-import { LayoutBook, STORAGE_PREFIX } from './layout-book';
+import { BACKUP_PREFIX, LayoutBook, RECORD_VERSION, STORAGE_PREFIX } from './layout-book';
 import { LayoutSession, SAVE_DELAY_MS, type LayoutSubject } from './layout-session';
 import { MemoryStorage } from './memory-storage';
 
@@ -178,5 +178,91 @@ describe('following robots', () => {
     const plot = [...store.getState().desktop.windows.values()].find((w) => w.kind === 'plot');
     expect(plot?.payload.variables).toEqual(['pose/x', 'pose/y']);
     expect(leafIds(activeWorkspace(store.getState().desktop).root)).toHaveLength(2);
+  });
+});
+
+function reopened(): { shell: ShellStore; next: LayoutSession } {
+  const shell = createShellStore();
+  const next = new LayoutSession(shell, new LayoutBook(storage));
+  next.start();
+  return { shell, next };
+}
+
+describe('before the first link', () => {
+  test('shows the layout of the robot shown last', () => {
+    session.follow(subject('name:rover', ['pose/x']));
+    store.getState().addWorkspace();
+    session.stop();
+
+    const { shell } = reopened();
+    expect(workspaceNames(shell)).toEqual(['Overview', 'Pose', 'Workspace 3']);
+  });
+
+  test('shows the default desktop when no robot was shown before', () => {
+    const { shell } = reopened();
+    expect(workspaceNames(shell)).toEqual(workspaceNames(createShellStore()));
+  });
+
+  test('keeps what the user edited for the robot that links first, and the presets made', () => {
+    const { shell, next } = reopened();
+    shell.getState().addWorkspace();
+    shell.getState().savePreset('Mine');
+    const edited = shell.getState().desktop;
+    next.follow(subject('name:rover', ['pose/x']));
+    expect(shell.getState().desktop).toBe(edited);
+    expect(shell.getState().presets.map((preset) => preset.name)).toEqual(['Mine']);
+    expect(new LayoutBook(storage).load('name:rover', [])?.presets).toHaveLength(1);
+  });
+
+  test('adds the presets made to those the robot already had, and keeps its layout', () => {
+    session.follow(subject('name:rover', ['pose/x']));
+    store.getState().savePreset('Old');
+    store.getState().savePreset('Shared');
+    session.stop();
+
+    const { shell, next } = reopened();
+    shell.getState().deletePreset('Old');
+    shell.getState().savePreset('Mine');
+    shell.getState().savePreset('Shared');
+    next.follow(subject('name:rover', ['pose/x']));
+    expect(shell.getState().presets.map((preset) => preset.name)).toEqual([
+      'Old',
+      'Shared',
+      'Mine',
+    ]);
+  });
+
+  test('does not carry the presets of the last robot to another that links first', () => {
+    session.follow(subject('name:rover', ['pose/x']));
+    store.getState().savePreset('Rover only');
+    session.stop();
+
+    const { shell, next } = reopened();
+    next.follow(subject('name:crawler', ['leg/a']));
+    expect(shell.getState().presets).toEqual([]);
+    expect(workspaceNames(shell)).toEqual(['Overview', 'Leg']);
+  });
+});
+
+describe('a saved entry that cannot be read', () => {
+  const NEWER = JSON.stringify({ version: RECORD_VERSION + 1, desktop: 'from the future' });
+
+  test('is left as it is until the user changes something', () => {
+    storage.setItem(`${STORAGE_PREFIX}name:rover`, NEWER);
+    session.follow(subject('name:rover', ['pose/x']));
+    session.flush();
+    session.stop();
+    expect(storage.getItem(`${STORAGE_PREFIX}name:rover`)).toBe(NEWER);
+    expect(storage.getItem(`${BACKUP_PREFIX}name:rover`)).toBeNull();
+    expect(workspaceNames(store)).toEqual(['Overview', 'Pose']);
+  });
+
+  test('is copied aside before the first edit replaces it', () => {
+    storage.setItem(`${STORAGE_PREFIX}name:rover`, NEWER);
+    session.follow(subject('name:rover', ['pose/x']));
+    store.getState().addWorkspace();
+    vi.advanceTimersByTime(SAVE_DELAY_MS);
+    expect(storage.getItem(`${BACKUP_PREFIX}name:rover`)).toBe(NEWER);
+    expect(new LayoutBook(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(3);
   });
 });

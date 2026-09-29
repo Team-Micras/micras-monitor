@@ -9,6 +9,7 @@ import { createContext, use } from 'react';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
+import type { LayoutPreset } from '@/robot-kit';
 import {
   activeWorkspace,
   applyDrop,
@@ -31,11 +32,9 @@ import {
   type WindowId,
 } from '@/tiling';
 
-import type { LayoutPreset } from '@/robot-kit';
-
 import { resolveBindings, type KeyBindings, type KeyOverrides } from '../keymap/keymap';
-import type { StopNotice } from '../lib/stop-outcome';
 import { presetWorkspace, workspacePreset } from '../layouts/presets';
+import type { StopNotice } from '../lib/stop-outcome';
 import { PLOT_KIND, windowKind } from '../windows/registry';
 import type { WindowPayload } from '../windows/types';
 import { defaultDesktop } from './default-desktop';
@@ -81,6 +80,15 @@ export type LayoutsIntent =
   | { readonly kind: 'save' }
   | { readonly kind: 'rename'; readonly name: string };
 
+/** A preset the user deleted, kept for a moment so that the deletion can be undone. */
+export interface DeletedPreset {
+  /** Tells one deletion from the next. */
+  readonly id: number;
+  readonly preset: LayoutPreset;
+  /** Where it was in the list. */
+  readonly index: number;
+}
+
 /** The shell's state and what changes it. */
 export interface ShellState {
   readonly desktop: Desktop<WindowPayload>;
@@ -96,6 +104,8 @@ export interface ShellState {
   readonly layoutsIntent: LayoutsIntent | null;
   /** The presets the user made for the connected robot; they are saved with its layout. */
   readonly presets: readonly LayoutPreset[];
+  /** The preset deleted last, until the notice about it times out or is dismissed. */
+  readonly deletedPreset: DeletedPreset | null;
   readonly paused: ReadonlySet<WindowId>;
   readonly keyOverrides: KeyOverrides;
   readonly bindings: KeyBindings;
@@ -156,8 +166,12 @@ export interface ShellState {
    * @returns Whether it was renamed; not when the new name is blank or another preset has it.
    */
   readonly renamePreset: (name: string, next: string) => boolean;
-  /** Deletes one of the user's presets. */
+  /** Deletes one of the user's presets, which {@link ShellState.undoDelete} brings back. */
   readonly deletePreset: (name: string) => void;
+  /** Puts the preset deleted last back where it was, unless its name was taken since. */
+  readonly undoDelete: () => void;
+  /** Forgets the deleted preset of a notice, if it is still the one kept. */
+  readonly clearDeleted: (id: number) => void;
   readonly setKeyOverrides: (overrides: KeyOverrides) => void;
   readonly beginDrag: (subject: DragSubject, pointer: Point) => void;
   readonly moveDrag: (pointer: Point, surroundings: DragSurroundings) => void;
@@ -274,6 +288,7 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       layoutsOpen: false,
       layoutsIntent: null,
       presets: options.presets ?? [],
+      deletedPreset: null,
       paused: new Set(),
       keyOverrides: options.keyOverrides ?? {},
       bindings: resolveBindings(options.keyOverrides),
@@ -355,7 +370,8 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       setLayoutsOpen: (layoutsOpen, intent = null) =>
         set({ layoutsOpen, layoutsIntent: layoutsOpen ? intent : null }),
 
-      loadLayout: (desktop, presets) => set({ desktop, presets, paused: new Set() }),
+      loadLayout: (desktop, presets) =>
+        set({ desktop, presets, deletedPreset: null, paused: new Set() }),
 
       applyPreset: (preset) => {
         const { desktop } = get();
@@ -413,8 +429,37 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         return true;
       },
 
-      deletePreset: (name) =>
-        set({ presets: get().presets.filter((entry) => entry.name !== name) }),
+      deletePreset: (name) => {
+        const { presets, deletedPreset } = get();
+        const index = presets.findIndex((entry) => entry.name === name);
+
+        if (index >= 0) {
+          set({
+            presets: presets.filter((entry) => entry.name !== name),
+            deletedPreset: { id: (deletedPreset?.id ?? 0) + 1, preset: presets[index], index },
+          });
+        }
+      },
+
+      undoDelete: () => {
+        const { presets, deletedPreset } = get();
+
+        if (deletedPreset !== null) {
+          const kept = !presets.some((entry) => entry.name === deletedPreset.preset.name);
+          set({
+            presets: kept
+              ? presets.toSpliced(deletedPreset.index, 0, deletedPreset.preset)
+              : presets,
+            deletedPreset: null,
+          });
+        }
+      },
+
+      clearDeleted: (id) => {
+        if (get().deletedPreset?.id === id) {
+          set({ deletedPreset: null });
+        }
+      },
 
       setKeyOverrides: (keyOverrides) =>
         set({ keyOverrides, bindings: resolveBindings(keyOverrides) }),

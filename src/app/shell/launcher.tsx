@@ -1,16 +1,16 @@
 import {
   LayoutGridIcon,
   LayoutTemplateIcon,
-  PencilIcon,
-  Trash2Icon,
-  SaveIcon,
   ListTreeIcon,
   MaximizeIcon,
   MoonIcon,
   PauseIcon,
+  PencilIcon,
   PictureInPicture2Icon,
   PlugIcon,
   PlusIcon,
+  SaveIcon,
+  Trash2Icon,
   XIcon,
 } from 'lucide-react';
 import { useEffect } from 'react';
@@ -48,7 +48,9 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   const hasFocus = useShell((state) => focusedWindow(activeWorkspace(state.desktop)) !== null);
   const bindings = useShell((state) => state.bindings);
   const presets = useShell((state) => state.presets);
-  const packagePresets = useRobotPackage()?.package.presets ?? [];
+  const robotPackage = useRobotPackage()?.package ?? null;
+  const packagePresets = robotPackage?.presets ?? [];
+  const packageName = robotPackage?.displayName;
 
   const close = () => store.getState().setOverlay(null);
   const run = (action: () => void) => () => {
@@ -156,6 +158,7 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
             >
               <LayoutTemplateIcon />
               Apply layout {preset.name}
+              <span className="text-muted-foreground">{packageName}</span>
             </CommandItem>
           ))}
           {presets.flatMap((preset) => [

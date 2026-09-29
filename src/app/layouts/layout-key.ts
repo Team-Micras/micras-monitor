@@ -33,15 +33,17 @@ export function nameSetSignature(names: readonly string[]): string {
 }
 
 /**
- * The key of a robot's layouts: `package:<id>` when a package draws it, else `name:<name>` when
- * it announced one, else `signature:<hash>` of its variable names.
+ * The key of a robot's layouts: `name:<name>` when it announced one, else `package:<id>` when a
+ * package was matched by its variables, else `signature:<hash>` of its variable names.
  */
 export function layoutKey({ packageId, name, variables }: RobotIdentity): string {
-  if (packageId !== null) {
-    return `package:${packageId}`;
+  if (name !== null) {
+    return `name:${name}`;
   }
 
-  return name === null ? `${SIGNATURE_PREFIX}${nameSetSignature(variables)}` : `name:${name}`;
+  return packageId === null
+    ? `${SIGNATURE_PREFIX}${nameSetSignature(variables)}`
+    : `package:${packageId}`;
 }
 
 /** How much two sets of names overlap, from 0 to 1: the shared names over all the names. */

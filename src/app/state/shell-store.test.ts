@@ -367,3 +367,37 @@ describe('layout presets', () => {
     expect(shell.getState().layoutsIntent).toBeNull();
   });
 });
+
+describe('deleting a preset', () => {
+  test('can be undone, back where it was', () => {
+    const shell = store();
+    ['One', 'Two', 'Three'].forEach((name) => shell.getState().savePreset(name));
+    shell.getState().deletePreset('Two');
+    expect(shell.getState().deletedPreset?.preset.name).toBe('Two');
+    shell.getState().undoDelete();
+    expect(shell.getState().presets.map((preset) => preset.name)).toEqual(['One', 'Two', 'Three']);
+    expect(shell.getState().deletedPreset).toBeNull();
+  });
+
+  test('is not undone over a preset saved under the same name since', () => {
+    const shell = store();
+    shell.getState().savePreset('One');
+    shell.getState().deletePreset('One');
+    shell.getState().savePreset('One');
+    shell.getState().undoDelete();
+    expect(shell.getState().presets).toHaveLength(1);
+  });
+
+  test('forgets only the deletion a notice was about', () => {
+    const shell = store();
+    shell.getState().savePreset('One');
+    shell.getState().savePreset('Two');
+    shell.getState().deletePreset('One');
+    const first = shell.getState().deletedPreset?.id ?? 0;
+    shell.getState().deletePreset('Two');
+    shell.getState().clearDeleted(first);
+    expect(shell.getState().deletedPreset?.preset.name).toBe('Two');
+    shell.getState().clearDeleted(shell.getState().deletedPreset?.id ?? 0);
+    expect(shell.getState().deletedPreset).toBeNull();
+  });
+});

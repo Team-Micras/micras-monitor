@@ -476,6 +476,7 @@ describe('A variable missing from the schema', () => {
       .element(screen.getByText('Missing: the schema of this robot has no such variable.'))
       .toBeVisible();
     await expect.element(screen.getByText('· missing from the schema')).toBeVisible();
+    await expect.element(screen.getByRole('button', { name: 'Read ghost again' })).toBeDisabled();
   });
 
   test('is not called missing before any schema is loaded', async () => {

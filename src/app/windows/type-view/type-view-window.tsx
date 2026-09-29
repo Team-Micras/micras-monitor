@@ -119,7 +119,7 @@ export function TypeViewWindow({ window }: WindowViewProps) {
           size="icon-xs"
           className="ml-auto"
           aria-label={`Read ${entry.name} again`}
-          disabled={!linked || reading}
+          disabled={!linked || reading || entry.missing}
           onClick={readAgain}
         >
           <RefreshCwIcon className={reading ? 'animate-spin' : undefined} />

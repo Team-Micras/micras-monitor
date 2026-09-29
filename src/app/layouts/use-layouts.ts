@@ -39,16 +39,11 @@ export function useLayouts(storage: LayoutStorage | null): void {
   );
 
   useEffect(() => {
-    if (key !== null) {
-      follow(key);
-    }
-  }, [key]);
-
-  useEffect(() => {
     if (session === null) {
       return undefined;
     }
 
+    session.start();
     const flush = () => session.flush();
     window.addEventListener('pagehide', flush);
     return () => {
@@ -56,4 +51,10 @@ export function useLayouts(storage: LayoutStorage | null): void {
       session.stop();
     };
   }, [session]);
+
+  useEffect(() => {
+    if (key !== null) {
+      follow(key);
+    }
+  }, [key]);
 }

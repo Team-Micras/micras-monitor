@@ -18,6 +18,12 @@ export const RECORD_VERSION = 1;
 /** The prefix of every storage key the book uses. */
 export const STORAGE_PREFIX = 'micras-monitor/layouts/';
 
+/** The key that holds the key of the robot whose layout was shown last. */
+export const LAST_KEY = `${STORAGE_PREFIX}last`;
+
+/** The prefix of the keys where an unreadable entry is copied before it is overwritten. */
+export const BACKUP_PREFIX = `${STORAGE_PREFIX}backup/`;
+
 /** How much the variable names of a robot known only by them may differ from the saved ones. */
 export const MIN_SIGNATURE_OVERLAP = 0.8;
 
@@ -82,7 +88,21 @@ function parse(raw: string): ParsedRecord | null {
   }
 }
 
-/** Reads and writes the saved layouts of every robot. */
+/**
+ * `localStorage`, or null where reading it throws, as with storage blocked by the browser.
+ */
+export function safeLocalStorage(): LayoutStorage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads and writes the saved layouts of every robot. Nothing coordinates two tabs of the
+ * monitor: the tab that writes last wins.
+ */
 export class LayoutBook {
   readonly #storage: LayoutStorage | null;
 
@@ -97,7 +117,8 @@ export class LayoutBook {
    *
    * A robot known only by its variable names (a `signature:` key) whose names gained or lost a
    * few since it was saved finds the entry of the closest names, at least
-   * {@link MIN_SIGNATURE_OVERLAP} alike; that entry then moves to the new key.
+   * {@link MIN_SIGNATURE_OVERLAP} alike; the new key starts as a copy of that entry, which stays
+   * where it is, so that two similar robots each keep their own from then on.
    *
    * @param key The robot's key, as `layoutKey` gives it.
    * @param names The names of the robot's variables.
@@ -120,7 +141,6 @@ export class LayoutBook {
       return null;
     }
 
-    this.#storage?.removeItem(STORAGE_PREFIX + closest.key);
     return { desktop: closest.record.desktop, presets: closest.record.presets };
   }
 
@@ -128,6 +148,8 @@ export class LayoutBook {
    * Saves what a robot has now. Storage that is full or unavailable loses the save quietly: the
    * layout on screen is not affected.
    *
+   * @param key The robot's key, as `layoutKey` gives it.
+   * @param layout The desktop and the user's presets to keep.
    * @param names The names of the robot's variables, kept for a `signature:` key.
    */
   save(
@@ -144,6 +166,43 @@ export class LayoutBook {
 
     try {
       this.#storage?.setItem(STORAGE_PREFIX + key, JSON.stringify(record));
+    } catch {
+      return;
+    }
+  }
+
+  /** The key of the robot whose layout was saved last, or null. */
+  last(): string | null {
+    try {
+      return this.#storage?.getItem(LAST_KEY) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Remembers the robot whose layout was saved last, for `last`. */
+  remember(key: string): void {
+    try {
+      this.#storage?.setItem(LAST_KEY, key);
+    } catch {
+      return;
+    }
+  }
+
+  /** Whether an entry exists for the key but cannot be read, as one of a newer version. */
+  unreadable(key: string): boolean {
+    const raw = this.#read(key);
+    return raw !== null && parse(raw) === null;
+  }
+
+  /** Copies the entry of a key to where it is kept apart, before something replaces it. */
+  backup(key: string): void {
+    const raw = this.#read(key);
+
+    try {
+      if (raw !== null) {
+        this.#storage?.setItem(BACKUP_PREFIX + key, raw);
+      }
     } catch {
       return;
     }

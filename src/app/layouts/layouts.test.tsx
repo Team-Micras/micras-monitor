@@ -141,7 +141,8 @@ describe('the layout of a robot', () => {
     const first = await mount({ robot: { name: null } });
     await connect(first);
     first.store.getState().run({ type: 'renameWorkspace', index: 1, name: 'Mine' });
-    await saved(first, first.storage.key(0)?.slice(STORAGE_PREFIX.length) ?? '', 2);
+    const keyA = first.storage.key(0)?.slice(STORAGE_PREFIX.length) ?? '';
+    await saved(first, keyA, 2);
     await first.screen.unmount();
 
     const second = await mount({
@@ -150,7 +151,7 @@ describe('the layout of a robot', () => {
     });
     await connect(second);
     expect(workspaceNames(second)).toEqual(['Overview', 'Mine']);
-    expect(first.storage.length).toBe(1);
+    expect(first.storage.getItem(`${STORAGE_PREFIX}${keyA}`)).not.toBeNull();
   });
 
   test('is another for another robot', async () => {
@@ -180,7 +181,7 @@ describe('the layout of a robot', () => {
     expect(workspaceNames(first)).toEqual(['Overview', 'Speeds']);
     expect(leafIds(activeWorkspace(first.store.getState().desktop).root)).toHaveLength(1);
     first.store.getState().run({ type: 'renameWorkspace', index: 1, name: 'Mine' });
-    await saved(first, 'package:rover', 2);
+    await saved(first, 'name:rover', 2);
     await first.screen.unmount();
 
     const second = await mount({ storage: first.storage, packages: [pkg] });
@@ -252,6 +253,103 @@ describe('layout presets', () => {
     expect(store.getState().presets.map((preset) => preset.name)).toEqual(['Speeds 2']);
   });
 
+  test('are saved when the page is left, without waiting for the delay', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    await mounted.screen.getByRole('button', { name: 'Add a workspace' }).click();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(
+      new LayoutBook(mounted.storage).load('name:rover', [])?.desktop?.workspaces
+    ).toHaveLength(3);
+  });
+
+  test('take Escape in the rename field as cancelling the rename, and only then close', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    const { screen, store } = mounted;
+    store.getState().savePreset('Bench');
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+    await screen.getByRole('button', { name: 'Rename Bench' }).click();
+    await expect.element(screen.getByRole('textbox', { name: 'New name for Bench' })).toBeVisible();
+
+    await userEvent.keyboard('{Escape}');
+    await expect
+      .element(screen.getByRole('textbox', { name: 'New name for Bench' }))
+      .not.toBeInTheDocument();
+    await expect.element(screen.getByRole('textbox', { name: 'Layout name' })).toBeVisible();
+    expect(store.getState().layoutsOpen).toBe(true);
+
+    await userEvent.keyboard('{Escape}');
+    await expect
+      .element(screen.getByRole('textbox', { name: 'Layout name' }))
+      .not.toBeInTheDocument();
+  });
+
+  test('keep the focus in the menu after a rename and after a delete', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    const { screen, store } = mounted;
+    ['One', 'Two', 'Three'].forEach((name) => store.getState().savePreset(name));
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+
+    await screen.getByRole('button', { name: 'Rename One' }).click();
+    await screen.getByRole('textbox', { name: 'New name for One' }).fill('Uno');
+    await userEvent.keyboard('{Enter}');
+    await expect.element(screen.getByRole('button', { name: 'Uno', exact: true })).toHaveFocus();
+
+    await screen.getByRole('button', { name: 'Delete Uno' }).click();
+    await expect.element(screen.getByRole('button', { name: 'Two', exact: true })).toHaveFocus();
+    await screen.getByRole('button', { name: 'Delete Three' }).click();
+    await expect.element(screen.getByRole('button', { name: 'Two', exact: true })).toHaveFocus();
+    await screen.getByRole('button', { name: 'Delete Two' }).click();
+    await expect.element(screen.getByRole('textbox', { name: 'Layout name' })).toHaveFocus();
+  });
+
+  test('can be brought back after a delete, from the menu or the launcher', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    const { screen, store } = mounted;
+    store.getState().savePreset('Bench');
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+    await screen.getByRole('button', { name: 'Delete Bench' }).click();
+    expect(store.getState().presets).toEqual([]);
+    await expect
+      .element(screen.getByRole('status', { name: 'Layout deleted' }))
+      .toHaveTextContent('Deleted layout Bench');
+    await screen.getByRole('button', { name: 'Undo' }).click();
+    expect(store.getState().presets.map((preset) => preset.name)).toEqual(['Bench']);
+    await userEvent.keyboard('{Escape}');
+
+    await launch(screen, 'delete layout Bench');
+    await expect.element(screen.getByRole('status', { name: 'Layout deleted' })).toBeVisible();
+    await screen.getByRole('button', { name: 'Undo' }).click();
+    expect(store.getState().presets.map((preset) => preset.name)).toEqual(['Bench']);
+  });
+
+  test('do not take the name of a layout of the package by default', async () => {
+    const pkg = mouse({ id: 'rover', displayName: 'Rover', presets: PRESETS });
+    const mounted = await mount({ packages: [pkg] });
+    await connect(mounted);
+    const { screen, store } = mounted;
+    store.getState().run({ type: 'switchWorkspace', index: 1 });
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+    await expect
+      .element(screen.getByRole('textbox', { name: 'Layout name' }))
+      .toHaveAttribute('placeholder', 'Speeds (mine)');
+    await screen.getByRole('button', { name: 'Save', exact: true }).click();
+    expect(store.getState().presets.map((preset) => preset.name)).toEqual(['Speeds (mine)']);
+  });
+
+  test('name the robot in the launcher for the layouts of its package', async () => {
+    const pkg = mouse({ id: 'rover', displayName: 'Rover', presets: PRESETS });
+    const mounted = await mount({ packages: [pkg] });
+    await connect(mounted);
+    await userEvent.keyboard('{Control>}k{/Control}');
+    await expect
+      .element(mounted.screen.getByRole('option', { name: 'Apply layout Speeds Rover' }))
+      .toBeVisible();
+  });
+
   test('have commands in the launcher', async () => {
     const mounted = await mount();
     await connect(mounted);
@@ -263,6 +361,7 @@ describe('layout presets', () => {
 
     await launch(screen, 'rename layout Bench');
     await expect.element(screen.getByRole('textbox', { name: 'New name for Bench' })).toBeVisible();
+    await userEvent.keyboard('{Escape}');
     await userEvent.keyboard('{Escape}');
 
     await launch(screen, 'delete layout Bench');
