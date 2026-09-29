@@ -31,6 +31,7 @@ import { useShell, useShellStore } from '../state/shell-store';
 import { windowKind, windowTitle } from '../windows/registry';
 import type { ShellWindow } from '../windows/types';
 import { startPointerDrag, surroundingsAt } from './pointer-drag';
+import { WindowErrorBoundary } from './window-error-boundary';
 
 /** How a window sits in the tiling. */
 export interface WindowFrameProps {
@@ -236,9 +237,11 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
         </DropdownMenu>
       </header>
       <div className="min-h-0 flex-1">
-        <Suspense fallback={null}>
-          <View window={window} paused={paused} visible={visible} />
-        </Suspense>
+        <WindowErrorBoundary>
+          <Suspense fallback={null}>
+            <View window={window} paused={paused} visible={visible} />
+          </Suspense>
+        </WindowErrorBoundary>
       </div>
       {floating ? (
         <div

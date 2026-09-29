@@ -18,8 +18,9 @@ import {
   ZapIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { lazy, type ComponentType } from 'react';
+import { type ComponentType } from 'react';
 
+import { lazyWithRetry } from '@/lazy/lazy-with-retry';
 import { roleVariable, type RobotPackage, type Role } from '@/robot-kit';
 
 import { DEFAULT_STREAM_RATE_HZ, type StreamDemand } from '../ports/streams';
@@ -96,9 +97,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Plot',
     description: 'Variables over time',
     icon: ChartLineIcon,
-    component: lazy(() =>
+    component: lazyWithRetry(() =>
       import('./plot/plot-window').then((module) => ({ default: module.PlotWindow }))
-    ),
+    ).Component,
     acceptsVariables: true,
     demand: (window) => rate(window, PLOT_RATE_HZ),
   },
@@ -107,9 +108,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Readouts',
     description: 'Latest values, large',
     icon: GaugeIcon,
-    component: lazy(() =>
+    component: lazyWithRetry(() =>
       import('./readouts/readouts-window').then((module) => ({ default: module.ReadoutsWindow }))
-    ),
+    ).Component,
     acceptsVariables: true,
     demand: (window) => rate(window, READOUT_RATE_HZ),
   },
@@ -118,9 +119,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Editor',
     description: 'Write a variable, by its type',
     icon: SlidersHorizontalIcon,
-    component: lazy(() =>
+    component: lazyWithRetry(() =>
       import('./editor/editor-window').then((module) => ({ default: module.EditorWindow }))
-    ),
+    ).Component,
     acceptsVariables: true,
     demand: (window) => rate(window, EDITOR_RATE_HZ),
   },
@@ -129,9 +130,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Type view',
     description: 'A serializable value, such as the maze',
     icon: MapIcon,
-    component: lazy(() =>
+    component: lazyWithRetry(() =>
       import('./type-view/type-view-window').then((module) => ({ default: module.TypeViewWindow }))
-    ),
+    ).Component,
     acceptsVariables: false,
     demand: typeViewDemand,
   },
@@ -161,9 +162,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Log',
     description: 'Robot log and link events',
     icon: ScrollTextIcon,
-    component: lazy(() =>
+    component: lazyWithRetry(() =>
       import('./log/log-window').then((module) => ({ default: module.LogWindow }))
-    ),
+    ).Component,
     acceptsVariables: false,
     demand: nothing,
   },
@@ -172,9 +173,9 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     title: 'Link',
     description: 'Rate, credit, drops and round trip',
     icon: RadioTowerIcon,
-    component: lazy(() =>
+    component: lazyWithRetry(() =>
       import('./link/link-window').then((module) => ({ default: module.LinkWindow }))
-    ),
+    ).Component,
     acceptsVariables: false,
     demand: nothing,
   },

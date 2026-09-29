@@ -86,6 +86,26 @@
       }
     },
     {
+      "files": ["src/lazy/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
+                "message": "Nothing in src/ imports a robot package; robots register through the app."
+              },
+              {
+                "regex": "^(@/app(/|$)|(\\.\\./)+app(/|$))",
+                "message": "Layers below the app must not depend on it."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/protocol/**"],
       "rules": {
         "no-restricted-imports": [

@@ -23,7 +23,12 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'browser',
-          include: ['src/app/**/*.test.tsx', 'src/*.test.tsx', 'robots/**/*.test.tsx'],
+          include: [
+            'src/app/**/*.test.tsx',
+            'src/lazy/**/*.test.tsx',
+            'src/*.test.tsx',
+            'robots/**/*.test.tsx',
+          ],
           globalSetup: ['tools/browser-setup.ts'],
           browser: {
             enabled: true,

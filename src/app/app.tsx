@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { whenIdle } from '@/lazy/idle';
+import { prefetchAll } from '@/lazy/lazy-with-retry';
 import type { RobotRegistry } from '@/robot-kit';
 import { emergencyCommand } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
@@ -19,6 +21,7 @@ import { Launcher } from './shell/launcher';
 import { StatusBar } from './shell/status-bar';
 import { StopActionContext } from './shell/stop-action';
 import { TopBar } from './shell/top-bar';
+import { UpdateNotice } from './shell/update-notice';
 import { DRAWER_SEARCH_SELECTOR, VariableDrawer } from './shell/variable-drawer';
 import { useStreamDemand } from './stream-demand';
 import {
@@ -86,6 +89,7 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
   const presses = useRef(0);
 
   useEffect(() => applyTheme(theme), [theme]);
+  useEffect(() => whenIdle(() => void prefetchAll()), []);
   useEffect(() => saveKeyOverrides(keyOverrides), [keyOverrides]);
 
   const stop = async () => {
@@ -173,6 +177,7 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
         <StatusBar />
         <Launcher onAction={onAction} />
         <DeletedNotice />
+        <UpdateNotice />
         <DragGhost />
       </div>
     </StopActionContext>
