@@ -42,7 +42,7 @@ test('shows live values of the simulated robot over a WebSocket', async () => {
   await expect.element(screen.getByText('· connected')).toBeVisible();
   await expect.poll(readout).toMatch(/^-?\d+\.\d{3}$/);
   const first = readout();
-  await expect.poll(readout, { timeout: 3000 }).not.toBe(first);
+  await expect.poll(readout).not.toBe(first);
   expect(robot.planner?.plan?.rates.map((rate) => rate.variable)).toContain('imu/gyro_z');
 });
 

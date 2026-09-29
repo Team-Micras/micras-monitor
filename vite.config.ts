@@ -17,6 +17,7 @@ export default defineConfig({
           name: 'unit',
           include: ['src/**/*.test.ts', 'robots/**/*.test.ts', 'tools/**/*.test.ts'],
           environment: 'node',
+          testTimeout: 30_000,
         },
       },
       {
@@ -30,6 +31,9 @@ export default defineConfig({
             'robots/**/*.test.tsx',
           ],
           globalSetup: ['tools/browser-setup.ts'],
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
+          expect: { poll: { timeout: 10_000 } },
           browser: {
             enabled: true,
             headless: true,

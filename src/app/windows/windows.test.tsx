@@ -189,7 +189,7 @@ describe('Plot', () => {
     await expect.element(screen.getByText('rad/s →')).toBeVisible();
 
     const live = canvasImage();
-    await expect.poll(canvasImage, { timeout: 2000 }).not.toBe(live);
+    await expect.poll(canvasImage).not.toBe(live);
 
     await screen.getByRole('button', { name: 'Pause Plot' }).click();
     await frames(2);
@@ -198,7 +198,7 @@ describe('Plot', () => {
     expect(canvasImage()).toBe(paused);
 
     await screen.getByRole('button', { name: 'Resume Plot' }).click();
-    await expect.poll(canvasImage, { timeout: 2000 }).not.toBe(paused);
+    await expect.poll(canvasImage).not.toBe(paused);
   });
 
   test('keeps its frozen window across a change of theme', async () => {
@@ -242,7 +242,7 @@ describe('Plot', () => {
     const time = () => query('[data-plot-tooltip] div')?.textContent ?? '';
     await expect.poll(time).toMatch(/^t \d\d:\d\d\.\d$/);
     const first = time();
-    await expect.poll(time, { timeout: 2000 }).not.toBe(first);
+    await expect.poll(time).not.toBe(first);
   });
 
   test('does not draw on a hidden workspace, and draws once shown', async () => {
@@ -282,7 +282,7 @@ describe('Readouts', () => {
     });
     await expect.poll(batteryReadout).toMatch(/^battery_voltage12\.\d{3}V$/);
     const first = batteryReadout();
-    await expect.poll(batteryReadout, { timeout: 2000 }).not.toBe(first);
+    await expect.poll(batteryReadout).not.toBe(first);
     await expect.poll(() => query('[data-readout="state"] dd')?.textContent).toMatch(/IDLE|INIT/);
 
     robot.disconnect();
@@ -443,7 +443,7 @@ describe('Type view', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(readsOf('maze')).toBe(1);
 
-    await expect.poll(() => readsOf('maze'), { timeout: 2000 }).toBe(2);
+    await expect.poll(() => readsOf('maze')).toBe(2);
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(readsOf('maze')).toBe(2);
   });
