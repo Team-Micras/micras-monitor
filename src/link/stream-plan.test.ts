@@ -125,6 +125,49 @@ describe('planStreams', () => {
     expect(result.usedBytesPerSecond).toBeLessThanOrEqual(budget);
   });
 
+  test('keeps a pinned variable apart from unpinned ones asking for the same rate', () => {
+    const floats = Array.from({ length: 12 }, (_, index) => `f/${index}`);
+    const schema = [
+      ...schemaOf(floats),
+      { id: 12, name: 'state', type: TypeCode.U8, access: STREAM },
+    ];
+    const result = plan([at(10, true)('state'), ...floats.map(at(10))], 300, schema);
+
+    expect(result.groups).toHaveLength(2);
+    expect(rateOf(result, 'state')).toBeCloseTo(10);
+    expect(rateOf(result, 'f/0')).toBeLessThan(10);
+    expect(result.usedBytesPerSecond).toBeLessThanOrEqual(300);
+  });
+
+  test('shares a group between pinned and unpinned only when the groups run out', () => {
+    const result = plan([
+      at(100, true)('state'),
+      at(100)('control/0'),
+      at(50)('control/1'),
+      at(20)('control/2'),
+      at(5)('control/3'),
+    ]);
+
+    expect(result.groups).toHaveLength(MAX_GROUPS);
+    expect(result.groups.find((group) => group.variableIds.includes(7))?.variableIds).toEqual([7]);
+  });
+
+  test('does not slow a merged group below the floor its fastest member is owed', () => {
+    const names = Array.from({ length: 50 }, (_, index) => `v/${index}`);
+    const block = (from: number, rateHz: number) =>
+      names.slice(from, from + 16).map((variable) => ({ variable, rateHz }));
+    const result = plan(
+      [at(0.2)('v/48'), at(2)('v/49'), ...block(0, 20), ...block(16, 50), ...block(32, 100)],
+      1,
+      schemaOf(names)
+    );
+
+    expect(result.groups.find((group) => group.variableIds.includes(49))?.variableIds).toContain(
+      48
+    );
+    expect(rateOf(result, 'v/49')).toBeCloseTo(MIN_DEGRADED_RATE_HZ);
+  });
+
   test('says when even the floor rates do not fit, and keeps them', () => {
     const result = plan([...CONTROL.map(at(100)), at(10, true)('state')], 10);
 

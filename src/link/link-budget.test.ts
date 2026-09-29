@@ -25,6 +25,23 @@ class Feed {
   readonly budget = new LinkBudget({ smoothing: 1 });
   stats = BASE;
   now = 0;
+  robotDropped: number | undefined;
+
+  /** One second of a link that carries `rate` and is asked for `asked`, probing when cut. */
+  link(capacity: number, asked: number, seconds: number) {
+    for (let second = 0; second < seconds; second++) {
+      const planned = Math.min(asked, this.budget.value.bytesPerSecond);
+      const arrived = Math.min(planned, capacity);
+      this.second(
+        {
+          bytesIn: arrived,
+          creditReturned: arrived,
+          droppedSamples: planned > capacity ? 10 : 0,
+        },
+        asked > this.budget.value.bytesPerSecond
+      );
+    }
+  }
 
   second(change: Partial<LinkStats>, wantsMore = false) {
     const { stats } = this;
@@ -37,7 +54,7 @@ class Feed {
       rttMs: change.rttMs === undefined ? stats.rttMs : change.rttMs,
     };
     this.now += 1000;
-    return this.budget.update(this.stats, WINDOW, this.now, wantsMore);
+    return this.budget.update(this.stats, WINDOW, this.now, wantsMore, this.robotDropped);
   }
 }
 
@@ -90,7 +107,7 @@ describe('LinkBudget', () => {
     expect(estimate.capacityBytesPerSecond).toBe(UART_BYTES_PER_SECOND);
   });
 
-  test('holds a ceiling, then probes it only while the plan wants more', () => {
+  test('holds a ceiling, then probes it once per hold period while the plan wants more', () => {
     const feed = new Feed();
     feed.second({ rttMs: 5 });
     feed.second({ bytesIn: 3000, creditReturned: 3000, droppedSamples: 40 });
@@ -103,9 +120,46 @@ describe('LinkBudget', () => {
     expect(
       feed.second({ bytesIn: 2500, creditReturned: 2500 }, false).capacityBytesPerSecond
     ).toBeCloseTo(3000);
+    const probed = feed.second({ bytesIn: 2500, creditReturned: 2500 }, true);
+    expect(probed.capacityBytesPerSecond).toBeCloseTo(3000 * DEFAULT_LINK_BUDGET.probeGrowth);
     expect(
       feed.second({ bytesIn: 2500, creditReturned: 2500 }, true).capacityBytesPerSecond
     ).toBeCloseTo(3000 * DEFAULT_LINK_BUDGET.probeGrowth);
+  });
+
+  test('keeps the most that arrived over a run of saturated updates', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    feed.second({ bytesIn: 3000, creditReturned: 3000, droppedSamples: 40 });
+    const after = feed.second({ bytesIn: 2400, creditReturned: 2400, droppedSamples: 5 });
+
+    expect(after.capacityBytesPerSecond).toBeCloseTo(3000);
+  });
+
+  test('settles on a stable link: a probe that drops goes back to the last safe ceiling', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    feed.link(3000, 8000, 120);
+    const settled = feed.budget.value;
+    const dropped = feed.stats.droppedSamples;
+    feed.link(3000, 8000, 120);
+
+    expect(feed.stats.droppedSamples).toBe(dropped);
+    expect(feed.budget.value.bytesPerSecond).toBe(settled.bytesPerSecond);
+    expect(settled.bytesPerSecond).toBeLessThanOrEqual(3000);
+    expect(settled.bytesPerSecond).toBeGreaterThan(3000 * 0.8);
+  });
+
+  test("takes the robot's own count of dropped samples over gaps seen on the monitor", () => {
+    const feed = new Feed();
+    feed.robotDropped = 0;
+    feed.second({ rttMs: 5 });
+    const gaps = feed.second({ bytesIn: 3000, creditReturned: 3000, droppedSamples: 40 });
+    feed.robotDropped = 12;
+    const counted = feed.second({ bytesIn: 3000, creditReturned: 3000 });
+
+    expect(gaps.saturated).toBe(false);
+    expect(counted.saturated).toBe(true);
   });
 
   test('forgets what it measured on reset', () => {

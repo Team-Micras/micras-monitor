@@ -11,9 +11,12 @@ export interface LinkBudgetOptions {
   headroom: number;
   /** The round trip assumed until a PING measures one, in milliseconds. */
   assumedRttMs: number;
-  /** How long, in milliseconds, a ceiling found by dropped samples holds before it is probed. */
+  /**
+   * How long, in milliseconds, a ceiling has to run without samples dropping before it is
+   * trusted and raised by one probe.
+   */
   holdMs: number;
-  /** How much a held ceiling grows per update once it is probed. */
+  /** How much one probe raises the ceiling over the most that arrived, as a factor. */
   probeGrowth: number;
   /** The lowest the budget goes, in bytes per second. */
   floorBytesPerSecond: number;
@@ -27,7 +30,7 @@ export const DEFAULT_LINK_BUDGET: LinkBudgetOptions = {
   headroom: 0.85,
   assumedRttMs: 100,
   holdMs: 10_000,
-  probeGrowth: 1.05,
+  probeGrowth: 1.1,
   floorBytesPerSecond: 200,
   smoothing: 0.5,
 };
@@ -42,13 +45,16 @@ export interface BudgetEstimate {
   readonly bytesInPerSecond: number;
   /** Bytes per second of frames the credit does not meter, such as VALUE, ACKs and PONG. */
   readonly unmeteredBytesPerSecond: number;
-  /** Whether samples were seen dropping for want of room on the link since the last update. */
+  /** Whether samples dropped for want of room on the link since the last update. */
   readonly saturated: boolean;
+  /** Grows every time the ceiling moves, so a planner knows to plan again. */
+  readonly revision: number;
 }
 
 interface Sample {
   readonly at: number;
   readonly stats: LinkStats;
+  readonly robotDropped: number | undefined;
 }
 
 /**
@@ -56,18 +62,30 @@ interface Sample {
  *
  * The credit bounds the link at one window per round trip, and the robot's UART bounds it
  * again. Neither says what the radio carries: that only shows when samples drop because the
- * robot ran out of credit, beyond what corrupted frames explain. Then the rate that did arrive
- * becomes a ceiling, held for a while and then raised a little per update while the plan wants
- * more, so a link that got better is found again. Traffic the credit does not meter is taken off
- * what samples may use.
+ * robot ran out of credit. The robot's own count of dropped samples says so when it is known;
+ * otherwise gaps in the sequence beyond what corrupted frames explain do. The most that arrived
+ * over a run of such updates becomes a ceiling.
+ *
+ * A ceiling that ran a hold period without drops is safe. While the plan wants more, it is then
+ * raised by one probe, over the most that arrived, and held again. A probe that makes samples
+ * drop puts the ceiling back to the last safe one and ends probing until {@link reset}, so on a
+ * stable link the estimate settles and drops stop. Traffic the credit does not meter is taken
+ * off what samples may use.
  */
 export class LinkBudget {
   private readonly options: LinkBudgetOptions;
   private last: Sample | undefined;
   private bytesIn = 0;
+  private arrivedMax = 0;
   private unmetered = 0;
   private ceiling = Number.POSITIVE_INFINITY;
   private ceilingAt = Number.NEGATIVE_INFINITY;
+  private safe: number | undefined;
+  private probeFrom: number | undefined;
+  private probing = true;
+  private wasSaturated = false;
+  private episodeCapped = false;
+  private revision = 0;
   private current: BudgetEstimate;
 
   /**
@@ -89,12 +107,19 @@ export class LinkBudget {
    * @param stats The session's counters.
    * @param creditWindow The robot's credit window, in bytes.
    * @param now The current time, in milliseconds.
-   * @param wantsMore Whether the plan was cut to fit, which lets a held ceiling be probed.
+   * @param wantsMore Whether the plan was cut to fit, which lets a safe ceiling be probed.
+   * @param robotDropped The robot's own count of samples it dropped, when it is streamed.
    * @returns The new estimate.
    */
-  update(stats: LinkStats, creditWindow: number, now: number, wantsMore: boolean): BudgetEstimate {
+  update(
+    stats: LinkStats,
+    creditWindow: number,
+    now: number,
+    wantsMore: boolean,
+    robotDropped?: number
+  ): BudgetEstimate {
     const previous = this.last;
-    this.last = { at: now, stats };
+    this.last = { at: now, stats, robotDropped };
 
     if (!previous || now <= previous.at || stats.bytesIn < previous.stats.bytesIn) {
       this.current = this.estimate(stats.rttMs, creditWindow, false);
@@ -104,24 +129,19 @@ export class LinkBudget {
     const seconds = (now - previous.at) / 1000;
     const arrived = (stats.bytesIn - previous.stats.bytesIn) / seconds;
     const metered = (stats.creditReturned - previous.stats.creditReturned) / seconds;
-    const dropped = stats.droppedSamples - previous.stats.droppedSamples;
-    const discarded = stats.framesDiscarded - previous.stats.framesDiscarded;
-    const saturated = dropped > discarded;
+    const saturated = this.saturatedSince(previous, stats, robotDropped);
 
     this.bytesIn = this.smooth(this.bytesIn, arrived);
     this.unmetered = this.smooth(this.unmetered, Math.max(0, arrived - metered));
+    this.arrivedMax = Math.max(this.arrivedMax, arrived);
 
     if (saturated) {
-      this.ceiling = Math.max(this.options.floorBytesPerSecond, arrived);
-      this.ceilingAt = now;
-    } else if (
-      wantsMore &&
-      Number.isFinite(this.ceiling) &&
-      now - this.ceilingAt >= this.options.holdMs
-    ) {
-      this.ceiling *= this.options.probeGrowth;
+      this.onSaturated(arrived, now);
+    } else if (now - this.ceilingAt >= this.options.holdMs && Number.isFinite(this.ceiling)) {
+      this.onHeld(wantsMore, now);
     }
 
+    this.wasSaturated = saturated;
     this.current = this.estimate(stats.rttMs, creditWindow, saturated);
     return this.current;
   }
@@ -130,10 +150,76 @@ export class LinkBudget {
   reset(): void {
     this.last = undefined;
     this.bytesIn = 0;
+    this.arrivedMax = 0;
     this.unmetered = 0;
     this.ceiling = Number.POSITIVE_INFINITY;
     this.ceilingAt = Number.NEGATIVE_INFINITY;
+    this.safe = undefined;
+    this.probeFrom = undefined;
+    this.probing = true;
+    this.wasSaturated = false;
+    this.episodeCapped = false;
+    this.revision++;
     this.current = this.estimate(null, 0, false);
+  }
+
+  private saturatedSince(
+    previous: Sample,
+    stats: LinkStats,
+    robotDropped: number | undefined
+  ): boolean {
+    if (robotDropped !== undefined && previous.robotDropped !== undefined) {
+      return robotDropped > previous.robotDropped;
+    }
+
+    const dropped = stats.droppedSamples - previous.stats.droppedSamples;
+    const discarded = stats.framesDiscarded - previous.stats.framesDiscarded;
+    return dropped > discarded;
+  }
+
+  private onSaturated(arrived: number, now: number): void {
+    const { floorBytesPerSecond } = this.options;
+
+    if (this.probeFrom !== undefined) {
+      this.setCeiling(this.probeFrom, now);
+      this.probeFrom = undefined;
+      this.probing = false;
+      this.episodeCapped = true;
+      return;
+    }
+
+    if (this.wasSaturated && this.episodeCapped) {
+      this.ceilingAt = now;
+      return;
+    }
+
+    this.episodeCapped = false;
+    const episodeMax = this.wasSaturated ? Math.max(this.ceiling, arrived) : arrived;
+    const ceiling = Math.max(floorBytesPerSecond, episodeMax);
+    this.safe = this.safe === undefined ? undefined : Math.min(this.safe, ceiling);
+    this.setCeiling(ceiling, now);
+  }
+
+  private onHeld(wantsMore: boolean, now: number): void {
+    if (this.probeFrom !== undefined || this.safe === undefined) {
+      this.safe = this.ceiling;
+      this.probeFrom = undefined;
+    }
+
+    if (wantsMore && this.probing) {
+      this.probeFrom = this.ceiling;
+      this.setCeiling(Math.max(this.ceiling, this.arrivedMax) * this.options.probeGrowth, now);
+    }
+  }
+
+  private setCeiling(ceiling: number, now: number): void {
+    this.ceilingAt = now;
+    this.arrivedMax = 0;
+
+    if (ceiling !== this.ceiling) {
+      this.ceiling = ceiling;
+      this.revision++;
+    }
   }
 
   private smooth(previous: number, next: number): number {
@@ -152,6 +238,7 @@ export class LinkBudget {
       bytesInPerSecond: this.bytesIn,
       unmeteredBytesPerSecond: this.unmetered,
       saturated,
+      revision: this.revision,
     };
   }
 }

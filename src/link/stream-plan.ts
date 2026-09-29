@@ -17,6 +17,11 @@ export interface RateRequest {
   readonly rateHz: number;
   /** Whether it is kept at its rate for as long as anything else can be slowed down instead. */
   readonly pinned?: boolean;
+  /**
+   * Whether the variable is the robot's own count of samples it dropped for want of credit,
+   * which tells the budget when the link is full better than gaps seen on the monitor.
+   */
+  readonly countsDrops?: boolean;
 }
 
 /** What the planner fits into a budget. */
@@ -33,11 +38,13 @@ export interface PlanInput {
 
 /** The rate chosen for one variable. */
 export interface PlannedRate {
+  /** The variable, by name. */
   readonly variable: string;
   /** The fastest rate asked for it. */
   readonly rateHz: number;
   /** The rate its group streams at; 0 when it is not streamed. */
   readonly grantedHz: number;
+  /** Whether it was pinned, so slowed down only after every unpinned stream. */
   readonly pinned: boolean;
 }
 
@@ -84,9 +91,10 @@ interface Group {
 /**
  * Choose stream groups for what is asked, within a budget.
  *
- * Variables are grouped by the period their rate turns into, at most `MAX_GROUPS` groups: rate
- * classes that do not fit are merged, the pair that costs the fewest extra bytes first, at the
- * faster rate. When the groups at the rates asked take more than the budget, every unpinned group
+ * Variables are grouped by the period their rate turns into and by whether they are pinned, at
+ * most `MAX_GROUPS` groups: classes that do not fit are merged, the pair that costs the fewest
+ * extra bytes first, at the faster rate, and a pinned class with an unpinned one only when no
+ * other merge is left. When the groups at the rates asked take more than the budget, every unpinned group
  * is slowed down by the same factor, no lower than {@link MIN_DEGRADED_RATE_HZ}, and only then
  * the pinned ones. A plan that does not fit even at those rates is kept, and says so.
  *
@@ -211,6 +219,7 @@ function chunk(members: readonly Wanted[]): Wanted[][] {
 
 interface RateClass {
   period: number;
+  pinned: boolean;
   members: Wanted[];
 }
 
@@ -230,6 +239,38 @@ function byPriority(a: Wanted, b: Wanted): number {
   return Number(b.pinned) - Number(a.pinned) || b.rateHz - a.rateHz || a.order - b.order;
 }
 
+/**
+ * The two classes whose merge, at the faster period, costs the fewest extra bytes; classes that
+ * are both pinned or both unpinned first, so a pinned variable only shares a group with unpinned
+ * ones when the robot's groups run out otherwise.
+ */
+function cheapestMerge(classes: readonly RateClass[], loopTimeUs: number): [number, number] {
+  let best: [number, number] = [0, 1];
+  let bestCost = Number.POSITIVE_INFINITY;
+  let bestMixed = true;
+
+  for (let first = 0; first < classes.length; first++) {
+    for (let second = first + 1; second < classes.length; second++) {
+      const a = classes[first];
+      const b = classes[second];
+      const mixed = a.pinned !== b.pinned;
+      const period = Math.min(a.period, b.period);
+      const cost =
+        classBytes([...a.members, ...b.members], period, loopTimeUs) -
+        classBytes(a.members, a.period, loopTimeUs) -
+        classBytes(b.members, b.period, loopTimeUs);
+
+      if ((bestMixed && !mixed) || (mixed === bestMixed && cost < bestCost)) {
+        best = [first, second];
+        bestCost = cost;
+        bestMixed = mixed;
+      }
+    }
+  }
+
+  return best;
+}
+
 function formGroups(
   wanted: readonly Wanted[],
   loopTimeUs: number
@@ -238,37 +279,30 @@ function formGroups(
 
   for (const member of wanted) {
     const period = periodFor(member.rateHz, loopTimeUs);
-    const rateClass = classes.find((candidate) => candidate.period === period);
+    const rateClass = classes.find(
+      (candidate) => candidate.period === period && candidate.pinned === member.pinned
+    );
 
     if (rateClass) {
       rateClass.members.push(member);
     } else {
-      classes.push({ period, members: [member] });
+      classes.push({ period, pinned: member.pinned, members: [member] });
     }
   }
 
-  classes.sort((a, b) => a.period - b.period);
+  const byPeriod = (a: RateClass, b: RateClass) =>
+    a.period - b.period || Number(b.pinned) - Number(a.pinned);
+  classes.sort(byPeriod);
 
   while (classes.length > 1 && groupCount(classes) > MAX_GROUPS) {
-    let best = 0;
-    let bestCost = Number.POSITIVE_INFINITY;
-
-    for (let index = 0; index + 1 < classes.length; index++) {
-      const fast = classes[index];
-      const slow = classes[index + 1];
-      const cost =
-        classBytes([...fast.members, ...slow.members], fast.period, loopTimeUs) -
-        classBytes(fast.members, fast.period, loopTimeUs) -
-        classBytes(slow.members, slow.period, loopTimeUs);
-
-      if (cost < bestCost) {
-        bestCost = cost;
-        best = index;
-      }
-    }
-
-    classes[best].members.push(...classes[best + 1].members);
-    classes.splice(best + 1, 1);
+    const [first, second] = cheapestMerge(classes, loopTimeUs);
+    const kept = classes[first];
+    const merged = classes[second];
+    kept.period = Math.min(kept.period, merged.period);
+    kept.pinned ||= merged.pinned;
+    kept.members.push(...merged.members);
+    classes.splice(second, 1);
+    classes.sort(byPeriod);
   }
 
   const groups: Group[] = [];
@@ -281,13 +315,13 @@ function formGroups(
         break;
       }
 
-      const slowest = Math.min(...members.map((member) => member.rateHz));
+      const fastest = Math.max(...members.map((member) => member.rateHz));
       groups.push({
         members: members.toSorted((a, b) => a.order - b.order),
         basePeriod: rateClass.period,
         floorPeriod: Math.max(
           rateClass.period,
-          periodFor(Math.min(slowest, MIN_DEGRADED_RATE_HZ), loopTimeUs)
+          periodFor(Math.min(fastest, MIN_DEGRADED_RATE_HZ), loopTimeUs)
         ),
         pinned: members.some((member) => member.pinned),
         frameBytes: wireSize(SAMPLE_HEADER_SIZE + sampleSizeOf(members)),

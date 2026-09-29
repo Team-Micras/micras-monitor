@@ -76,6 +76,7 @@ export {
 } from './stream-plan';
 export {
   StreamPlanner,
+  type PlannerSession,
   type StreamPlannerEvents,
   type StreamPlannerOptions,
 } from './stream-planner';
