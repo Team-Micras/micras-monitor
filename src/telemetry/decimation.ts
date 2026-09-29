@@ -294,6 +294,28 @@ export function upperBound(values: Float64Array, value: number, low: number, hig
   return first;
 }
 
+/**
+ * The first block, of an epoch's blocks in time order, whose last sample is at or after a time,
+ * so that a query skips the blocks before its window in a search rather than one by one. The
+ * block being filled comes last and counts as reaching any time while it is empty.
+ */
+export function firstBlockFrom(blocks: readonly Block[], timeUs: number): number {
+  let low = 0;
+  let high = blocks.length;
+
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+
+    if (blocks[middle].lastTimeUs < timeUs) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low;
+}
+
 function firstGapFrom(gaps: readonly EpochGap[], timeUs: number): number {
   let first = 0;
   let last = gaps.length;
@@ -470,8 +492,12 @@ export function decimateSegments(
       continue;
     }
 
-    for (const block of epoch.blocks) {
-      if (block.length === 0 || block.lastTimeUs < into.scanFromUs) {
+    const blocks = epoch.blocks;
+
+    for (let at = firstBlockFrom(blocks, into.scanFromUs); at < blocks.length; at++) {
+      const block = blocks[at];
+
+      if (block.length === 0) {
         continue;
       }
 

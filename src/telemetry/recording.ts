@@ -1,7 +1,7 @@
 import type { TypeCode } from '@/protocol';
 
 import { crc32 } from './crc32';
-import type { PersistedBlock, PersistedColumn } from './persistence';
+import type { BlockRef, PersistedBlock, PersistedColumn } from './persistence';
 import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from './storage';
 import type {
   Boundary,
@@ -52,6 +52,12 @@ import type {
  * none after it, it is where the recording was cut short. A record that passes its check but does
  * not decode is skipped and reported, unless it is the last one, which is also taken as a cut.
  * Version 1 was never released with the check over the payload alone, so it stays version 1.
+ *
+ * Records need not come in time order. Blocks written back from an earlier recording come after
+ * newer ones, so a reader places each block by its epoch and index. A gap may be written again
+ * as it grows, as when the memory cap lets go of more of the stretch before it: a later gap
+ * record with the epoch and start of an earlier one replaces it. The header's optional `name` is
+ * the name the session had when the file was written or exported.
  *
  * @module
  */
@@ -114,6 +120,9 @@ export interface RecordingHeader {
 
   /** The robot's schema when recording started. */
   readonly schema: readonly RecordingVariable[];
+
+  /** The session's name, as the user gave it. */
+  readonly name?: string;
 }
 
 /**
@@ -353,13 +362,14 @@ function parseHeader(json: string): RecordingHeader {
     throw new Error(`Recording format version ${String(value.version)} is not supported`);
   }
 
-  const { startedAtMs, robot, schema } = value;
+  const { startedAtMs, robot, schema, name } = value;
 
   if (
     typeof startedAtMs !== 'number' ||
     !isRobotInfo(robot) ||
     !Array.isArray(schema) ||
-    !schema.every(isRecordingVariable)
+    !schema.every(isRecordingVariable) ||
+    (name !== undefined && typeof name !== 'string')
   ) {
     throw new Error('Recording header is malformed');
   }
@@ -370,6 +380,7 @@ function parseHeader(json: string): RecordingHeader {
     startedAtMs,
     robot,
     schema,
+    ...(name === undefined ? {} : { name }),
   };
 }
 
@@ -424,19 +435,29 @@ export function encodeBlock(block: PersistedBlock): Uint8Array {
 }
 
 /**
- * Read back the payload of a block record, into arrays of exactly its length.
+ * Where a block record's samples belong and how many it holds, checked against its layout
+ * without reading the samples.
  *
  * @throws If the payload is truncated, too long or names an unknown column kind.
  */
-export function decodeBlock(bytes: Uint8Array): PersistedBlock {
+export function peekBlock(bytes: Uint8Array): { readonly ref: BlockRef; readonly length: number } {
   const reader = new ByteReader(bytes);
   const ref = { epochId: reader.u32(), index: reader.u32() };
-  const startSample = reader.u32();
+  reader.u32();
   const length = reader.u32();
+  checkLayout(reader, bytes.byteLength, length);
+  return { ref, length };
+}
+
+function checkLayout(
+  reader: ByteReader,
+  size: number,
+  length: number
+): { variableId: number; kind: ColumnKind }[] {
   const count = reader.u32();
 
   if (8 * count > reader.remaining) {
-    throw new Error(`Block record of ${bytes.byteLength} bytes cannot hold ${count} columns`);
+    throw new Error(`Block record of ${size} bytes cannot hold ${count} columns`);
   }
 
   const layout = Array.from({ length: count }, () => {
@@ -454,6 +475,20 @@ export function decodeBlock(bytes: Uint8Array): PersistedBlock {
     );
   }
 
+  return layout;
+}
+
+/**
+ * Read back the payload of a block record, into arrays of exactly its length.
+ *
+ * @throws If the payload is truncated, too long or names an unknown column kind.
+ */
+export function decodeBlock(bytes: Uint8Array): PersistedBlock {
+  const reader = new ByteReader(bytes);
+  const ref = { epochId: reader.u32(), index: reader.u32() };
+  const startSample = reader.u32();
+  const length = reader.u32();
+  const layout = checkLayout(reader, bytes.byteLength, length);
   const time = new Float64Array(length);
 
   for (let index = 0; index < length; index++) {
@@ -708,6 +743,18 @@ function decodeHeader(bytes: Uint8Array): { header: RecordingHeader; end: number
 }
 
 function checkedEnd(bytes: Uint8Array, view: DataView, offset: number): number | undefined {
+  const stop = recordEnd(bytes, view, offset);
+
+  if (stop === undefined) {
+    return undefined;
+  }
+
+  const head = crc32(bytes.subarray(offset, offset + RECORD_CHECKED_SIZE));
+  const payload = bytes.subarray(offset + RECORD_HEADER_SIZE, stop);
+  return crc32(payload, head) === view.getUint32(offset + 8, true) ? stop : undefined;
+}
+
+function recordEnd(bytes: Uint8Array, view: DataView, offset: number): number | undefined {
   const start = offset + RECORD_HEADER_SIZE;
 
   if (start > bytes.byteLength) {
@@ -715,33 +762,52 @@ function checkedEnd(bytes: Uint8Array, view: DataView, offset: number): number |
   }
 
   const stop = start + view.getUint32(offset + 4, true);
-
-  if (stop > bytes.byteLength) {
-    return undefined;
-  }
-
-  const head = crc32(bytes.subarray(offset, offset + RECORD_CHECKED_SIZE));
-  return crc32(bytes.subarray(start, stop), head) === view.getUint32(offset + 8, true)
-    ? stop
-    : undefined;
+  return stop > bytes.byteLength ? undefined : stop;
 }
 
+const KNOWN_KINDS: ReadonlySet<number> = new Set(Object.values(RECORD_KIND));
+
+function plausibleHeader(bytes: Uint8Array, offset: number): boolean {
+  return (
+    offset + RECORD_HEADER_SIZE <= bytes.byteLength &&
+    KNOWN_KINDS.has(bytes[offset]) &&
+    bytes[offset + 1] === 0 &&
+    bytes[offset + 2] === 0 &&
+    bytes[offset + 3] === 0
+  );
+}
+
+/**
+ * The first offset from `from` on where a record passes its check. A candidate followed by the
+ * end or by another plausible header is checked as it is met; the others, which are mostly
+ * zeros read as headers, only once one ahead passed or none did, and only those before it, so
+ * that the result is the earliest record that passes without running a check at every offset.
+ */
 function nextRecord(bytes: Uint8Array, view: DataView, from: number): number | undefined {
-  const kinds: readonly number[] = Object.values(RECORD_KIND);
+  const deferred: number[] = [];
 
   for (let offset = from; offset + RECORD_HEADER_SIZE <= bytes.byteLength; offset++) {
-    const plausible =
-      kinds.includes(bytes[offset]) &&
-      bytes[offset + 1] === 0 &&
-      bytes[offset + 2] === 0 &&
-      bytes[offset + 3] === 0;
+    if (!plausibleHeader(bytes, offset)) {
+      continue;
+    }
 
-    if (plausible && checkedEnd(bytes, view, offset) !== undefined) {
-      return offset;
+    const stop = recordEnd(bytes, view, offset);
+
+    if (stop === undefined) {
+      continue;
+    }
+
+    if (stop !== bytes.byteLength && !plausibleHeader(bytes, stop)) {
+      deferred.push(offset);
+      continue;
+    }
+
+    if (checkedEnd(bytes, view, offset) !== undefined) {
+      return deferred.find((early) => checkedEnd(bytes, view, early) !== undefined) ?? offset;
     }
   }
 
-  return undefined;
+  return deferred.find((early) => checkedEnd(bytes, view, early) !== undefined);
 }
 
 function decoded(kind: number, payload: Uint8Array): string | RecordingRecord | undefined {
@@ -752,19 +818,76 @@ function decoded(kind: number, payload: Uint8Array): string | RecordingRecord | 
   }
 }
 
+function validated(kind: number, payload: Uint8Array): string | undefined {
+  try {
+    if (kind === RECORD_KIND.block) {
+      peekBlock(payload);
+    } else {
+      decodeRecord(kind, payload);
+    }
+
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 /**
- * Read a whole recording. A recording cut short, or whose last record is damaged, still gives
- * the records before, with {@link Recording.truncatedAt} saying where it ends; a damaged record
- * in the middle is skipped and listed in {@link Recording.damaged}.
+ * A record found in the bytes of a recording, not decoded yet.
+ */
+export interface LocatedRecord {
+  /** The record's kind byte; unknown kinds are left out. */
+  readonly kind: RecordingRecord['kind'];
+
+  /** Where the record starts. */
+  readonly offset: number;
+
+  /** Its payload, a view into the bytes. */
+  readonly payload: Uint8Array;
+}
+
+/**
+ * The records of a recording, as {@link scanRecording} finds them.
+ */
+export interface RecordingScan {
+  /** The header. */
+  readonly header: RecordingHeader;
+
+  /** The records that passed their check and decode, in file order. */
+  readonly records: readonly LocatedRecord[];
+
+  /** Where the whole records end: the size to cut the file to, to drop a damaged tail. */
+  readonly validEnd: number;
+
+  /** {@inheritDoc Recording.truncatedAt} */
+  readonly truncatedAt?: number;
+
+  /** {@inheritDoc Recording.damaged} */
+  readonly damaged?: readonly RecordingDamage[];
+}
+
+const KIND_NAMES = new Map<number, RecordingRecord['kind']>([
+  [RECORD_KIND.epoch, 'epoch'],
+  [RECORD_KIND.block, 'block'],
+  [RECORD_KIND.gap, 'gap'],
+  [RECORD_KIND.boundary, 'boundary'],
+  [RECORD_KIND.value, 'value'],
+  [RECORD_KIND['epoch-closed'], 'epoch-closed'],
+]);
+
+/**
+ * Find the records of a recording without decoding their samples, for a reader that decodes
+ * blocks only when it needs them. Damage is handled as {@link deserializeRecording} does.
  *
  * @throws If the bytes are not a recording, or its version is not 1.
  */
-export function deserializeRecording(bytes: Uint8Array): Recording {
+export function scanRecording(bytes: Uint8Array): RecordingScan {
   const { header, end } = decodeHeader(bytes);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const records: RecordingRecord[] = [];
+  const records: LocatedRecord[] = [];
   const damaged: RecordingDamage[] = [];
   let truncatedAt: number | undefined;
+  let validEnd = end;
 
   for (let offset = end; offset < bytes.byteLength;) {
     const stop = checkedEnd(bytes, view, offset);
@@ -782,29 +905,69 @@ export function deserializeRecording(bytes: Uint8Array): Recording {
       continue;
     }
 
-    const result = decoded(
-      view.getUint8(offset),
-      bytes.subarray(offset + RECORD_HEADER_SIZE, stop)
-    );
+    const code = view.getUint8(offset);
+    const payload = bytes.subarray(offset + RECORD_HEADER_SIZE, stop);
+    const problem = validated(code, payload);
 
-    if (typeof result === 'string') {
+    if (problem !== undefined) {
       if (stop === bytes.byteLength) {
         truncatedAt = offset;
         break;
       }
 
-      damaged.push({ offset, reason: result });
-    } else if (result) {
-      records.push(result);
+      damaged.push({ offset, reason: problem });
+    } else {
+      const kind = KIND_NAMES.get(code);
+
+      if (kind !== undefined) {
+        records.push({ kind, offset, payload });
+      }
     }
 
     offset = stop;
+    validEnd = stop;
   }
 
   return {
     header,
     records,
+    validEnd,
     ...(truncatedAt === undefined ? {} : { truncatedAt }),
     ...(damaged.length === 0 ? {} : { damaged }),
+  };
+}
+
+/**
+ * Decode a record {@link scanRecording} found.
+ *
+ * @throws If it does not decode, which the scan already ruled out.
+ */
+export function decodeLocated(record: LocatedRecord): RecordingRecord {
+  const result = decoded(RECORD_KIND[record.kind], record.payload);
+
+  if (result === undefined || typeof result === 'string') {
+    throw new Error(`Record at ${record.offset} does not decode: ${result ?? 'unknown kind'}`);
+  }
+
+  return result;
+}
+
+/** How many bytes a record's own header takes before its payload. */
+export const RECORD_OVERHEAD = RECORD_HEADER_SIZE;
+
+/**
+ * Read a whole recording. A recording cut short, or whose last record is damaged, still gives
+ * the records before, with {@link Recording.truncatedAt} saying where it ends; a damaged record
+ * in the middle is skipped and listed in {@link Recording.damaged}.
+ *
+ * @throws If the bytes are not a recording, or its version is not 1.
+ */
+export function deserializeRecording(bytes: Uint8Array): Recording {
+  const scan = scanRecording(bytes);
+  return {
+    header: scan.header,
+    records: scan.records.map((record) => decodeLocated(record)),
+    ...(scan.truncatedAt === undefined ? {} : { truncatedAt: scan.truncatedAt }),
+    ...(scan.damaged === undefined ? {} : { damaged: scan.damaged }),
   };
 }

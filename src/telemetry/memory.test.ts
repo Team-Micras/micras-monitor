@@ -420,6 +420,24 @@ describe('writing while recording', () => {
     expect(first.reads).toBe(1);
   });
 
+  test('keeps counting dropped samples in what it says of a variable while history is stopped', async () => {
+    const stuck: BlockPersistence = {
+      write: () => new Promise<void>(() => undefined),
+      read: () => Promise.reject(new Error('never written')),
+    };
+    const { store, events } = cappedStore(2);
+    store.startRecording(stuck);
+    await streamBlocks(store, 0, 6);
+
+    expect(types(events)).toContain('history-stopped');
+    const before = store.variable(1);
+    store.append(1, 7 * BLOCK_SIZE, 7 * BLOCK_SIZE * 1000, [1, 2]);
+    const after = store.variable(1);
+
+    expect(after?.droppedSamples).toBe((before?.droppedSamples ?? 0) + BLOCK_SIZE);
+    expect(store.variable(1)).toBe(after);
+  });
+
   test('tells about failing writes once, backs off, and recovers', async () => {
     let clock = 0;
     let failing = true;

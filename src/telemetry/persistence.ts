@@ -1,4 +1,11 @@
-import type { NumericColumn } from './types';
+import type {
+  Boundary,
+  NumericColumn,
+  RecordedEpoch,
+  RecordedGap,
+  RecordedValue,
+  SchemaEntry,
+} from './types';
 
 /**
  * Which block a persisted block is: its epoch, and its position in the epoch.
@@ -61,4 +68,35 @@ export interface BlockPersistence {
    * @throws If no block with that reference was written.
    */
   read(ref: BlockRef): Promise<PersistedBlock>;
+}
+
+/**
+ * An epoch of a saved session, as `TelemetryStore.load` takes it.
+ */
+export interface StoredEpoch {
+  /** The epoch, with the names its variables had. */
+  readonly epoch: RecordedEpoch;
+
+  /** Its gaps, in the order they were written; a later one with the same start replaces one before. */
+  readonly gaps: readonly RecordedGap[];
+
+  /** Its blocks, in any order; decoded one at a time as they are taken. */
+  readonly blocks: Iterable<PersistedBlock>;
+}
+
+/**
+ * A saved session, as `TelemetryStore.load` takes it.
+ */
+export interface StoredSession {
+  /** The robot's schema when the session was recorded. */
+  readonly schema: readonly SchemaEntry[];
+
+  /** Every epoch, in the order they opened. */
+  readonly epochs: readonly StoredEpoch[];
+
+  /** Every boundary. */
+  readonly boundaries: readonly Boundary[];
+
+  /** The values outside the stored streams, in the order they came. */
+  readonly values: readonly RecordedValue[];
 }

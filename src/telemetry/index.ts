@@ -17,22 +17,41 @@ export {
   type DecimationStats,
 } from './decimation';
 export { MemoryBlockPersistence } from './memory-persistence';
-export type { BlockPersistence, BlockRef, PersistedBlock, PersistedColumn } from './persistence';
+export type {
+  BlockPersistence,
+  BlockRef,
+  PersistedBlock,
+  PersistedColumn,
+  StoredEpoch,
+  StoredSession,
+} from './persistence';
+export {
+  RecordingBlocks,
+  SessionRecorder,
+  type BlockLocation,
+  type RecorderStats,
+} from './recorder';
+export { MemoryRecordingFile, type RecordingFile } from './recording-file';
+export { SavedRecording, type RecordingSummary } from './recording-reader';
 export {
   decodeBlock,
   deserializeRecording,
   encodeBlock,
   encodeRecordingHeader,
   encodeRecordingRecord,
+  peekBlock,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
   recordOf,
+  scanRecording,
   serializeRecording,
   type Recording,
   type RecordingDamage,
   type RecordingHeader,
   type RecordingRecord,
+  type RecordingScan,
   type RecordingVariable,
+  type LocatedRecord,
 } from './recording';
 export { ManualScheduler, type Scheduler } from './scheduler';
 export {

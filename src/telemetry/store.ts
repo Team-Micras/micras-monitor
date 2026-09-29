@@ -7,12 +7,13 @@ import {
   DecimationBuilder,
   decimateSegments,
   type DecimationStats,
+  firstBlockFrom,
   lowerBound,
   upperBound,
 } from './decimation';
 import { Epoch, type EpochHost, RECEIVED_BACKWARDS } from './epoch';
 import { ChangeNotifier, Channel } from './notifier';
-import type { BlockPersistence } from './persistence';
+import type { BlockPersistence, PersistedBlock, StoredSession } from './persistence';
 import { LEAF_SIZE } from './pyramid';
 import { BlockResidency } from './residency';
 import type { Scheduler } from './scheduler';
@@ -25,6 +26,7 @@ import type {
   HistoryMark,
   IngestionEvent,
   LatestValue,
+  RecordedEpoch,
   SampleRun,
   SampleValue,
   SchemaEntry,
@@ -139,6 +141,18 @@ function checkBlockSize(size: number): number {
   }
 
   return size;
+}
+
+function blockAt(blocks: readonly Block[], timeUs: number): Block | undefined {
+  for (let at = Math.min(firstBlockFrom(blocks, timeUs), blocks.length - 1); at >= 0; at--) {
+    const block = blocks[at];
+
+    if (block.length > 0 && block.firstTimeUs <= timeUs) {
+      return block;
+    }
+  }
+
+  return undefined;
 }
 
 function overlaps(startUs: number, endUs: number, fromUs: number, toUs: number): boolean {
@@ -461,6 +475,77 @@ export class TelemetryStore {
     this.refreshStatus();
   }
 
+  /**
+   * Fill an empty store with a saved session, to read it: its schema, epochs, blocks, gaps,
+   * boundaries and values. Every epoch ends closed. Each block counts as having a copy in
+   * `source`, so under the memory cap it leaves memory, oldest first, and comes back from there
+   * when a query needs its raw samples; its pyramid stays. The latest value of a numeric
+   * variable is its last stored sample.
+   *
+   * @param session What to load; its blocks are decoded one at a time.
+   * @param source Where the blocks can be read back from.
+   * @returns How many blocks did not fit under the cap and were left out.
+   * @throws If the store already holds epochs, or a block does not fit its epoch.
+   */
+  load(session: StoredSession, source: BlockPersistence): number {
+    if (this.epochs.size > 0) {
+      throw new Error('Only an empty store can load a saved session');
+    }
+
+    this.registry.setSchema(session.schema);
+    const lastSamples = new Map<VariableRecord, SampleValue>();
+    let skipped = 0;
+
+    for (const stored of session.epochs) {
+      const { epoch, records } = this.restoreEpoch(stored.epoch);
+
+      for (const persisted of stored.blocks) {
+        const block = epoch.restoreBlock(persisted);
+
+        if (!block) {
+          skipped++;
+          continue;
+        }
+
+        this.residency.adopt(block, source);
+        this.noteLastSamples(epoch, records, persisted, lastSamples);
+      }
+
+      for (const gap of stored.gaps) {
+        epoch.restoreGap(gap);
+      }
+
+      epoch.finishRestore();
+    }
+
+    this.boundaryList = session.boundaries.toSorted((left, right) => left.timeUs - right.timeUs);
+
+    for (const { variableId, name, timeUs, value } of session.values) {
+      const record = this.registry.recordFor(name, this.registry.typeOf(variableId));
+      this.lastIds.set(record, variableId);
+      record.setLatest(value, Number.isNaN(timeUs) ? undefined : timeUs);
+
+      if (!record.numeric) {
+        record.remember(value, Number.isNaN(timeUs) ? undefined : timeUs);
+      }
+    }
+
+    for (const [record, sample] of lastSamples) {
+      record.setLatest(sample.value, sample.timeUs);
+      record.tailUs = sample.timeUs;
+    }
+
+    for (const record of this.registry.all()) {
+      record.rewritten();
+      this.notifier.touch(record.channel);
+    }
+
+    this.clockUs = Math.max(this.clockUs, ...[...lastSamples.values()].map((s) => s.timeUs));
+    this.historyVersion++;
+    this.refreshStatus();
+    return skipped;
+  }
+
   /** How many times the history was forgotten by {@link reset}, to tell a fresh one from a longer one. */
   get generation(): number {
     return this.resets;
@@ -487,19 +572,25 @@ export class TelemetryStore {
       return undefined;
     }
 
-    const version = 2 * record.mark.version + (record.precisionLost ? 1 : 0);
-    const cached = this.infoCache.get(record);
-
-    if (cached?.version === version && cached.value.type === record.type) {
-      return cached.value;
-    }
-
     let storedSamples = 0;
     let droppedSamples = 0;
 
     for (const { epoch } of record.segments) {
       storedSamples += epoch.keptCount;
       droppedSamples += epoch.droppedCount;
+    }
+
+    const cached = this.infoCache.get(record)?.value;
+
+    if (
+      cached !== undefined &&
+      cached.type === record.type &&
+      cached.precisionLost === record.precisionLost &&
+      cached.storedSamples === storedSamples &&
+      cached.droppedSamples === droppedSamples &&
+      cached.epochs === record.segments.length
+    ) {
+      return cached;
     }
 
     const value: VariableInfo = {
@@ -511,7 +602,7 @@ export class TelemetryStore {
       droppedSamples,
       epochs: record.segments.length,
     };
-    this.infoCache.set(record, { version, value });
+    this.infoCache.set(record, { version: record.mark.version, value });
     return value;
   }
 
@@ -594,8 +685,12 @@ export class TelemetryStore {
         continue;
       }
 
-      for (const block of epoch.blocks) {
-        if (block.length === 0 || block.lastTimeUs < startUs) {
+      const blocks = epoch.blocks;
+
+      for (let at = firstBlockFrom(blocks, startUs); at < blocks.length; at++) {
+        const block = blocks[at];
+
+        if (block.length === 0) {
           continue;
         }
 
@@ -622,9 +717,7 @@ export class TelemetryStore {
 
     for (let index = segments.length - 1; index >= 0; index--) {
       const { epoch, column } = segments[index];
-      const block = epoch.blocks.findLast(
-        (candidate) => candidate.length > 0 && candidate.firstTimeUs <= timeUs
-      );
+      const block = blockAt(epoch.blocks, timeUs);
 
       if (column < 0 || !block) {
         continue;
@@ -867,6 +960,49 @@ export class TelemetryStore {
    */
   stopRecording(): Promise<void> {
     return this.residency.stopRecording();
+  }
+
+  private restoreEpoch(recorded: RecordedEpoch): OpenEpoch {
+    if (this.epochs.has(recorded.epochId)) {
+      throw new Error(`Epoch ${recorded.epochId} appears twice in the session`);
+    }
+
+    const epoch = new Epoch(recorded, this.blockSize, this.sequenceModulus, this.host);
+    const records = recorded.variables.map(({ id, name, type }) => {
+      const record = this.registry.recordFor(name, type);
+      this.lastIds.set(record, id);
+      return record;
+    });
+    records.forEach((record, index) => {
+      record.segments.push({ epoch, column: epoch.columnOf[index] });
+    });
+    const open = { epoch, records };
+    this.epochs.set(recorded.epochId, open);
+    return open;
+  }
+
+  private noteLastSamples(
+    epoch: Epoch,
+    records: readonly VariableRecord[],
+    persisted: PersistedBlock,
+    lastSamples: Map<VariableRecord, SampleValue>
+  ): void {
+    const last = persisted.time.length - 1;
+
+    if (last < 0) {
+      return;
+    }
+
+    const timeUs = persisted.time[last];
+
+    records.forEach((record, index) => {
+      const column = epoch.columnOf[index];
+      const known = lastSamples.get(record);
+
+      if (column >= 0 && (known === undefined || known.timeUs <= timeUs)) {
+        lastSamples.set(record, { value: persisted.columns[column].values[last], timeUs });
+      }
+    });
   }
 
   private openEpochOf(epochId: number): OpenEpoch {

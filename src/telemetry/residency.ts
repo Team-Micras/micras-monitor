@@ -157,6 +157,17 @@ export class BlockResidency implements BlockAccess {
     this.persistSealed();
   }
 
+  /**
+   * A block restored from a recording already has a copy there: it can leave memory at once, and
+   * comes back from the recording when a query needs it.
+   */
+  adopt(block: Block, source: BlockPersistence): void {
+    block.copy = source;
+    block.recordedBy = source;
+    this.roomChanged = true;
+    this.makeRoom(0, false);
+  }
+
   /** Memory outside the blocks was taken, or given back when negative. */
   account(bytes: number): void {
     this.usedBytes += bytes;

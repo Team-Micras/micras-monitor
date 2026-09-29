@@ -10,9 +10,11 @@ import {
   encodeBlock,
   encodeRecordingHeader,
   encodeRecordingRecord,
+  peekBlock,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
   recordOf,
+  scanRecording,
   serializeRecording,
   type Recording,
   type RecordingHeader,
@@ -229,6 +231,50 @@ describe('recording format v1', () => {
       expect(read.damaged).toEqual([{ offset: offsetOf(records, 1), reason: 'check mismatch' }]);
       expect(read.truncatedAt).toBeUndefined();
     }
+  });
+
+  test('finds a record after the damage even when the one after it is damaged too', () => {
+    const header = encodeRecordingHeader(HEADER);
+    const records = RECORDS.map((record) => encodeRecordingRecord(record));
+    records[1][20] ^= 0x01;
+    records[3][0] = 0xee;
+    const read = deserializeRecording(join(header, ...records));
+
+    expect(read.records).toEqual(RECORDS.filter((_, index) => index !== 1 && index !== 3));
+    expect(read.damaged?.map((damage) => damage.reason)).toEqual([
+      'check mismatch',
+      'check mismatch',
+    ]);
+  });
+
+  test('checks few candidates while scanning past damage in zeros', () => {
+    const zeros = new Uint8Array(64 * 1024);
+    const records = RECORDS.map((record) => encodeRecordingRecord(record));
+    const bytes = join(encodeRecordingHeader(HEADER), records[0], zeros, ...records.slice(1));
+    const started = performance.now();
+    const read = scanRecording(bytes);
+
+    expect(read.records.map((record) => record.kind)).toEqual(RECORDS.map((record) => record.kind));
+    expect(read.damaged).toHaveLength(1);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
+  test('locates each record and its payload without decoding the blocks', () => {
+    const header = encodeRecordingHeader(HEADER);
+    const records = RECORDS.map((record) => encodeRecordingRecord(record));
+    const bytes = join(header, ...records);
+    const scan = scanRecording(bytes);
+
+    expect(scan.validEnd).toBe(bytes.byteLength);
+    expect(scan.records[1]).toMatchObject({
+      kind: 'block',
+      offset: header.byteLength + records[0].byteLength,
+    });
+    expect(peekBlock(scan.records[1].payload)).toEqual({
+      ref: { epochId: 1, index: 0 },
+      length: 4,
+    });
+    expect({ kind: 'block', block: decodeBlock(scan.records[1].payload) }).toEqual(RECORDS[1]);
   });
 
   test('takes a damaged size in the last record as where the recording was cut', () => {

@@ -1,5 +1,7 @@
 import type { Block, BlockLayout } from './block';
-import { type ColumnKind, columnKindOf, isWideInteger, toNumber } from './storage';
+import type { PersistedBlock } from './persistence';
+import { LEAF_SIZE } from './pyramid';
+import { type ColumnKind, columnKindOf, isWideInteger, kindOfColumn, toNumber } from './storage';
 import type { RecordedEpoch, RecordedGap, SchemaEntry, TelemetryValue } from './types';
 
 /**
@@ -363,6 +365,121 @@ export class Epoch {
   /** A gap as a recording remembers it. */
   recordedGap(gap: EpochGap): RecordedGap {
     return { epochId: this.id, ...gap };
+  }
+
+  /**
+   * Take back a sealed block of a recording, in its place among the blocks by index, whatever
+   * order the recording gives them in.
+   *
+   * @returns The block, or undefined if the memory cap left no room for it.
+   * @throws If the block's columns are not the epoch's, or it is already there.
+   */
+  restoreBlock(persisted: PersistedBlock): Block | undefined {
+    const length = persisted.time.length;
+    const matches =
+      persisted.columns.length === this.numericIds.length &&
+      persisted.columns.every(
+        (column, index) =>
+          column.variableId === this.numericIds[index] &&
+          kindOfColumn(column.values) === this.kinds[index] &&
+          column.values.length === length
+      );
+
+    if (!matches) {
+      throw new Error(`Block ${persisted.ref.index} does not fit the columns of epoch ${this.id}`);
+    }
+
+    if (this.blocks.some((block) => block.ref.index === persisted.ref.index)) {
+      throw new Error(`Block ${persisted.ref.index} of epoch ${this.id} was restored already`);
+    }
+
+    const block = this.host.allocate({
+      ref: persisted.ref,
+      startSample: persisted.startSample,
+      capacity: Math.max(LEAF_SIZE, 2 ** Math.ceil(Math.log2(Math.max(1, length)))),
+      variableIds: this.numericIds,
+      kinds: this.kinds,
+    });
+
+    if (!block) {
+      return undefined;
+    }
+
+    for (let sample = 0; sample < length; sample++) {
+      for (let column = 0; column < this.row.length; column++) {
+        this.row[column] = persisted.columns[column].values[sample];
+      }
+
+      block.append(persisted.time[sample], this.row);
+    }
+
+    this.host.seal(block);
+    const after = this.blocks.findIndex((other) => other.ref.index > persisted.ref.index);
+    this.blocks.splice(after < 0 ? this.blocks.length : after, 0, block);
+    this.storedCount = Math.max(this.storedCount, persisted.startSample + length);
+    this.nextBlockIndex = Math.max(this.nextBlockIndex, persisted.ref.index + 1);
+    return block;
+  }
+
+  /**
+   * Take back a gap of a recording. A gap with the start of one taken before replaces it, since
+   * a recorder writes a gap again when it grows.
+   */
+  restoreGap(recorded: RecordedGap): void {
+    const gap: EpochGap = {
+      kind: recorded.kind,
+      index: recorded.index,
+      count: recorded.count,
+      startUs: recorded.startUs,
+      afterUs: recorded.afterUs,
+      untilUs: recorded.untilUs,
+    };
+    const same = this.gaps.findIndex(
+      (other) =>
+        other.startUs === gap.startUs || (Number.isNaN(other.startUs) && Number.isNaN(gap.startUs))
+    );
+
+    if (same >= 0) {
+      this.gaps.splice(same, 1);
+    } else {
+      this.host.account(GAP_BYTES);
+    }
+
+    const after = this.gaps.findIndex((other) => other.index > gap.index);
+    this.gaps.splice(after < 0 ? this.gaps.length : after, 0, gap);
+  }
+
+  /**
+   * End a restore: the epoch takes no more samples, and its counts follow from the blocks and
+   * gaps taken back.
+   */
+  finishRestore(): void {
+    this.isClosed = true;
+    let kept = 0;
+
+    for (const block of this.blocks) {
+      kept += block.length;
+    }
+
+    this.droppedCount = 0;
+    let firstUs = this.blocks[0]?.firstTimeUs ?? Number.NaN;
+
+    for (const gap of this.gaps) {
+      if (gap.kind === 'dropped') {
+        this.droppedCount += gap.count;
+      } else {
+        this.storedCount = Math.max(this.storedCount, gap.index);
+
+        if (!(gap.startUs >= firstUs)) {
+          firstUs = Number.isNaN(gap.startUs) ? firstUs : gap.startUs;
+        }
+      }
+    }
+
+    this.trimmedCount = this.storedCount - kept;
+    this.firstStoredUs = firstUs;
+    this.lastTimeUs = this.blocks.at(-1)?.lastTimeUs ?? Number.NaN;
+    this.lastSeenUs = Number.isNaN(this.lastTimeUs) ? this.lastSeenUs : this.lastTimeUs;
   }
 
   private writableBlock(): Block | undefined {
