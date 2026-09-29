@@ -72,8 +72,9 @@ function timeline(): string {
 
 describe('the Micras package in the app', () => {
   test('draws the maze the robot sends and reads it again when its revision moves', async () => {
-    let explored = false;
-    await openMaze([
+    let blob = FRESH_16;
+    let revision = 1;
+    const robot = await openMaze([
       { name: 'state', type: TypeCode.U8, access: decodeAccess(0x01), signal: () => 3 },
       f32('pose/x', 0.09),
       f32('pose/y', 0.27),
@@ -83,13 +84,13 @@ describe('the Micras package in the app', () => {
         type: TypeCode.BLOB,
         access: decodeAccess(0x08),
         typeTag: 'maze-grid',
-        bytes: () => (explored ? EXPLORED_16 : FRESH_16),
+        bytes: () => blob,
       },
       {
         name: 'maze/revision',
         type: TypeCode.U32,
         access: decodeAccess(0x01),
-        signal: () => (explored ? 8 : 1),
+        signal: () => revision,
       },
     ]);
 
@@ -97,7 +98,13 @@ describe('the Micras package in the app', () => {
     expect(maze()?.dataset.explored).toBe('1');
     await expect.poll(() => maze()?.dataset.robotCell).toBe('0,1');
 
-    explored = true;
+    blob = EXPLORED_16;
+    const revisions = () => robot.store.variable('maze/revision')?.storedSamples ?? 0;
+    const seen = revisions();
+    await expect.poll(revisions).toBeGreaterThan(seen + 10);
+    expect(maze()?.dataset.walls).toBe('65');
+
+    revision = 8;
     await expect.poll(() => maze()?.dataset.walls).toBe('68');
     expect(maze()?.dataset.explored).toBe('2');
   });
