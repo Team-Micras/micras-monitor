@@ -124,7 +124,7 @@ function Shell({
   const presses = useRef(0);
   const phone = usePhone();
   const plan = phonePlan(useRobotPackage()?.package ?? null, useVariables());
-  const reloadBlocked = useReloadBlocked();
+  const blockedBy = useReloadBlocked();
 
   useEffect(() => applyTheme(theme), [theme]);
   useEffect(() => whenIdle(() => void prefetchAll()), []);
@@ -229,7 +229,7 @@ function Shell({
         </div>
       )}
       <DeletedNotice />
-      <UpdateNotice updates={updates} reloadBlocked={reloadBlocked} />
+      <UpdateNotice updates={updates} blockedBy={blockedBy} />
     </StopActionContext>
   );
 }

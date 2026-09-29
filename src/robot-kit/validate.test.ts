@@ -102,6 +102,11 @@ describe('validating a package', () => {
       },
       'presets[1].name repeats "A"',
     ],
+    [
+      'an idle state that is not an integer',
+      { idleStates: [1.5] },
+      'idleStates[0] must be an integer',
+    ],
   ])('rejects %s', (_, overrides, message) => {
     expect(problemOf(mouse(overrides))).toContain(message);
   });

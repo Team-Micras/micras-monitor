@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import {
   acceptedIn,
   enumLabel,
+  isIdleState,
   refusalReason,
   RobotRegistry,
   validatePackage,
@@ -181,5 +182,13 @@ describe('the commands, against the firmware', () => {
       expect([name, refusalReason(micras, reason) === null]).toEqual([name, name === 'NONE']);
     });
     expect(refusalReason(micras, Reason.NOT_IDLE)).toBe('robot not idle');
+  });
+});
+
+describe('the idle state', () => {
+  test('is the one state in which the robot waits for a command', () => {
+    expect(micras.idleStates).toEqual([FsmState.IDLE]);
+    expect(isIdleState(micras, FsmState.IDLE)).toBe(true);
+    expect(isIdleState(micras, FsmState.RUN)).toBe(false);
   });
 });

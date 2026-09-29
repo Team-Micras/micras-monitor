@@ -23,6 +23,7 @@ export {
   emergencyCommand,
   enumLabel,
   hasBit,
+  isIdleState,
   presentVariable,
   refusalReason,
   roleVariable,

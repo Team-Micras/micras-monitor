@@ -43,12 +43,24 @@ describe('UpdateNotice', () => {
   test('refuses to reload while the reload is blocked, and says why', async () => {
     const apply = vi.fn<() => void>();
     const updates: AppUpdates = { waiting: () => true, subscribe: () => () => undefined, apply };
-    const screen = await render(<UpdateNotice updates={updates} reloadBlocked />);
+    const screen = await render(<UpdateNotice updates={updates} blockedBy="not-idle" />);
 
     await expect
       .element(screen.getByRole('status'))
       .toHaveTextContent('Reload once the robot is idle');
     await expect.element(screen.getByRole('button', { name: 'Reload' })).toBeDisabled();
     expect(apply).not.toHaveBeenCalled();
+  });
+
+  test('tells a robot with no package to disconnect before reloading', async () => {
+    const updates: AppUpdates = {
+      waiting: () => true,
+      subscribe: () => () => undefined,
+      apply: vi.fn<() => void>(),
+    };
+    const screen = await render(<UpdateNotice updates={updates} blockedBy="disconnect" />);
+
+    await expect.element(screen.getByRole('status')).toHaveTextContent('Disconnect to reload');
+    await expect.element(screen.getByRole('button', { name: 'Reload' })).toBeDisabled();
   });
 });

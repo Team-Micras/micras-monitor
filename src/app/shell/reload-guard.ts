@@ -1,27 +1,72 @@
-import { roleVariable } from '@/robot-kit';
+import { useState } from 'react';
+
+import { isIdleState, roleVariable } from '@/robot-kit';
 
 import { useConnectionStatus, useLiveValue, useRobotPackage } from '../monitor-context';
+import type { ConnectionStatus } from '../ports';
+
+/** Why a reload would be unsafe: the robot is not at rest, or the link is not settled to tell. */
+export type ReloadBlock = 'not-idle' | 'disconnect';
+
+/** What decides whether the page may reload. */
+export interface ReloadFacts {
+  readonly link: ConnectionStatus['kind'];
+  /** Whether the current state is idle; null when unknown or without a package. */
+  readonly idle: boolean | null;
+  /** Whether a package names the robot's state. */
+  readonly hasPackage: boolean;
+  /** Whether the last state seen on this link was idle; null when none was seen. */
+  readonly lastIdle: boolean | null;
+}
 
 /**
- * Whether reloading the page now could cut a run short: a robot is linked and its state is not
- * idle. A linked robot whose state is unknown counts as busy. The idle state is the enum label
- * `IDLE` of the package's state role, in any case.
+ * Tells whether reloading now could cut a run short. A linked robot must be idle, and with no
+ * package to tell, only leaving the link makes it safe. While the link connects or shakes hands
+ * the robot may be running, and after it dropped the last state it was seen in decides.
+ *
+ * @returns The reason to hold the reload back, or null when it is safe.
  */
-export function useReloadBlocked(): boolean {
-  const linked = useConnectionStatus().kind === 'linked';
+export function reloadBlock({ link, idle, hasPackage, lastIdle }: ReloadFacts): ReloadBlock | null {
+  switch (link) {
+    case 'linked':
+      if (!hasPackage) {
+        return 'disconnect';
+      }
+
+      return idle === true ? null : 'not-idle';
+    case 'connecting':
+    case 'handshaking':
+      return lastIdle === false ? 'not-idle' : 'disconnect';
+    case 'failed':
+      return lastIdle === false ? 'not-idle' : null;
+    default:
+      return null;
+  }
+}
+
+/** {@link reloadBlock} for the connected robot, following the link and its state. */
+export function useReloadBlocked(): ReloadBlock | null {
+  const status = useConnectionStatus();
   const pkg = useRobotPackage()?.package ?? null;
   const stateName = roleVariable(pkg, 'state');
   const value = useLiveValue(stateName)?.value;
+  const idle = typeof value === 'number' ? isIdleState(pkg, value) : null;
+  const [remembered, setRemembered] = useState<boolean | null>(null);
+  const lastIdle =
+    status.kind === 'disconnected'
+      ? null
+      : status.kind === 'linked' && idle !== null
+        ? idle
+        : remembered;
 
-  if (!linked) {
-    return false;
+  if (lastIdle !== remembered) {
+    setRemembered(lastIdle);
   }
 
-  const labels = stateName === null ? undefined : pkg?.variables[stateName]?.labels;
-
-  if (typeof value !== 'number' || labels?.kind !== 'enum') {
-    return true;
-  }
-
-  return labels.options.find((option) => option.value === value)?.label.toLowerCase() !== 'idle';
+  return reloadBlock({
+    link: status.kind,
+    idle,
+    hasPackage: stateName !== null,
+    lastIdle,
+  });
 }

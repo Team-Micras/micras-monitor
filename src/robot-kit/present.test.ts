@@ -9,6 +9,7 @@ import {
   emergencyCommand,
   enumLabel,
   hasBit,
+  isIdleState,
   presentVariable,
   refusalReason,
   roleVariable,
@@ -117,5 +118,23 @@ describe('roles and commands', () => {
     expect(refusalReason(pkg, 7)).toBeNull();
     expect(refusalReason(pkg, null)).toBeNull();
     expect(refusalReason(null, 1)).toBeNull();
+  });
+});
+
+describe('idle states', () => {
+  test('takes the states a package declares', () => {
+    expect(isIdleState(mouse({ idleStates: [1] }), 1)).toBe(true);
+    expect(isIdleState(mouse({ idleStates: [1] }), 0)).toBe(false);
+  });
+
+  test('falls back to the state label IDLE, in any case', () => {
+    expect(isIdleState(pkg, 0)).toBe(true);
+    expect(isIdleState(pkg, 1)).toBe(false);
+  });
+
+  test('cannot tell without a package, a state role or a label for the value', () => {
+    expect(isIdleState(null, 0)).toBeNull();
+    expect(isIdleState(mouse({ roles: {} }), 0)).toBeNull();
+    expect(isIdleState(pkg, 9)).toBeNull();
   });
 });

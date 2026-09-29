@@ -182,6 +182,12 @@ export interface RobotPackage<Node = unknown> {
    */
   readonly signature: readonly string[];
   readonly roles: Readonly<Partial<Record<Role, string>>>;
+  /**
+   * The values of the state role in which the robot is at rest, so that the monitor may reload or
+   * update itself without cutting a run short. Without it the state whose enum label is `IDLE`
+   * counts, in any case.
+   */
+  readonly idleStates?: readonly number[];
   /** Presentation of variables, by name. */
   readonly variables: Readonly<Record<string, VariableSpec>>;
   readonly types: readonly SerializableType<unknown, Node>[];

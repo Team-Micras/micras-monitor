@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import type { RobotPackage, SerializableType } from '@/robot-kit';
 
 import { COMMANDS, REFUSAL_REASONS } from './commands';
-import { stateFromLog } from './labels';
+import { FsmState, stateFromLog } from './labels';
 import { decodeMaze, MAZE_TYPE_TAG, type Maze } from './maze';
 import { LazyMazeView } from './lazy-maze-view';
 import { PRESETS } from './presets';
@@ -43,6 +43,7 @@ export const micras: RobotPackage<ReactNode> = {
     'link.dropped': 'link/dropped_samples',
     'link.credit': 'link/credit',
   },
+  idleStates: [FsmState.IDLE],
   variables: VARIABLES,
   types: [MAZE_TYPE],
   commands: COMMANDS,

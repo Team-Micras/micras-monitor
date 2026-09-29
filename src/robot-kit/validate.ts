@@ -29,6 +29,7 @@ export function validatePackage(pkg: RobotPackage): void {
   checkCommands(pkg, fail);
   checkTypes(pkg, fail);
   checkVariables(pkg, fail);
+  checkIdleStates(pkg, fail);
   checkPresets(pkg, fail);
 }
 
@@ -103,6 +104,14 @@ function checkVariables(pkg: RobotPackage, fail: Fail): void {
       checkBitmask(spec.labels, `${path}.labels`, fail);
     }
   }
+}
+
+function checkIdleStates(pkg: RobotPackage, fail: Fail): void {
+  pkg.idleStates?.forEach((state, index) => {
+    if (!Number.isInteger(state)) {
+      fail(`idleStates[${index}]`, 'must be an integer');
+    }
+  });
 }
 
 function checkEnum(type: EnumType, path: string, fail: Fail): void {

@@ -167,7 +167,8 @@ describe('the PWA', () => {
       await page.getByPlaceholder('Open a window or run an action…').fill(`open ${title}`);
       await page.keyboard.press('Enter');
       await expect.poll(() => page.locator('[data-window]').count()).toBeGreaterThan(before);
-      await page.waitForTimeout(400);
+      const content = page.locator('[data-window]').last().locator('div.min-h-0.flex-1 > *');
+      await expect.poll(() => content.count()).toBeGreaterThan(0);
       expect(await page.getByRole('alert').count()).toBe(0);
     }
 
@@ -216,7 +217,7 @@ describe('the PWA', () => {
       await notice.waitFor({ timeout: 20_000 });
       const reload = notice.getByRole('button', { name: 'Reload' });
       expect(await reload.isDisabled()).toBe(true);
-      await page.waitForTimeout(1500);
+      await reload.click({ force: true });
       expect(await page.evaluate(() => Reflect.get(window, '__firstLoad'))).toBe(true);
 
       await page.getByRole('button', { name: 'Stop', exact: true }).first().click();
@@ -235,6 +236,79 @@ describe('the PWA', () => {
 
       await Promise.all([page.waitForEvent('load'), reload.click()]);
       expect(await page.evaluate(() => Reflect.get(window, '__firstLoad'))).toBeUndefined();
+    } finally {
+      await updating.close();
+      rmSync(copy, { recursive: true, force: true });
+    }
+  });
+
+  test('keeps a tab that runs a robot from reloading when another tab applies the update', async () => {
+    const copy = mkdtempSync(join(tmpdir(), 'micras-monitor-e2e-tabs-'));
+    cpSync(dist, copy, { recursive: true });
+    const updating = await serve(copy);
+    const url = updating.resolvedUrls?.local[0] ?? '';
+
+    try {
+      const running = await fresh();
+      await running.goto(`${url}?fake`);
+      await controlled(running);
+      await running.reload();
+      await controlled(running);
+      const other = await running.context().newPage();
+      await other.goto(`${url}?fake`);
+      await controlled(other);
+
+      await running.evaluate(() => {
+        Reflect.set(window, '__runningTab', true);
+      });
+      const navigations: string[] = [];
+      running.on('framenavigated', (frame) => navigations.push(frame.url()));
+      await running
+        .getByRole('button', { name: /Connect/ })
+        .first()
+        .click();
+      await running.getByRole('dialog').getByRole('button', { name: 'Connect' }).click();
+      await running.keyboard.press('Escape');
+      await running
+        .locator('[data-robot-state]')
+        .filter({ hasText: 'RUN' })
+        .waitFor({ timeout: 20_000 });
+
+      appendFileSync(join(copy, 'sw.js'), '\n// a newer build\n');
+      await running.evaluate(async () => {
+        await (await navigator.serviceWorker.getRegistration())?.update();
+      });
+      const noticeOnRunning = running.getByRole('status', { name: 'Update available' });
+      const noticeOnOther = other.getByRole('status', { name: 'Update available' });
+      await noticeOnRunning.waitFor({ timeout: 20_000 });
+      await noticeOnOther.waitFor({ timeout: 20_000 });
+
+      await running.evaluate(() => {
+        Reflect.set(
+          window,
+          '__controlled',
+          new Promise((resolve) => {
+            navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+          })
+        );
+      });
+      await Promise.all([
+        other.waitForEvent('load'),
+        noticeOnOther.getByRole('button', { name: 'Reload' }).click(),
+      ]);
+      await running.evaluate(() => Reflect.get(window, '__controlled'));
+      await running.evaluate(
+        () =>
+          new Promise((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+          })
+      );
+
+      expect(navigations).toEqual([]);
+      expect(await running.evaluate(() => Reflect.get(window, '__runningTab'))).toBe(true);
+      await noticeOnRunning.waitFor();
+      expect(await noticeOnRunning.getByRole('button', { name: 'Reload' }).isDisabled()).toBe(true);
+      await running.locator('[data-robot-state]').filter({ hasText: 'RUN' }).waitFor();
     } finally {
       await updating.close();
       rmSync(copy, { recursive: true, force: true });

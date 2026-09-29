@@ -107,3 +107,23 @@ export function acceptedIn(command: CommandSpec, state: number | null): boolean 
 export function refusalReason(pkg: RobotPackage | null, reason: number | null): string | null {
   return reason === null ? null : (pkg?.refusalReasons[reason] ?? null);
 }
+
+/**
+ * Tells whether the robot is at rest in a state, by the package's `idleStates`, else by the state
+ * role's enum label `IDLE` in any case; null when there is no package or no way to tell.
+ */
+export function isIdleState(pkg: RobotPackage | null, state: number): boolean | null {
+  if (pkg?.idleStates !== undefined) {
+    return pkg.idleStates.includes(state);
+  }
+
+  const stateName = roleVariable(pkg, 'state');
+  const labels = stateName === null ? undefined : pkg?.variables[stateName]?.labels;
+
+  if (labels?.kind !== 'enum') {
+    return null;
+  }
+
+  const option = labels.options.find((entry) => entry.value === state);
+  return option === undefined ? null : option.label.toLowerCase() === 'idle';
+}
