@@ -18,6 +18,11 @@ export interface LinkBudgetOptions {
   holdMs: number;
   /** How much one probe raises the ceiling over the most that arrived, as a factor. */
   probeGrowth: number;
+  /**
+   * How many hold periods the ceiling has to stay put, after a probe made samples drop, before
+   * probing starts again; each failed probe doubles it.
+   */
+  quietHolds: number;
   /** The lowest the budget goes, in bytes per second. */
   floorBytesPerSecond: number;
   /** How much of each new measurement the smoothed rates take, from 0 to 1. */
@@ -31,6 +36,7 @@ export const DEFAULT_LINK_BUDGET: LinkBudgetOptions = {
   assumedRttMs: 100,
   holdMs: 10_000,
   probeGrowth: 1.1,
+  quietHolds: 6,
   floorBytesPerSecond: 200,
   smoothing: 0.5,
 };
@@ -68,8 +74,10 @@ interface Sample {
  *
  * A ceiling that ran a hold period without drops is safe. While the plan wants more, it is then
  * raised by one probe, over the most that arrived, and held again. A probe that makes samples
- * drop puts the ceiling back to the last safe one and ends probing until {@link reset}, so on a
- * stable link the estimate settles and drops stop. Traffic the credit does not meter is taken
+ * drop puts the ceiling back to the last safe one and stops probing for a quiet period that
+ * doubles with every failed probe, so on a stable link the estimate settles and drops all but
+ * stop. A run of drops that pulls the ceiling below the last safe one, as when the link got
+ * worse, lets probing start again from there, so the link is found again when it recovers. Traffic the credit does not meter is taken
  * off what samples may use.
  */
 export class LinkBudget {
@@ -83,6 +91,7 @@ export class LinkBudget {
   private safe: number | undefined;
   private probeFrom: number | undefined;
   private probing = true;
+  private failedProbes = 0;
   private wasSaturated = false;
   private episodeCapped = false;
   private revision = 0;
@@ -157,6 +166,7 @@ export class LinkBudget {
     this.safe = undefined;
     this.probeFrom = undefined;
     this.probing = true;
+    this.failedProbes = 0;
     this.wasSaturated = false;
     this.episodeCapped = false;
     this.revision++;
@@ -184,6 +194,7 @@ export class LinkBudget {
       this.setCeiling(this.probeFrom, now);
       this.probeFrom = undefined;
       this.probing = false;
+      this.failedProbes++;
       this.episodeCapped = true;
       return;
     }
@@ -196,11 +207,23 @@ export class LinkBudget {
     this.episodeCapped = false;
     const episodeMax = this.wasSaturated ? Math.max(this.ceiling, arrived) : arrived;
     const ceiling = Math.max(floorBytesPerSecond, episodeMax);
-    this.safe = this.safe === undefined ? undefined : Math.min(this.safe, ceiling);
+
+    if (this.safe !== undefined && ceiling < this.safe) {
+      this.safe = ceiling;
+      this.probing = true;
+    }
+
     this.setCeiling(ceiling, now);
   }
 
   private onHeld(wantsMore: boolean, now: number): void {
+    const { holdMs, quietHolds } = this.options;
+    const quietMs = holdMs * quietHolds * 2 ** Math.max(0, this.failedProbes - 1);
+
+    if (!this.probing && now - this.ceilingAt >= quietMs) {
+      this.probing = true;
+    }
+
     if (this.probeFrom !== undefined || this.safe === undefined) {
       this.safe = this.ceiling;
       this.probeFrom = undefined;

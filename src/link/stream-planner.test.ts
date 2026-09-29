@@ -133,6 +133,49 @@ describe('StreamPlanner', () => {
     expect(planner.plan?.rates[0].grantedHz).toBeGreaterThan(0);
   });
 
+  test('plans again at once when the link overflows while a retry waits', async () => {
+    planner.close();
+    planner = new StreamPlanner(session, {
+      debounceMs: 10,
+      retryMs: 10_000,
+      now: () => Date.now(),
+    });
+    session.answer = () => Promise.reject(new Error('No answer'));
+    planner.request([{ variable: 'a', rateHz: 1000 }]);
+    await vi.advanceTimersByTimeAsync(20);
+    session.events.emit('stats', STATS);
+    await vi.advanceTimersByTimeAsync(1000);
+    session.events.emit('stats', {
+      ...STATS,
+      bytesIn: 3000,
+      creditReturned: 3000,
+      droppedSamples: 40,
+    });
+
+    expect(session.calls).toHaveLength(2);
+  });
+
+  test('falls back to gaps once the epoch carrying the drop counter ends', async () => {
+    planner.request([
+      { variable: 'a', rateHz: 100 },
+      { variable: 'c', rateHz: 1, pinned: true, countsDrops: true },
+    ]);
+    await vi.advanceTimersByTimeAsync(20);
+    session.events.emit('epoch', epochOf(8, [2]));
+    session.events.emit('sample', { epoch: 8, seq: 0, timeUs: 0, values: [0], missingBefore: 0 });
+    session.events.emit('stats', STATS);
+    session.events.emit('epochEnd', { epoch: epochOf(8, [2]), reason: 'redefined' });
+    await vi.advanceTimersByTimeAsync(1000);
+    session.events.emit('stats', {
+      ...STATS,
+      bytesIn: 3000,
+      creditReturned: 3000,
+      droppedSamples: 40,
+    });
+
+    expect(planner.budget.saturated).toBe(true);
+  });
+
   test("reads the robot's drop counter from the samples of its epoch", async () => {
     planner.request([
       { variable: 'a', rateHz: 100 },

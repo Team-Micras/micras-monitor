@@ -135,7 +135,7 @@ export class StreamPlanner {
       }),
       session.on('stats', (stats) => this.onStats(stats)),
       session.on('epoch', (epoch) => this.onEpoch(epoch)),
-      session.on('epochEnd', ({ epoch }) => this.dropCounters.delete(epoch.id)),
+      session.on('epochEnd', ({ epoch }) => this.onEpochEnd(epoch)),
       session.on('sample', (sample) => this.onSample(sample)),
     ];
   }
@@ -210,6 +210,12 @@ export class StreamPlanner {
     }
   }
 
+  private onEpochEnd(epoch: Epoch): void {
+    if (this.dropCounters.delete(epoch.id)) {
+      this.robotDropped = undefined;
+    }
+  }
+
   private onSample(sample: SampleEvent): void {
     const index = this.dropCounters.get(sample.epoch);
 
@@ -230,13 +236,24 @@ export class StreamPlanner {
       this.robotDropped
     );
 
-    if (!plan || this.timer !== undefined || this.retryTimer !== undefined) {
+    if (!plan || this.timer !== undefined) {
       return;
     }
 
     const overspent =
       estimate.saturated ||
       plan.usedBytesPerSecond > estimate.bytesPerSecond * (1 + this.overspendToReplan);
+
+    if (this.retryTimer !== undefined) {
+      if (overspent) {
+        clearTimeout(this.retryTimer);
+        this.retryTimer = undefined;
+        this.replan();
+      }
+
+      return;
+    }
+
     const ceilingMoved = plan.overBudget && estimate.revision !== revision;
     const roomToGrow =
       plan.overBudget &&

@@ -142,12 +142,40 @@ describe('LinkBudget', () => {
     feed.link(3000, 8000, 120);
     const settled = feed.budget.value;
     const dropped = feed.stats.droppedSamples;
-    feed.link(3000, 8000, 120);
+    feed.link(3000, 8000, 50);
 
     expect(feed.stats.droppedSamples).toBe(dropped);
     expect(feed.budget.value.bytesPerSecond).toBe(settled.bytesPerSecond);
     expect(settled.bytesPerSecond).toBeLessThanOrEqual(3000);
     expect(settled.bytesPerSecond).toBeGreaterThan(3000 * 0.8);
+  });
+
+  test('probes again after a long quiet period, waiting twice as long after each failure', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    feed.link(3000, 8000, 120);
+    const dropped = feed.stats.droppedSamples;
+    const quietS = (DEFAULT_LINK_BUDGET.holdMs * DEFAULT_LINK_BUDGET.quietHolds) / 1000;
+    feed.link(3000, 8000, quietS + 30);
+    const afterFirstQuiet = feed.stats.droppedSamples;
+    feed.link(3000, 8000, quietS);
+
+    expect(afterFirstQuiet).toBeGreaterThan(dropped);
+    expect(feed.stats.droppedSamples).toBe(afterFirstQuiet);
+    expect(feed.budget.value.bytesPerSecond).toBeLessThanOrEqual(3000);
+  });
+
+  test('finds the link again after a dip pulled the ceiling below the last safe one', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    feed.link(3000, 8000, 120);
+    const settled = feed.budget.value.bytesPerSecond;
+    feed.link(1500, 8000, 20);
+    const dipped = feed.budget.value.bytesPerSecond;
+    feed.link(3000, 8000, 120);
+
+    expect(dipped).toBeLessThan(1500);
+    expect(feed.budget.value.bytesPerSecond).toBeGreaterThan(settled * 0.9);
   });
 
   test("takes the robot's own count of dropped samples over gaps seen on the monitor", () => {

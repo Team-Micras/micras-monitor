@@ -228,7 +228,7 @@ describe('LiveRobot against the simulated robot', () => {
         { throughputBytesPerSecond: 3000 },
         {
           timing: { ...TEST_TIMING, statsIntervalMs: 1000 },
-          planner: { debounceMs: 20, budget: { holdMs: 2000 } },
+          planner: { debounceMs: 20, budget: { holdMs: 2000, quietHolds: 30 } },
         }
       );
       live.ports.streams.request({
