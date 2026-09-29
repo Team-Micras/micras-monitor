@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from '@/app/app';
 import { safeLocalStorage } from '@/app/layouts/layout-book';
 import { LiveRobot } from '@/app/live/live-robot';
+import { StoredSchemaCache } from '@/app/live/stored-schema-cache';
 import type { MonitorPorts } from '@/app/ports';
 import { serviceWorkerUpdates } from '@/app/pwa/app-updates';
 import { PRELOAD_ERROR_EVENT } from '@/app/shell/update-notice';
@@ -45,6 +46,7 @@ function liveRobot(connectTo: string | null, memoryCapBytes: number | undefined)
   const robot = new LiveRobot({
     scheduler: FRAME_SCHEDULER,
     bluetooth: webBluetooth(),
+    schemaCache: new StoredSchemaCache(safeLocalStorage()),
     memoryCapBytes,
   });
 

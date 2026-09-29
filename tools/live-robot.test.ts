@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
+import { MemoryStorage } from '../src/app/layouts/memory-storage';
 import { LiveRobot, type LiveRobotOptions } from '../src/app/live/live-robot';
+import { StoredSchemaCache } from '../src/app/live/stored-schema-cache';
 import type { StreamRequest } from '../src/app/ports';
 import type { WebSocketLike } from '../src/link';
 import { startInMemoryRobot, type InMemoryRobot } from './in-memory-robot';
@@ -66,6 +68,11 @@ function linkedPhase(live: LiveRobot): string | null {
   return status.kind === 'linked' ? status.phase : null;
 }
 
+function pagedLoads(live: LiveRobot): number {
+  return live.ports.log.entries().filter((entry) => entry.text.startsWith('loading a schema'))
+    .length;
+}
+
 async function streaming(live: LiveRobot, what = 'the link to stream'): Promise<void> {
   await waitFor(() => linkedPhase(live) === 'streaming', 5000, what);
 }
@@ -120,6 +127,27 @@ describe('LiveRobot against the simulated robot', () => {
     await waitFor(() => live.ports.link.stats().budget.planned.length === 4, 2000, 'link stats');
     expect(live.ports.link.stats().creditWindow).toBe(256);
     expect(live.ports.log.entries().some((entry) => entry.text === 'streaming')).toBe(true);
+  });
+
+  test('learns the schema from its pages once over its reconnections', async () => {
+    const { live } = start();
+    await streaming(live);
+    live.disconnect();
+    live.connect({ transport: 'websocket', url: 'ws://in-memory' });
+    await streaming(live, 'the link to stream again');
+    expect(pagedLoads(live)).toBe(1);
+  });
+
+  test('skips the paged schema on a later page load with a stored cache', async () => {
+    const storage = new MemoryStorage();
+    const before = start({}, { schemaCache: new StoredSchemaCache(storage) });
+    await streaming(before.live);
+
+    const reloaded = start({}, { schemaCache: new StoredSchemaCache(storage) });
+    await streaming(reloaded.live);
+    expect(pagedLoads(before.live)).toBe(1);
+    expect(pagedLoads(reloaded.live)).toBe(0);
+    expect(reloaded.live.ports.schema.variables()).toEqual(before.live.ports.schema.variables());
   });
 
   test('reads a blob on demand into the latest values', async () => {

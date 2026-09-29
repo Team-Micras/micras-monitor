@@ -7,6 +7,7 @@
 
 import {
   BluetoothTransport,
+  MemorySchemaCache,
   Session,
   StreamPlanner,
   WebSocketTransport,
@@ -57,7 +58,7 @@ export interface LiveRobotOptions {
   readonly bluetooth?: BluetoothLike;
   /** Opens WebSockets; the runtime's own by default. */
   readonly createSocket?: WebSocketFactory;
-  /** Where schemas are kept between sessions; in memory by default. */
+  /** Where schemas are kept between sessions; in memory, for the life of the robot, by default. */
   readonly schemaCache?: SchemaCache;
   /** How many log entries to keep. */
   readonly logLimit?: number;
@@ -161,6 +162,7 @@ export class LiveRobot {
   /** The robot's LOG messages and the link's own events. */
   readonly log: LiveLog;
   readonly #options: LiveRobotOptions;
+  readonly #schemaCache: SchemaCache;
   readonly #timeline = new SessionTimeline();
   readonly #statusListeners = new Set<() => void>();
   readonly #schemaListeners = new Set<() => void>();
@@ -183,6 +185,7 @@ export class LiveRobot {
    */
   constructor(options: LiveRobotOptions = {}) {
     this.#options = options;
+    this.#schemaCache = options.schemaCache ?? new MemorySchemaCache();
     this.store = new TelemetryStore({
       scheduler: options.scheduler ?? TIMER_SCHEDULER,
       memoryCapBytes: options.memoryCapBytes,
@@ -397,7 +400,7 @@ export class LiveRobot {
   #start(target: ConnectionTarget, transport: Transport): void {
     const session = new Session(transport, {
       timing: this.#options.timing,
-      schemaCache: this.#options.schemaCache,
+      schemaCache: this.#schemaCache,
     });
     const planner = new StreamPlanner(session, this.#options.planner);
     const link: ActiveLink = {
