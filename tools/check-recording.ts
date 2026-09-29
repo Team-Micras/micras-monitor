@@ -47,6 +47,7 @@ const { values: args } = parseArgs({
 const TOTAL_MS = Number(args.minutes) * 60_000;
 const KILL_MS = Number(args['kill-at']) * 60_000;
 const FLUSH_LOSS_US = 5_000_000;
+const POLL_MS = 2000;
 const PLOTTED = ['imu/gyro_z', 'imu/accel_x', 'cmd/linear', 'response/left', 'response/right'];
 const VIEWPORT = { width: 1600, height: 1000 };
 
@@ -201,14 +202,54 @@ async function liveEndUs(page: Page): Promise<number> {
   return Number(await page.locator('[data-plot]').first().getAttribute('data-window-end-us'));
 }
 
-async function recordUntil(page: Page, untilMs: number, label: string): Promise<void> {
-  while (Date.now() < untilMs) {
-    await page.waitForTimeout(Math.min(60_000, Math.max(0, untilMs - Date.now())));
-    const now = await progress(page);
+interface Reading {
+  readonly progress: RecordingProgress;
+  readonly endUs: number;
+  readonly atMs: number;
+}
+
+async function read(page: Page): Promise<Reading> {
+  const [progressNow, endUs] = await Promise.all([progress(page), liveEndUs(page)]);
+  return { progress: progressNow, endUs, atMs: Date.now() };
+}
+
+/**
+ * Record until a time, reading the progress every few seconds. A tab that dies on its own before
+ * then, as when the system runs out of memory, ends the wait early: it is the tab killed mid-way.
+ *
+ * @returns The last reading, and whether the tab died on its own.
+ */
+async function recordUntil(
+  page: Page,
+  untilMs: number,
+  label: string,
+  last?: Reading
+): Promise<{ readonly reading: Reading; readonly died: boolean }> {
+  if (Date.now() >= untilMs && last !== undefined) {
+    return { reading: last, died: false };
+  }
+
+  let reading: Reading;
+
+  try {
+    await page.waitForTimeout(Math.min(POLL_MS, Math.max(0, untilMs - Date.now())));
+    reading = await read(page);
+  } catch (error) {
+    if (last === undefined) {
+      throw error;
+    }
+
+    return { reading: last, died: true };
+  }
+
+  if (last === undefined || Math.floor(reading.atMs / 60_000) !== Math.floor(last.atMs / 60_000)) {
+    const now = reading.progress;
     log(
-      `${label}: ${(now.elapsedMs / 60_000).toFixed(1)} min, ${megabytes(now.bytes)}, ${now.samples} samples`
+      `${label}: ${(now.elapsedMs / 60_000).toFixed(1)} min, ${megabytes(now.bytes)} written, ${now.samples} samples, ${megabytes(now.memory)} in memory`
     );
   }
+
+  return recordUntil(page, untilMs, label, reading);
 }
 
 async function sessionRows(page: Page): Promise<SessionRow[]> {
@@ -368,13 +409,15 @@ async function main(): Promise<void> {
     await screenshot(page, 'rec-menu');
     await page.keyboard.press('Escape');
 
-    await recordUntil(page, recordingStarted + KILL_MS, 'first tab');
-    const beforeKill = await progress(page);
-    const endBeforeKillUs = await liveEndUs(page);
+    const first = await recordUntil(page, recordingStarted + KILL_MS, 'first tab');
+    const beforeKill = first.reading.progress;
+    const endBeforeKillUs = first.reading.endUs;
     kill(profile);
     const killedAt = Date.now();
     log(
-      `killed the browser at ${(beforeKill.elapsedMs / 60_000).toFixed(2)} min: ${megabytes(beforeKill.bytes)} and ${beforeKill.samples} samples written`
+      first.died
+        ? `the tab died on its own ${((killedAt - first.reading.atMs) / 1000).toFixed(1)} s after the last reading, at ${(beforeKill.elapsedMs / 60_000).toFixed(2)} min: ${megabytes(beforeKill.bytes)} and ${beforeKill.samples} samples written then`
+        : `killed the browser at ${(beforeKill.elapsedMs / 60_000).toFixed(2)} min: ${megabytes(beforeKill.bytes)} and ${beforeKill.samples} samples written`
     );
     await context.close().catch(() => undefined);
 
@@ -432,7 +475,12 @@ async function main(): Promise<void> {
     await page.getByRole('button', { name: 'Live' }).first().click();
     await page.waitForTimeout(500);
 
-    await recordUntil(page, recordingStarted + TOTAL_MS, 'second tab');
+    const rest = await recordUntil(page, recordingStarted + TOTAL_MS, 'second tab');
+
+    if (rest.died) {
+      throw new Error('The second tab died on its own before the end of the session');
+    }
+
     await recMenu(page, /Stop recording/);
     await page.waitForTimeout(1000);
     const rows = await sessionRows(page);
