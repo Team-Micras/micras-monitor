@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
-    "test:browser": "vitest run --project browser",
+    "test:browser": "vitest run --project browser --project performance",
     "simulate": "bun tools/simulated-robot.ts",
     "size": "bun tools/bundle-size.ts",
     "bench:telemetry": "bun tools/bench-telemetry.ts",

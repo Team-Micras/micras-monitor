@@ -4,6 +4,18 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 
+const PERFORMANCE_TESTS = ['src/**/*-performance.test.tsx'];
+
+function chromium() {
+  return {
+    enabled: true,
+    headless: true,
+    provider: playwright(),
+    viewport: { width: 1440, height: 900 },
+    instances: [{ browser: 'chromium' as const }],
+  };
+}
+
 export default defineConfig({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],
   resolve: {
@@ -30,17 +42,23 @@ export default defineConfig({
             'src/*.test.tsx',
             'robots/**/*.test.tsx',
           ],
+          exclude: PERFORMANCE_TESTS,
           globalSetup: ['tools/browser-setup.ts'],
           testTimeout: 60_000,
           hookTimeout: 60_000,
           expect: { poll: { timeout: 10_000 } },
-          browser: {
-            enabled: true,
-            headless: true,
-            provider: playwright(),
-            viewport: { width: 1440, height: 900 },
-            instances: [{ browser: 'chromium' }],
-          },
+          browser: chromium(),
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'performance',
+          include: PERFORMANCE_TESTS,
+          testTimeout: 60_000,
+          expect: { poll: { timeout: 10_000 } },
+          sequence: { groupOrder: 1 },
+          browser: chromium(),
         },
       },
     ],
