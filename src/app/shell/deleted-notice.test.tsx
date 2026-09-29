@@ -57,6 +57,7 @@ describe('the notice of a deleted layout', () => {
   });
 
   test('is undone by Ctrl+Z, but not while typing in a field', async () => {
+    vi.useFakeTimers();
     const { store, screen } = await show();
     await screen.getByRole('textbox', { name: 'Field' }).click();
     await userEvent.keyboard('{Control>}z{/Control}');
