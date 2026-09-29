@@ -5,6 +5,7 @@
  */
 
 import { CREDIT_WINDOW, TypeCode } from '../../src/protocol';
+import { encodeMaze, simulatedMaze } from './maze';
 
 /** One registered variable, the way the firmware's pool holds it. */
 export interface Variable {
@@ -37,7 +38,7 @@ export function createVariables(): Variable[] {
       access: ACCESS_PERSIST,
       value: 0,
       typeTag: 'maze-grid',
-      serialize: () => new Uint8Array(32).map((_, index) => (index * 37) & 0xff),
+      serialize: () => encodeMaze(simulatedMaze()),
     },
     {
       name: 'imu/gyro_x',

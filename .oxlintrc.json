@@ -319,6 +319,26 @@
       }
     },
     {
+      "files": ["tools/simulated-maze.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(@/(telemetry|tiling|robot-kit|app)|(\\.\\./)+src/(telemetry|tiling|robot-kit|app))(/|$)",
+                "message": "The simulated maze's test checks the record against the Micras package, and nothing else of the monitor."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Tools are Node scripts; no React."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["tools/bench-telemetry.ts"],
       "rules": {
         "no-restricted-imports": [

@@ -187,7 +187,7 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
   test('reads the bytes of a blob', async () => {
     const { session, id } = await start();
 
-    expect(await session.read(id('maze'))).toHaveLength(32);
+    expect(await session.read(id('maze'))).toHaveLength(131);
   });
 
   test('measures the round trip with PING', async () => {
