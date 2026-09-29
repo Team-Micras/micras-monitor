@@ -111,6 +111,19 @@ describe('recording the live session', () => {
     expect(manager.state.liveSources).toEqual([saved.id]);
   });
 
+  test('writes the last samples before the stream goes quiet, once the flush interval passes', async () => {
+    const { manager, clock, stream } = rig();
+    await manager.start();
+    await manager.startRecording();
+    await stream(1);
+    clock.ms += 5000;
+
+    await expect
+      .poll(() => manager.state.recording?.stats.samples, { timeout: 3000, interval: 100 })
+      .toBe(100);
+    await manager.stopRecording();
+  });
+
   test('says why recording could not write, and keeps going once it can', async () => {
     const root = new FakeDirectory();
     const library = new OpfsSessionLibrary(new DirectTransport(root));

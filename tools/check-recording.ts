@@ -7,7 +7,7 @@
  * ```
  * bun run simulate --port 8080 &
  * bun tools/check-recording.ts --robot ws://127.0.0.1:8080 [--minutes 30] [--kill-at 15]
- *   [--memory-cap-mb 16] [--screens <dir>] [--headed]
+ *   [--memory-cap-mb <n>] [--view-cap-mb <n>] [--screens <dir>] [--headed]
  * ```
  *
  * It serves the app with Vite and drives Chromium with a profile of its own, so that the Origin
@@ -15,8 +15,9 @@
  * records until `--kill-at` minutes and kills the browser with SIGKILL, as the tab dying does.
  * A new browser on the same profile then recovers the recording, opens it, shows the whole
  * history and scrolls through it, while it records the rest of the session, to `--minutes`.
- * With `--memory-cap-mb` the stores keep that much at most, so that blocks leave memory and
- * come back from the file as the history scrolls. It prints the numbers and exits non-zero when
+ * With `--memory-cap-mb` the stores keep that much at most, and with `--view-cap-mb` the store of
+ * an opened session alone, so that blocks leave memory and come back from the file as the history
+ * scrolls. It prints the numbers and exits non-zero when
  * a check fails. It is a manual check, not part of CI.
  *
  * @module
@@ -37,6 +38,7 @@ const { values: args } = parseArgs({
     minutes: { type: 'string', default: '30' },
     'kill-at': { type: 'string', default: '15' },
     'memory-cap-mb': { type: 'string' },
+    'view-cap-mb': { type: 'string' },
     screens: { type: 'string' },
     headed: { type: 'boolean', default: false },
   },
@@ -58,6 +60,7 @@ interface RecordingProgress {
   readonly elapsedMs: number;
   readonly bytes: number;
   readonly samples: number;
+  readonly memory: number;
 }
 
 interface SessionRow {
@@ -123,8 +126,12 @@ async function open(context: BrowserContext, url: string): Promise<Page> {
   await page.addInitScript(AGGREGATE_ERRORS_SCRIPT);
   const query = new URLSearchParams({ connect: args.robot });
 
-  if (args['memory-cap-mb'] !== undefined) {
-    query.set('memory-cap-mb', args['memory-cap-mb']);
+  for (const cap of ['memory-cap-mb', 'view-cap-mb'] as const) {
+    const value = args[cap];
+
+    if (value !== undefined) {
+      query.set(cap, value);
+    }
   }
 
   await page.goto(`${url}?${query.toString()}`, { timeout: 120_000 });
@@ -154,7 +161,7 @@ async function plotVariables(page: Page): Promise<void> {
 }
 
 async function recMenu(page: Page, item: RegExp, attempt = 1): Promise<void> {
-  const entry = page.getByRole('menuitem', { name: item });
+  const entry = page.getByRole('button', { name: item });
 
   if (!(await entry.isVisible())) {
     await page.locator('[data-rec]').click();
@@ -177,12 +184,17 @@ async function recMenu(page: Page, item: RegExp, attempt = 1): Promise<void> {
 
 async function progress(page: Page): Promise<RecordingProgress> {
   const button = page.locator('[data-rec]');
-  const [elapsed, bytes, samples] = await Promise.all([
-    button.getAttribute('data-elapsed-ms'),
-    button.getAttribute('data-recorded-bytes'),
-    button.getAttribute('data-recorded-samples'),
-  ]);
-  return { elapsedMs: Number(elapsed), bytes: Number(bytes), samples: Number(samples) };
+  const [elapsed, bytes, samples, memory] = await Promise.all(
+    ['data-elapsed-ms', 'data-recorded-bytes', 'data-recorded-samples', 'data-memory-used'].map(
+      (name) => button.getAttribute(name)
+    )
+  );
+  return {
+    elapsedMs: Number(elapsed),
+    bytes: Number(bytes),
+    samples: Number(samples),
+    memory: Number(memory),
+  };
 }
 
 async function liveEndUs(page: Page): Promise<number> {
@@ -293,9 +305,14 @@ async function navigate(page: Page, label: string): Promise<void> {
   const scrollMs = performance.now() - scrollStarted;
   const sorted = draws.toSorted((left, right) => left - right);
   const p95 = sorted[Math.floor(0.95 * (sorted.length - 1))] ?? 0;
-  const evicted = await page.locator('[data-viewing]').getAttribute('data-evicted-blocks');
+  const viewing = page.locator('[data-viewing]');
+  const [evicted, resident, reads] = await Promise.all(
+    ['data-evicted-blocks', 'data-resident-blocks', 'data-block-reads'].map((name) =>
+      viewing.getAttribute(name)
+    )
+  );
   log(
-    `${label}: scrolled ${clock(whole.endUs - whole.startUs)} in windows of ${clock(span)}, ${steps} steps in ${(scrollMs / 1000).toFixed(1)} s; draw p50 ${sorted[Math.floor(sorted.length / 2)] ?? 0} ms, p95 ${p95} ms, max ${sorted.at(-1) ?? 0} ms; ${evicted} blocks out of memory`
+    `${label}: scrolled ${clock(whole.endUs - whole.startUs)} in windows of ${clock(span)}, ${steps} steps in ${(scrollMs / 1000).toFixed(1)} s; draw p50 ${sorted[Math.floor(sorted.length / 2)] ?? 0} ms, p95 ${p95} ms, max ${sorted.at(-1) ?? 0} ms; ${resident} blocks in memory and ${evicted} out of it, ${reads} read back from the file`
   );
   check(
     `${label}: the whole history shows at once`,

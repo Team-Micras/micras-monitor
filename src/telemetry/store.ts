@@ -953,6 +953,15 @@ export class TelemetryStore {
   }
 
   /**
+   * While recording, seal and write the blocks being filled if the flush interval has passed
+   * since they last were. Samples do this as they arrive; a timer calls it too, so that the last
+   * samples before the stream goes quiet reach the persistence layer as well.
+   */
+  flushIfDue(): void {
+    this.residency.flushIfDue();
+  }
+
+  /**
    * Write what is being filled, then stop writing blocks. Blocks already written can still leave
    * memory and come back.
    *

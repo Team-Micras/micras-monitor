@@ -62,6 +62,7 @@ export function blockKey(ref: BlockRef): string {
  */
 export class RecordingBlocks implements BlockPersistence {
   private readonly locations = new Map<string, BlockLocation>();
+  private readCount = 0;
 
   /**
    * @param file The recording.
@@ -71,6 +72,11 @@ export class RecordingBlocks implements BlockPersistence {
   /** Note where a block's record is. */
   place(ref: BlockRef, location: BlockLocation): void {
     this.locations.set(blockKey(ref), location);
+  }
+
+  /** How many blocks were read back from the file. */
+  get reads(): number {
+    return this.readCount;
   }
 
   /** Whether a block's record is known. */
@@ -93,7 +99,9 @@ export class RecordingBlocks implements BlockPersistence {
       throw new Error(`No block ${ref.index} of epoch ${ref.epochId} in the recording`);
     }
 
-    return decodeBlock(await this.file.read(location.offset, location.size));
+    const block = decodeBlock(await this.file.read(location.offset, location.size));
+    this.readCount++;
+    return block;
   }
 }
 

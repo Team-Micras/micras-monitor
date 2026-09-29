@@ -64,16 +64,16 @@ describe('REC and the sessions', () => {
   test('records from the top bar, with the time and the size, and stops', async () => {
     const { sessions, screen } = await setup();
     await recButton(screen).click();
-    await screen.getByRole('menuitem', { name: 'Start recording' }).click();
+    await screen.getByRole('button', { name: 'Start recording' }).click();
 
     await expect.element(screen.getByRole('button', { name: 'Recording, on' })).toBeVisible();
     await expect
       .poll(() => sessions.state.recording?.stats.samples ?? 0, { timeout: 15_000 })
       .toBeGreaterThan(0);
     await recButton(screen).click();
-    await expect.element(screen.getByRole('menuitem', { name: 'Stop recording' })).toBeVisible();
+    await expect.element(screen.getByRole('button', { name: 'Stop recording' })).toBeVisible();
     await expect.element(screen.getByText(/ in memory/)).toBeVisible();
-    await screen.getByRole('menuitem', { name: 'Stop recording' }).click();
+    await screen.getByRole('button', { name: 'Stop recording' }).click();
 
     await expect.element(screen.getByRole('button', { name: 'Recording, off' })).toBeVisible();
     expect(sessions.state.sessions[0]).toMatchObject({ state: 'saved' });
@@ -90,7 +90,7 @@ describe('REC and the sessions', () => {
     const [saved] = sessions.state.sessions;
 
     await recButton(screen).click();
-    await screen.getByRole('menuitem', { name: /Sessions/ }).click();
+    await screen.getByRole('button', { name: /Sessions/ }).click();
     const dialog = screen.getByRole('dialog', { name: 'Sessions' });
     await expect.element(dialog.getByText(saved.name)).toBeVisible();
     await expect
@@ -111,7 +111,7 @@ describe('REC and the sessions', () => {
     await sessions.stopRecording();
     const [saved] = sessions.state.sessions;
     await recButton(screen).click();
-    await screen.getByRole('menuitem', { name: /Sessions/ }).click();
+    await screen.getByRole('button', { name: /Sessions/ }).click();
     await screen.getByRole('button', { name: `Rename ${saved.name}` }).click();
     await userEvent.keyboard('{Control>}a{/Control}Final run{Enter}');
 
@@ -123,7 +123,7 @@ describe('REC and the sessions', () => {
     const { robot, screen } = await setup();
     await expect.poll(() => robot.store.timeRange() !== undefined, { timeout: 15_000 }).toBe(true);
     await recButton(screen).click();
-    await screen.getByRole('menuitem', { name: /Reset the live session/ }).click();
+    await screen.getByRole('button', { name: /Reset the live session/ }).click();
     await screen.getByRole('button', { name: 'Reset session' }).click();
 
     await expect.poll(() => robot.store.generation).toBe(1);
@@ -131,7 +131,7 @@ describe('REC and the sessions', () => {
 });
 
 describe('scrolling a plot back in time', () => {
-  test('zooms and pauses the window on a wheel, keeps it there and follows live again on Live', async () => {
+  test('zooms and pauses the window on a wheel, moves it by keys and drag, and follows live again', async () => {
     const { robot, shell, screen } = await setup();
     shell.getState().openWindow('plot', [PLOTTED]);
     await expect
@@ -170,7 +170,14 @@ describe('scrolling a plot back in time', () => {
     await expect
       .poll(() => Number(plot.dataset.windowStartUs))
       .toBe(robot.store.timeRange(PLOTTED)!.startUs);
-    await userEvent.keyboard('{ArrowRight}');
+    await userEvent.keyboard('{+}{+}');
+    const zoomed = Number(plot.dataset.windowStartUs);
+    const left = (box?.left ?? 0) + 200;
+    const at = { clientY: (box?.top ?? 0) + 60, pointerId: 7, bubbles: true, button: 0 };
+    over?.dispatchEvent(new PointerEvent('pointerdown', { ...at, clientX: left }));
+    over?.dispatchEvent(new PointerEvent('pointermove', { ...at, clientX: left - 120 }));
+    over?.dispatchEvent(new PointerEvent('pointerup', { ...at, clientX: left - 120 }));
+    await expect.poll(() => Number(plot.dataset.windowStartUs)).toBeGreaterThan(zoomed);
     await screen.getByRole('button', { name: 'Back to live' }).click();
 
     await expect.poll(() => shell.getState().paused.has(focusedId(shell))).toBe(false);

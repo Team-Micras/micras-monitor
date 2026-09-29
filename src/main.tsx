@@ -33,8 +33,8 @@ function webBluetooth(): BluetoothLike | undefined {
   return isBluetooth(bluetooth) ? bluetooth : undefined;
 }
 
-function memoryCap(query: URLSearchParams): number | undefined {
-  const megabytes = Number(query.get('memory-cap-mb') ?? Number.NaN);
+function memoryCap(query: URLSearchParams, name: string): number | undefined {
+  const megabytes = Number(query.get(name) ?? Number.NaN);
   return Number.isFinite(megabytes) && megabytes > 0 ? megabytes * 1024 * 1024 : undefined;
 }
 
@@ -54,12 +54,13 @@ function liveRobot(connectTo: string | null, memoryCapBytes: number | undefined)
 
 const query = new URLSearchParams(location.search);
 const synthetic = query.has('fake');
-const memoryCapBytes = memoryCap(query);
+const memoryCapBytes = memoryCap(query, 'memory-cap-mb');
+const viewCapBytes = memoryCap(query, 'view-cap-mb') ?? memoryCapBytes;
 const robot: { readonly ports: MonitorPorts; readonly store: TelemetryStore } = synthetic
   ? (await import('@/app/fake/demo-robot')).createDemoRobot()
   : liveRobot(query.get('connect'), memoryCapBytes);
 const { ports } = robot;
-const sessions = browserSessions(robot.store, ports, FRAME_SCHEDULER, memoryCapBytes);
+const sessions = browserSessions(robot.store, ports, FRAME_SCHEDULER, viewCapBytes);
 const robots = new RobotRegistry([micras]);
 const updates = import.meta.env.PROD ? serviceWorkerUpdates(registerSW) : undefined;
 

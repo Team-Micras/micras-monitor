@@ -21,6 +21,7 @@ import {
   SessionRecorder,
   TelemetryStore,
   type RecorderStats,
+  type RecordingBlocks,
   type RecordingFile,
   type RecordingHeader,
   type RecordingSummary,
@@ -84,6 +85,8 @@ export interface OpenedSession {
   readonly robot: string | null;
   /** What its file held. */
   readonly summary: RecordingSummary;
+  /** Where its blocks are read back from when they left memory. */
+  readonly blocks: RecordingBlocks;
   /** How long reading and loading it took. */
   readonly loadMs: number;
 }
@@ -136,7 +139,11 @@ interface ActiveRecording {
   readonly recorder: SessionRecorder;
   readonly release: () => void;
   readonly unsubscribe: () => void;
+  readonly timer: ReturnType<typeof setInterval>;
 }
+
+/** How often the recording checks whether the blocks being filled are due to be written. */
+const FLUSH_CHECK_MS = 1000;
 
 interface Source {
   readonly id: string;
@@ -333,7 +340,8 @@ export class SessionManager {
       );
       this.#sources = [...this.#sources, { id: info.id, file }];
       const unsubscribe = recorder.subscribe(() => this.#publishRecording());
-      this.#recording = { session: info, startedAtMs, recorder, release, unsubscribe };
+      const timer = setInterval(() => store.flushIfDue(), FLUSH_CHECK_MS);
+      this.#recording = { session: info, startedAtMs, recorder, release, unsubscribe, timer };
       this.#publishRecording();
       this.#set({ liveSources: this.#sources.map((source) => source.id) });
       await this.refresh();
@@ -351,6 +359,7 @@ export class SessionManager {
     }
 
     this.#recording = null;
+    clearInterval(active.timer);
 
     try {
       await active.recorder.stop(this.#options.store);
@@ -427,6 +436,7 @@ export class SessionManager {
           variables: schemaVariables(saved.summary.schema),
           robot,
           summary: saved.summary,
+          blocks: saved.blocks,
           loadMs: this.#clock() - started,
         },
       };

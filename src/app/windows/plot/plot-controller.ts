@@ -369,8 +369,13 @@ export class PlotController {
     }
 
     this.#drag = { pointerId: event.pointerId, x: event.clientX, window, moved: false };
-    this.#plot.over.setPointerCapture(event.pointerId);
     this.#keys.focus({ preventScroll: true });
+
+    try {
+      this.#plot.over.setPointerCapture(event.pointerId);
+    } catch {
+      return;
+    }
   };
 
   readonly #move = (event: PointerEvent) => {

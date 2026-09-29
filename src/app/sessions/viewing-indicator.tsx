@@ -31,6 +31,7 @@ function Indicator({
       data-load-ms={Math.round(viewing.loadMs)}
       data-resident-blocks={status.residentBlocks}
       data-evicted-blocks={status.evictedBlocks}
+      data-block-reads={viewing.blocks.reads}
       className="flex h-9 min-w-0 items-center gap-2 rounded-full border bg-muted/60 pr-1 pl-3 text-sm"
     >
       <HistoryIcon className="size-4 shrink-0 text-muted-foreground" aria-label="Saved session" />

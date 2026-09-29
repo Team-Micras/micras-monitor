@@ -6,27 +6,13 @@ import {
   RotateCcwIcon,
   SquareIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ComponentProps } from 'react';
 
 import { lazyWithRetry } from '@/lazy/lazy-with-retry';
 
 import { Button } from '../components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { Separator } from '../components/ui/separator';
 import { formatBytes, formatDuration } from '../lib/format';
 import { LazyPart } from '../lib/lazy-part';
 import { useEver } from '../lib/use-ever';
@@ -39,6 +25,10 @@ import { useSessionManager, useSessions, useStoreStatus } from './sessions-conte
 
 const LazySessionsDialog = lazyWithRetry(() =>
   import('./sessions-dialog').then((module) => ({ default: module.SessionsDialog }))
+).Component;
+
+const LazyResetDialog = lazyWithRetry(() =>
+  import('./reset-dialog').then((module) => ({ default: module.ResetDialog }))
 ).Component;
 
 const TICK_MS = 500;
@@ -56,6 +46,16 @@ function useNow(active: boolean): number {
   }, [active]);
 
   return now;
+}
+
+const noStatus = () => () => undefined;
+const noMemory = () => 0;
+
+function useLiveMemory(manager: SessionManager | null): number {
+  return useSyncExternalStore(
+    manager === null ? noStatus : (listener) => manager.live.subscribeStatus(listener),
+    manager === null ? noMemory : () => manager.live.status().usedBytes
+  );
 }
 
 function MemoryLine({ manager }: { readonly manager: SessionManager }) {
@@ -87,11 +87,14 @@ function LiveSpan() {
 export function RecordingControls() {
   const manager = useSessionManager();
   const state = useSessions();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const sessionsWanted = useEver(sessionsOpen);
+  const resetWanted = useEver(confirmReset);
   const recording = state?.recording ?? null;
   const now = useNow(recording !== null);
+  const memory = useLiveMemory(manager);
 
   if (manager === null || state === null) {
     return null;
@@ -99,11 +102,15 @@ export function RecordingControls() {
 
   const elapsedMs = recording === null ? 0 : now - recording.startedAtMs;
   const last = recording?.session.id ?? state.liveSources.at(-1) ?? null;
+  const choose = (action: () => void) => () => {
+    setMenuOpen(false);
+    action();
+  };
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+        <PopoverTrigger asChild>
           <Button
             variant="outline"
             className="h-9 gap-2 rounded-lg pr-2.5 pl-3"
@@ -112,6 +119,7 @@ export function RecordingControls() {
             data-elapsed-ms={Math.round(elapsedMs)}
             data-recorded-bytes={recording?.stats.bytes ?? 0}
             data-recorded-samples={recording?.stats.samples ?? 0}
+            data-memory-used={memory}
           >
             <span
               aria-hidden
@@ -130,9 +138,9 @@ export function RecordingControls() {
             )}
             <ChevronDownIcon className="size-3.5 text-muted-foreground" aria-hidden />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-72">
-          <DropdownMenuLabel className="flex items-baseline justify-between gap-3">
+        </PopoverTrigger>
+        <PopoverContent align="end" className="flex w-72 flex-col p-1" aria-label="Session">
+          <div className="flex items-baseline justify-between gap-3 px-2 pt-1.5 pb-1 text-sm font-medium">
             <span>{recording === null ? 'Live session' : 'Recording'}</span>
             <span className="font-mono text-xs font-normal text-muted-foreground tabular-nums">
               {recording === null ? (
@@ -143,7 +151,7 @@ export function RecordingControls() {
                 `${formatDuration(elapsedMs)} · ${formatBytes(recording.stats.bytes)}`
               )}
             </span>
-          </DropdownMenuLabel>
+          </div>
           <MemoryLine manager={manager} />
           {state.error === null ? null : (
             <p role="alert" className="px-2 pb-1.5 text-xs text-destructive">
@@ -151,47 +159,51 @@ export function RecordingControls() {
             </p>
           )}
           {recording === null ? (
-            <DropdownMenuItem onSelect={() => void manager.startRecording()}>
-              <CircleIcon className="fill-destructive text-destructive!" />
+            <MenuButton onClick={choose(() => void manager.startRecording())}>
+              <CircleIcon className="fill-destructive text-destructive" />
               Start recording
-            </DropdownMenuItem>
+            </MenuButton>
           ) : (
-            <DropdownMenuItem onSelect={() => void manager.stopRecording()}>
+            <MenuButton onClick={choose(() => void manager.stopRecording())}>
               <SquareIcon />
               Stop recording
-            </DropdownMenuItem>
+            </MenuButton>
           )}
-          <DropdownMenuItem onSelect={() => setSessionsOpen(true)}>
+          <MenuButton onClick={choose(() => setSessionsOpen(true))}>
             <FolderOpenIcon />
             Sessions…
             <span className="ml-auto font-mono text-xs text-muted-foreground">
               {state.sessions.length}
             </span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
+          </MenuButton>
+          <MenuButton
             disabled={last === null}
-            onSelect={() => {
+            onClick={choose(() => {
               if (last !== null) {
                 void downloadSession(manager, last);
               }
-            }}
+            })}
           >
             <DownloadIcon />
             Export the recording
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => setConfirmReset(true)}>
+          </MenuButton>
+          <Separator className="my-1" />
+          <MenuButton destructive onClick={choose(() => setConfirmReset(true))}>
             <RotateCcwIcon />
             Reset the live session…
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <ResetDialog
-        open={confirmReset}
-        onOpenChange={setConfirmReset}
-        manager={manager}
-        recording={recording !== null}
-      />
+          </MenuButton>
+        </PopoverContent>
+      </Popover>
+      {resetWanted ? (
+        <LazyPart fallback={null} resetKey={confirmReset} retryOnMount>
+          <LazyResetDialog
+            open={confirmReset}
+            onOpenChange={setConfirmReset}
+            manager={manager}
+            recording={recording !== null}
+          />
+        </LazyPart>
+      ) : null}
       {sessionsWanted ? (
         <LazyPart fallback={null} resetKey={sessionsOpen} retryOnMount>
           <LazySessionsDialog open={sessionsOpen} onOpenChange={setSessionsOpen} />
@@ -202,40 +214,22 @@ export function RecordingControls() {
   );
 }
 
-interface ResetDialogProps {
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly manager: SessionManager;
-  readonly recording: boolean;
-}
-
-function ResetDialog({ open, onOpenChange, manager, recording }: ResetDialogProps) {
+function MenuButton({
+  destructive = false,
+  className,
+  ...props
+}: ComponentProps<'button'> & { readonly destructive?: boolean }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Reset the live session?</DialogTitle>
-          <DialogDescription>
-            Forgets the <LiveSpan /> of history in this tab
-            {recording ? ' and ends the recording, which stays saved' : ''}. Saved sessions are
-            kept.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              onOpenChange(false);
-              void manager.resetLive();
-            }}
-          >
-            Reset session
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <button
+      type="button"
+      className={cn(
+        'flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm outline-none select-none hover:bg-accent focus-visible:bg-accent disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0',
+        destructive
+          ? 'text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10'
+          : '[&_svg:not([class*=text-])]:text-muted-foreground',
+        className
+      )}
+      {...props}
+    />
   );
 }
