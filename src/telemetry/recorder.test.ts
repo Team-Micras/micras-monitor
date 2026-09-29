@@ -113,6 +113,33 @@ class FlakyFile extends MemoryRecordingFile {
   }
 }
 
+function orderedBlock(index: number) {
+  return {
+    ref: { epochId: 1, index },
+    startSample: index * 2,
+    time: new Float64Array([index * 2 * SAMPLE_US, (index * 2 + 1) * SAMPLE_US]),
+    columns: [
+      { variableId: 1, values: new Float32Array([1, 2]) },
+      { variableId: 2, values: new Float64Array([3, 4]) },
+    ],
+  };
+}
+
+function orderedSession(indices: readonly number[]) {
+  return {
+    schema: SCHEMA,
+    epochs: [
+      {
+        epoch: { epochId: 1, groupId: 0, variables: SCHEMA.slice(0, 2) },
+        gaps: [],
+        blocks: indices.map(orderedBlock),
+      },
+    ],
+    boundaries: [],
+    values: [],
+  };
+}
+
 describe('recording a session', () => {
   test('writes the header, the session so far and what comes after, and reads back the same', async () => {
     const { store, advance } = makeStore();
@@ -369,33 +396,12 @@ describe('a saved session under the memory cap', () => {
   });
 
   test('takes the blocks of an epoch in index order only, appending each one', async () => {
-    const block = (index: number) => ({
-      ref: { epochId: 1, index },
-      startSample: index * 2,
-      time: new Float64Array([index * 2 * SAMPLE_US, (index * 2 + 1) * SAMPLE_US]),
-      columns: [
-        { variableId: 1, values: new Float32Array([1, 2]) },
-        { variableId: 2, values: new Float64Array([3, 4]) },
-      ],
-    });
-    const session = (indices: readonly number[]) => ({
-      schema: SCHEMA,
-      epochs: [
-        {
-          epoch: { epochId: 1, groupId: 0, variables: SCHEMA.slice(0, 2) },
-          gaps: [],
-          blocks: indices.map(block),
-        },
-      ],
-      boundaries: [],
-      values: [],
-    });
     const source = new MemoryRecordingFile();
 
-    expect(makeStore().store.load(session([0, 1, 2]), new RecordingBlocks(source))).toBe(0);
-    expect(() => makeStore().store.load(session([0, 2, 1]), new RecordingBlocks(source))).toThrow(
-      /Block 1 of epoch 1 comes after block 2/
-    );
+    expect(makeStore().store.load(orderedSession([0, 1, 2]), new RecordingBlocks(source))).toBe(0);
+    expect(() =>
+      makeStore().store.load(orderedSession([0, 2, 1]), new RecordingBlocks(source))
+    ).toThrow(/Block 1 of epoch 1 comes after block 2/);
   });
 
   test('refuses to load into a store that already holds a session', async () => {
