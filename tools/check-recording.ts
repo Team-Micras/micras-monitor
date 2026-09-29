@@ -80,6 +80,7 @@ const AGGREGATE_ERRORS_SCRIPT = `addEventListener('error', (event) => {
 });`;
 
 const checks: Check[] = [];
+const crashed = new WeakSet<Page>();
 const started = Date.now();
 
 function check(name: string, passed: boolean, detail: string): void {
@@ -119,6 +120,10 @@ function kill(profile: string): void {
 async function open(context: BrowserContext, url: string): Promise<Page> {
   const page = context.pages()[0] ?? (await context.newPage());
   page.on('pageerror', (error) => log(`page error: ${error.message}`));
+  page.on('crash', () => {
+    crashed.add(page);
+    log('the page crashed');
+  });
   page.on('console', (message) => {
     if (message.type() === 'error') {
       log(`console: ${message.text().slice(0, 400)}`);
@@ -237,6 +242,16 @@ async function recordUntil(
   } catch (error) {
     if (last === undefined) {
       throw error;
+    }
+
+    if (!page.isClosed() && !crashed.has(page)) {
+      log(
+        `${label}: no reading (${error instanceof Error ? error.message.split('\n')[0] : String(error)}), trying again`
+      );
+      await page
+        .screenshot({ path: join(tmpdir(), 'check-recording-stalled.png') })
+        .catch(() => undefined);
+      return recordUntil(page, untilMs, label, last);
     }
 
     return { reading: last, died: true };
