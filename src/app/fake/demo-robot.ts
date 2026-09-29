@@ -11,6 +11,7 @@ import { FakeRobot, type FakeRobotOptions, type FakeVariable } from './fake-robo
 
 const STREAM = decodeAccess(0x01);
 const STREAM_WRITE = decodeAccess(0x03);
+const STREAM_WRITE_IDLE = decodeAccess(0x07);
 const PERSIST = decodeAccess(0x08);
 const NONE = decodeAccess(0x00);
 
@@ -18,6 +19,10 @@ const RUN = 3;
 const IDLE = 1;
 const STOP = 5;
 const NOT_IDLE = 1;
+const INIT = 0;
+const WAIT_FOR_RUN = 2;
+
+const bootSequence = (t: number) => (t < 0.4 ? INIT : t < 3 ? IDLE : t < 6 ? WAIT_FOR_RUN : RUN);
 
 const f32 = (name: string, signal?: (t: number) => number): FakeVariable => ({
   name,
@@ -45,7 +50,7 @@ const wall = (phase: number) => (t: number) =>
   0.14 + 0.1 * Math.sin(t * 0.9 + phase) + 0.004 * Math.sin(t * 13 + phase);
 
 const VARIABLES: readonly FakeVariable[] = [
-  { name: 'state', type: TypeCode.U8, access: STREAM, signal: () => RUN },
+  { name: 'state', type: TypeCode.U8, access: STREAM, signal: bootSequence },
   ...[0, 1, 2, 3].map((i) => f32(`wall/${i}`, wall(i * 1.7))),
   ...[0, 1, 2, 3].map((i) => f32(`wall_dark/${i}`, (t) => 0.01 + 0.002 * Math.sin(t + i))),
   f32('imu/gyro_x', (t) => 0.02 * Math.sin(t * 3.1)),
@@ -103,7 +108,7 @@ const VARIABLES: readonly FakeVariable[] = [
   quiet('identification/yaw_inertia', TypeCode.F32, 0.00011),
   quiet('gyroscope/scale_valid', TypeCode.BOOL, 1),
   quiet('gyroscope/scale', TypeCode.F32, 1.003),
-  { name: 'objective', type: TypeCode.U8, access: STREAM, signal: () => 0 },
+  { name: 'objective', type: TypeCode.U8, access: STREAM_WRITE_IDLE, signal: () => 0 },
   { name: 'run_profile', type: TypeCode.U8, access: STREAM_WRITE, signal: () => 5 },
   { name: 'maze', type: TypeCode.BLOB, access: PERSIST, typeTag: 'maze-grid' },
   counter('link/dropped_samples', 0.8, 315),
@@ -114,8 +119,9 @@ const VARIABLES: readonly FakeVariable[] = [
 ];
 
 /**
- * Creates the demo robot. It runs an exploration: every command but STOP is refused as not
- * idle, and STOP brings it to IDLE with the wheels still, after which it accepts everything.
+ * Creates the demo robot. It boots through IDLE into an exploration, during which every command
+ * but STOP is refused as not idle, and so are writes of variables that need the robot idle; STOP
+ * brings it to IDLE with the wheels still, after which it accepts everything.
  *
  * @param options Overrides, such as shorter delays for tests.
  */
@@ -126,6 +132,7 @@ export function createDemoRobot(options: Partial<FakeRobotOptions> = {}): FakeRo
     variables: VARIABLES,
     answer: (code, _argument, robot) => {
       if (code === STOP) {
+        robot.log('info', 'STOP: braking to a standstill');
         robot.hold('state', IDLE);
         robot.hold('pose/linear_speed', 0);
         robot.hold('reference/linear_speed', 0);
@@ -136,6 +143,18 @@ export function createDemoRobot(options: Partial<FakeRobotOptions> = {}): FakeRo
         ? { status: 'ok', reason: 0 }
         : { status: 'refused', reason: NOT_IDLE };
     },
+    answerWrite: (name, _value, robot) =>
+      VARIABLES.find((variable) => variable.name === name)?.access.idle === true &&
+      robot.valueOf('state') !== IDLE
+        ? { status: 'refused', reason: 'needs-idle' }
+        : { status: 'confirmed' },
+    logs: [
+      { atSeconds: 0.2, severity: 'info', text: 'boot: micras ready' },
+      { atSeconds: 6, severity: 'info', text: 'explore: leaving the start cell' },
+      { atSeconds: 9, severity: 'debug', text: 'localizer: wall edge accepted at 1,0' },
+      { atSeconds: 14, severity: 'warning', text: 'localizer: innovation above the gate' },
+      { atSeconds: 18, severity: 'debug', text: 'maze: revision 14 saved to RAM' },
+    ],
     ...options,
   });
 }
