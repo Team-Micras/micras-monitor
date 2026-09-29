@@ -23,6 +23,12 @@ function project(name: string): NonNullable<TestProjectInlineConfiguration['test
   return found.test;
 }
 
+describe('The build', () => {
+  test('warns about a chunk a little over the largest one shipped, not at Vite’s 500 kB', () => {
+    expect(config.build?.chunkSizeWarningLimit).toBeLessThan(500);
+  });
+});
+
 describe('The test projects', () => {
   test.each(['unit', 'browser'])('%s keeps the default exclusions', (name) => {
     expect(project(name).exclude).toEqual(expect.arrayContaining([...configDefaults.exclude]));
