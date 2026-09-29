@@ -71,7 +71,10 @@ export interface FakeRobotOptions {
   readonly configureMs?: number;
   /** Milliseconds between two batches of samples. */
   readonly tickMs?: number;
-  /** Samples appended per batch, spread evenly over the tick; one by default. */
+  /**
+   * Samples appended per batch, spread evenly over the tick; one by default. A batch that comes
+   * late catches up on the samples due since the last one, as a robot keeps its own clock.
+   */
   readonly samplesPerTick?: number;
   /** Tells which samples the link loses, by sequence number; none by default. */
   readonly drops?: (sequence: number) => boolean;
@@ -104,6 +107,7 @@ const GROUP = 0;
 const CREDIT_WINDOW = 256;
 const LOG_LIMIT = 500;
 const SAMPLE_HEADER_BYTES = 8;
+const MAX_CATCH_UP_MS = 10_000;
 
 const NO_STATS: LinkStats = {
   bytesInPerSecond: 0,
@@ -175,6 +179,7 @@ export class FakeRobot {
   #epoch = 0;
   #sequence = 0;
   #dropped = 0;
+  #nextSampleMs = 0;
 
   constructor(options: FakeRobotOptions) {
     this.#options = options;
@@ -290,7 +295,7 @@ export class FakeRobot {
           'link'
         );
         resolve(outcome);
-        this.#tick();
+        this.#tick(true);
       });
     });
   }
@@ -343,7 +348,7 @@ export class FakeRobot {
         );
         this.#emit(this.#writeListeners);
         resolve(outcome);
-        this.#tick();
+        this.#tick(true);
       });
     });
   }
@@ -425,6 +430,7 @@ export class FakeRobot {
     });
     this.#setPhase('streaming');
     this.log('info', `group ${GROUP} streaming ${this.#streamed.length} variables`, 'link');
+    this.#nextSampleMs = Date.now() - (this.#samplesPerTick() - 1) * this.#stepMs();
     this.#ticker = setInterval(() => this.#tick(), this.#tickMs());
     this.#tick();
   }
@@ -437,31 +443,48 @@ export class FakeRobot {
     }
   }
 
-  #tick(): void {
+  #tick(immediately = false): void {
     if (this.#ticker === null) {
       return;
     }
 
-    const count = this.#options.samplesPerTick ?? 1;
-    const stepMs = this.#tickMs() / count;
+    const stepMs = this.#stepMs();
     const nowMs = Date.now();
+    let atMs = Math.max(this.#nextSampleMs, nowMs - MAX_CATCH_UP_MS);
 
-    for (let index = count - 1; index >= 0; index--) {
-      const atMs = nowMs - index * stepMs;
-      const seconds = (atMs - this.#startedAt) / 1000;
-      const values = this.#streamed.map((entry) =>
-        this.#valueOf(this.#options.variables[entry.id], entry.id, seconds)
-      );
-      if (this.#options.drops?.(this.#sequence) === true) {
-        this.#dropped += 1;
-      } else {
-        this.store.append(this.#epoch, this.#sequence, (atMs - this.#origin) * 1000, values);
-      }
-
-      this.#sequence += 1;
+    if (immediately && atMs > nowMs) {
+      atMs = nowMs;
     }
 
+    for (; atMs <= nowMs; atMs += stepMs) {
+      this.#sample(atMs);
+    }
+
+    this.#nextSampleMs = atMs;
     this.#updateStats();
+  }
+
+  #sample(atMs: number): void {
+    const seconds = (atMs - this.#startedAt) / 1000;
+    const values = this.#streamed.map((entry) =>
+      this.#valueOf(this.#options.variables[entry.id], entry.id, seconds)
+    );
+
+    if (this.#options.drops?.(this.#sequence) === true) {
+      this.#dropped += 1;
+    } else {
+      this.store.append(this.#epoch, this.#sequence, (atMs - this.#origin) * 1000, values);
+    }
+
+    this.#sequence += 1;
+  }
+
+  #samplesPerTick(): number {
+    return this.#options.samplesPerTick ?? 1;
+  }
+
+  #stepMs(): number {
+    return this.#tickMs() / this.#samplesPerTick();
   }
 
   #tickMs(): number {
@@ -469,7 +492,7 @@ export class FakeRobot {
   }
 
   #updateStats(): void {
-    const rateHz = (1000 / this.#tickMs()) * (this.#options.samplesPerTick ?? 1);
+    const rateHz = 1000 / this.#stepMs();
     const sampleBytes =
       SAMPLE_HEADER_BYTES + this.#streamed.reduce((total, entry) => total + sizeOf(entry.type), 0);
     const used = sampleBytes * rateHz;
