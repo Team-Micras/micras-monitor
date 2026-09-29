@@ -9,7 +9,6 @@ import { createContext, use, useSyncExternalStore, type ReactNode } from 'react'
 
 import type { PackageSelection, RobotPackage, RobotRegistry } from '@/robot-kit';
 
-import type { PackageSelector } from './package-selection';
 import type {
   ConnectionStatus,
   LatestValue,
@@ -21,14 +20,24 @@ import type {
 /** The robot a window draws with, a React package. */
 export type ReactRobotPackage = RobotPackage<ReactNode>;
 
+/** Where the package of the robot on screen comes from: the connection's, or a saved session's. */
+export interface PackageSource {
+  /** The package chosen, or null for raw mode or no robot; the same object until it changes. */
+  current(): PackageSelection<ReactNode> | null;
+  /** Calls `listener` after the choice changes; returns the function that stops it. */
+  subscribe(listener: () => void): () => void;
+}
+
 /** The ports and packages of the running app. */
 export interface Monitor {
   readonly ports: MonitorPorts;
   readonly robots: RobotRegistry<ReactNode>;
   /** The package of the connected robot, chosen once per change of connection or schema. */
-  readonly selection: PackageSelector;
+  readonly selection: PackageSource;
   /** Whether the values are synthetic, as with the in-memory fake robot. */
   readonly synthetic: boolean;
+  /** The name of the saved session the windows show instead of the live one, if any. */
+  readonly savedSession?: string;
 }
 
 /** How often, at most, a value on screen changes: ten times a second. */

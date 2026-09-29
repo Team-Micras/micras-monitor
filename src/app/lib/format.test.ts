@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { formatClock, formatHash, formatValue } from './format';
+import { formatBytes, formatClock, formatDuration, formatHash, formatValue } from './format';
 
 describe('formatValue', () => {
   test('shows integers whole and other numbers with three decimals', () => {
@@ -36,4 +36,18 @@ describe('formatClock', () => {
 test('formatHash pads to eight digits', () => {
   expect(formatHash(0x3f9a1c07)).toBe('3f9a1c07');
   expect(formatHash(0xab)).toBe('000000ab');
+});
+
+test('formatBytes picks the unit and keeps a decimal below a hundred', () => {
+  expect(formatBytes(0)).toBe('0 B');
+  expect(formatBytes(1023)).toBe('1023 B');
+  expect(formatBytes(1536)).toBe('1.5 KB');
+  expect(formatBytes(38 * 1024 * 1024)).toBe('38.0 MB');
+  expect(formatBytes(250 * 1024 * 1024)).toBe('250 MB');
+});
+
+test('formatDuration shows hours only past an hour', () => {
+  expect(formatDuration(0)).toBe('00:00');
+  expect(formatDuration(722_300)).toBe('12:02');
+  expect(formatDuration(3_723_000)).toBe('1:02:03');
 });

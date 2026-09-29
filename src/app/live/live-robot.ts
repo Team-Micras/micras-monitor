@@ -61,6 +61,8 @@ export interface LiveRobotOptions {
   readonly schemaCache?: SchemaCache;
   /** How many log entries to keep. */
   readonly logLimit?: number;
+  /** The most memory the store's history may take; the store's default otherwise. */
+  readonly memoryCapBytes?: number;
 }
 
 interface ActiveLink {
@@ -181,7 +183,10 @@ export class LiveRobot {
    */
   constructor(options: LiveRobotOptions = {}) {
     this.#options = options;
-    this.store = new TelemetryStore({ scheduler: options.scheduler ?? TIMER_SCHEDULER });
+    this.store = new TelemetryStore({
+      scheduler: options.scheduler ?? TIMER_SCHEDULER,
+      memoryCapBytes: options.memoryCapBytes,
+    });
     this.log = new LiveLog(options.logLimit);
     this.ports = {
       connection: {

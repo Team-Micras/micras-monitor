@@ -22,6 +22,9 @@ import { PhoneView } from './phone/phone-view';
 import { usePhone } from './phone/use-phone';
 import type { AppUpdates } from './pwa/app-updates';
 import type { MonitorPorts } from './ports';
+import type { SessionManager } from './sessions/session-manager';
+import { SessionsContext } from './sessions/sessions-context';
+import { SessionView } from './sessions/session-view';
 import { DeletedNotice } from './shell/deleted-notice';
 import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
 import { LazyLauncher, LazyVariableDrawer } from './shell/lazy-shell';
@@ -59,6 +62,8 @@ export interface AppProps {
   readonly layouts?: LayoutStorage;
   /** Where new builds of the app come from, such as the service worker; none without one. */
   readonly updates?: AppUpdates;
+  /** The recorded and saved sessions; without it there is no REC. */
+  readonly sessions?: SessionManager;
 }
 
 /** The monitor: top bar, tiling of workspaces, status bar, drawer and launcher. */
@@ -69,6 +74,7 @@ export function App({
   store: given,
   layouts,
   updates,
+  sessions,
 }: AppProps) {
   const [store] = useState(
     () => given ?? createShellStore({ theme: initialTheme(), keyOverrides: initialKeyOverrides() })
@@ -77,11 +83,13 @@ export function App({
 
   return (
     <MonitorContext value={{ ports, robots, selection, synthetic }}>
-      <ShellStoreContext value={store}>
-        <TooltipProvider>
-          <Shell layouts={layouts ?? null} updates={updates} />
-        </TooltipProvider>
-      </ShellStoreContext>
+      <SessionsContext value={sessions ?? null}>
+        <ShellStoreContext value={store}>
+          <TooltipProvider>
+            <Shell layouts={layouts ?? null} updates={updates} />
+          </TooltipProvider>
+        </ShellStoreContext>
+      </SessionsContext>
     </MonitorContext>
   );
 }
@@ -211,14 +219,16 @@ function Shell({
       ) : (
         <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
           <TopBar onStop={() => void stop()} />
-          <main className="relative min-h-0 flex-1">
-            <TilingView />
-            {drawerOpen ? (
-              <LazyPart fallback={<DrawerFailed />} resetKey={drawerOpen} retryOnMount>
-                <LazyVariableDrawer />
-              </LazyPart>
-            ) : null}
-          </main>
+          <SessionView>
+            <main className="relative min-h-0 flex-1">
+              <TilingView />
+              {drawerOpen ? (
+                <LazyPart fallback={<DrawerFailed />} resetKey={drawerOpen} retryOnMount>
+                  <LazyVariableDrawer />
+                </LazyPart>
+              ) : null}
+            </main>
+          </SessionView>
           <StatusBar />
           {launcherWanted ? (
             <LazyPart fallback={null} resetKey={launcherOpen}>

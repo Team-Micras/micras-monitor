@@ -21,6 +21,7 @@ import { cn } from '../lib/utils';
 import {
   useConnectionStatus,
   useLiveValue,
+  useMonitor,
   useRobotPackage,
   useVariables,
   type ReactRobotPackage,
@@ -80,6 +81,7 @@ export function VariableDrawer() {
   const variables = useVariables();
   const status = useConnectionStatus();
   const selection = useRobotPackage();
+  const { savedSession } = useMonitor();
   const windows = useShell((state) => state.desktop.windows);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -148,9 +150,11 @@ export function VariableDrawer() {
         <div>
           <h2 className="text-lg font-semibold">Variables</h2>
           <p className="text-sm text-muted-foreground">
-            {status.kind === 'linked' && variables.length > 0
-              ? `${variables.length} from schema ${formatHash(status.robot.schemaHash)} · ${pkg === null ? 'raw mode' : `package ${pkg.id}`}`
-              : 'Connect to a robot to list its variables'}
+            {savedSession !== undefined
+              ? `${variables.length} recorded in ${savedSession}`
+              : status.kind === 'linked' && variables.length > 0
+                ? `${variables.length} from schema ${formatHash(status.robot.schemaHash)} · ${pkg === null ? 'raw mode' : `package ${pkg.id}`}`
+                : 'Connect to a robot to list its variables'}
           </p>
         </div>
         <Button variant="ghost" size="icon-sm" aria-label="Close the variables" onClick={close}>

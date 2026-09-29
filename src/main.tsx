@@ -6,10 +6,11 @@ import { safeLocalStorage } from '@/app/layouts/layout-book';
 import { LiveRobot } from '@/app/live/live-robot';
 import type { MonitorPorts } from '@/app/ports';
 import { serviceWorkerUpdates } from '@/app/pwa/app-updates';
+import { browserSessions } from '@/app/sessions/browser-sessions';
 import '@/app/styles.css';
 import type { BluetoothLike } from '@/link';
 import { RobotRegistry } from '@/robot-kit';
-import type { Scheduler } from '@/telemetry';
+import type { Scheduler, TelemetryStore } from '@/telemetry';
 import { micras } from '@robots/micras';
 import { registerSW } from 'virtual:pwa-register';
 
@@ -32,21 +33,33 @@ function webBluetooth(): BluetoothLike | undefined {
   return isBluetooth(bluetooth) ? bluetooth : undefined;
 }
 
-function liveRobot(connectTo: string | null): MonitorPorts {
-  const robot = new LiveRobot({ scheduler: FRAME_SCHEDULER, bluetooth: webBluetooth() });
+function memoryCap(query: URLSearchParams): number | undefined {
+  const megabytes = Number(query.get('memory-cap-mb') ?? Number.NaN);
+  return Number.isFinite(megabytes) && megabytes > 0 ? megabytes * 1024 * 1024 : undefined;
+}
+
+function liveRobot(connectTo: string | null, memoryCapBytes: number | undefined): LiveRobot {
+  const robot = new LiveRobot({
+    scheduler: FRAME_SCHEDULER,
+    bluetooth: webBluetooth(),
+    memoryCapBytes,
+  });
 
   if (connectTo !== null) {
     robot.connect({ transport: 'websocket', url: connectTo });
   }
 
-  return robot.ports;
+  return robot;
 }
 
 const query = new URLSearchParams(location.search);
 const synthetic = query.has('fake');
-const ports = synthetic
-  ? (await import('@/app/fake/demo-robot')).createDemoRobot().ports
-  : liveRobot(query.get('connect'));
+const memoryCapBytes = memoryCap(query);
+const robot: { readonly ports: MonitorPorts; readonly store: TelemetryStore } = synthetic
+  ? (await import('@/app/fake/demo-robot')).createDemoRobot()
+  : liveRobot(query.get('connect'), memoryCapBytes);
+const { ports } = robot;
+const sessions = browserSessions(robot.store, ports, FRAME_SCHEDULER, memoryCapBytes);
 const robots = new RobotRegistry([micras]);
 const updates = import.meta.env.PROD ? serviceWorkerUpdates(registerSW) : undefined;
 
@@ -58,6 +71,7 @@ createRoot(root).render(
       synthetic={synthetic}
       layouts={safeLocalStorage() ?? undefined}
       updates={updates}
+      sessions={sessions}
     />
   </StrictMode>
 );

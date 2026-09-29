@@ -1,11 +1,16 @@
 import { useConnectionStatus, useRobotPackage } from '../monitor-context';
+import { RecordingControls } from '../sessions/recording-controls';
+import { ViewingIndicator } from '../sessions/viewing-indicator';
 import { ConnectionPopover } from './connection-popover';
 import { LayoutsMenu } from './layouts-menu';
 import { SessionClock } from './session-clock';
 import { StopButton } from './stop-button';
 import { WorkspaceTabs } from './workspace-tabs';
 
-/** The bar above the tiling: robot and connection, workspaces, clock and STOP. */
+/**
+ * The bar above the tiling: robot and connection, the saved session on screen, workspaces,
+ * clock, REC and STOP.
+ */
 export function TopBar({ onStop }: { readonly onStop: () => void }) {
   const selection = useRobotPackage();
   const status = useConnectionStatus();
@@ -19,11 +24,13 @@ export function TopBar({ onStop }: { readonly onStop: () => void }) {
           {selection?.package.displayName ?? robotName ?? 'Monitor'}
         </span>
         <ConnectionPopover />
+        <ViewingIndicator />
       </div>
       <WorkspaceTabs />
       <div className="flex items-center justify-end gap-4">
         <LayoutsMenu />
         <SessionClock />
+        <RecordingControls />
         <StopButton onStop={onStop} />
       </div>
     </header>

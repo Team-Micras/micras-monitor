@@ -56,6 +56,36 @@ and light. It needs a run that stays up after the search, such as `explore_link`
 `[[events]]` and its `[stop]` (the robot left idle in the start cell) and `--monitor`, and a dev tree
 nobody edits meanwhile (Vite reloads the page). Also a manual check, not CI.
 
+`bun tools/check-recording.ts --robot ws://localhost:8080 [--minutes 30] [--kill-at 15]
+[--memory-cap-mb 16] [--screens <dir>]` records a long session of the simulated robot through the
+app, kills the browser with SIGKILL at `--kill-at` minutes, reopens it on the same profile and
+checks that the recording is recovered with at most the last 5 s lost, then opens it, shows the
+whole history and scrolls through it while a second recording runs to `--minutes`. It prints the
+size, samples, recovered range and timings. A manual check, not CI.
+
+## Sessions and recording
+
+The live session is the telemetry store of the running app, always in memory; the link feeds it
+for the life of the tab, across reconnections. REC writes it to a session file in the browser's
+Origin Private File System: the whole session so far first, then every block as it seals, and the
+block being filled every 5 s, so a tab that dies loses at most the last 5 s. Stopping ends the
+file; Reset forgets the live history, and ends the recording first. `?memory-cap-mb=<n>` caps the
+stores' memory; past the cap, blocks already written leave memory and are read back from the file
+when a plot scrolls to them, and without REC the oldest history is dropped as a `not-stored` band.
+
+A saved session opens read only, in the same windows, into a store of its own whose blocks come
+back from its file as needed. The link and the live store carry on underneath, REC keeps
+recording, and STOP in the top bar still reaches the robot; the windows' own commands, writes and
+reads are off until **Live** goes back to the live session.
+
+Each session is a directory `micras-monitor/sessions/<id>/` with `session.json`, its description,
+and `recording.mmrec`, the recording format (version 1, `src/telemetry/recording.ts`). A dedicated
+worker (`src/app/sessions/opfs.worker.ts`) owns the files and appends through synchronous access
+handles, each write flushed before it is acknowledged. The tab recording a session holds a Web Lock
+on it; on start, a session still marked `recording` whose lock nobody holds was cut short: its
+damaged tail, if any, is cut from the file and reported, and it is listed as recovered. Export
+downloads the file with its current name in the header. Browsers without the file system keep
+sessions in memory for the life of the tab.
 ## Phone and PWA
 
 The app is an installable PWA (`vite-plugin-pwa`, service worker in `sw/sw.ts`). The service worker
