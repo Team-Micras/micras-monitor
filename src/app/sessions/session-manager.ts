@@ -60,7 +60,10 @@ export interface SessionManagerOptions {
   readonly describe: () => RobotDescription;
   /** When the stores of opened sessions tell their readers about changes. */
   readonly scheduler: Scheduler;
-  /** The memory cap of an opened session's store; the store's default otherwise. */
+  /**
+   * The memory cap of an opened session's store. By default it shares the live store's cap: it
+   * gets what the live history leaves of it when it opens, and never less than an eighth of it.
+   */
   readonly viewCapBytes?: number;
   /** Wall time in milliseconds; `Date.now` by default. */
   readonly now?: () => number;
@@ -151,6 +154,9 @@ interface ActiveRecording {
   readonly unsubscribe: () => void;
   readonly timer: ReturnType<typeof setInterval>;
 }
+
+/** An opened session gets at least this fraction of the live store's cap: an eighth. */
+const VIEW_CAP_FLOOR = 8;
 
 /** How often the recording checks whether the blocks being filled are due to be written. */
 const FLUSH_CHECK_MS = 1000;
@@ -458,7 +464,7 @@ export class SessionManager {
       const saved = await SavedRecording.read(file);
       const store = new TelemetryStore({
         scheduler: this.#options.scheduler,
-        memoryCapBytes: this.#options.viewCapBytes,
+        memoryCapBytes: this.#options.viewCapBytes ?? this.#sharedCap(),
       });
       saved.loadInto(store);
 
@@ -670,6 +676,11 @@ export class SessionManager {
     } finally {
       await file?.close().catch(() => undefined);
     }
+  }
+
+  #sharedCap(): number {
+    const { usedBytes, capBytes } = this.#options.store.status();
+    return Math.max(capBytes / VIEW_CAP_FLOOR, capBytes - usedBytes);
   }
 
   async #closeViewed(): Promise<void> {

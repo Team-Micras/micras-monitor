@@ -70,7 +70,8 @@ for the life of the tab, across reconnections. REC writes it to a session file i
 Origin Private File System: the whole session so far first, then every block as it seals, and the
 block being filled every 5 s, so a tab that dies loses at most the last 5 s. Stopping ends the
 file; Reset forgets the live history, and ends the recording first. `?memory-cap-mb=<n>` caps the
-stores' memory, and `?view-cap-mb=<n>` that of an opened session alone; past the cap, blocks
+stores' memory, and `?view-cap-mb=<n>` that of an opened session alone, which otherwise gets what
+the live history leaves of the one cap, and at least an eighth of it; past the cap, blocks
 already written leave memory and are read back from the file when a plot scrolls to them, and
 without REC the oldest history is dropped as a `not-stored` band.
 

@@ -75,7 +75,7 @@ export function describeRobot(ports: MonitorPorts): RobotDescription {
  * @param store The live store.
  * @param ports The live robot's ports.
  * @param scheduler When opened sessions tell their readers about changes.
- * @param viewCapBytes The memory cap of an opened session; the store's default otherwise.
+ * @param viewCapBytes The memory cap of an opened session; a share of the live store's otherwise.
  */
 export function browserSessions(
   store: TelemetryStore,

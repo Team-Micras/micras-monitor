@@ -258,6 +258,18 @@ describe('opening a saved session', () => {
     expect(manager.state.viewing).toBeNull();
   });
 
+  test('gives the opened session what the live history leaves of the one memory cap', async () => {
+    const { store, manager, stream } = rig();
+    await manager.start();
+    await manager.startRecording();
+    await stream(4);
+    await manager.stopRecording();
+    const { usedBytes, capBytes } = store.status();
+    await manager.open(manager.state.sessions[0].id);
+
+    expect(manager.state.viewing?.store.status().capBytes).toBe(capBytes - usedBytes);
+  });
+
   test('closes the session on screen when it is deleted', async () => {
     const { manager, stream } = rig();
     await manager.start();
