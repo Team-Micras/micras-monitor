@@ -12,6 +12,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
   activeWorkspace,
   applyDrop,
+  createDesktop,
   containsPoint,
   execute,
   hitTest,
@@ -30,8 +31,11 @@ import {
   type WindowId,
 } from '@/tiling';
 
+import type { LayoutPreset } from '@/robot-kit';
+
 import { resolveBindings, type KeyBindings, type KeyOverrides } from '../keymap/keymap';
 import type { StopNotice } from '../lib/stop-outcome';
+import { presetWorkspace, workspacePreset } from '../layouts/presets';
 import { PLOT_KIND, windowKind } from '../windows/registry';
 import type { WindowPayload } from '../windows/types';
 import { defaultDesktop } from './default-desktop';
@@ -72,6 +76,11 @@ export interface DragSurroundings {
   readonly overTiling: boolean;
 }
 
+/** What the layouts menu is opened to do: name a new preset, or rename one of the user's. */
+export type LayoutsIntent =
+  | { readonly kind: 'save' }
+  | { readonly kind: 'rename'; readonly name: string };
+
 /** The shell's state and what changes it. */
 export interface ShellState {
   readonly desktop: Desktop<WindowPayload>;
@@ -81,6 +90,12 @@ export interface ShellState {
   readonly theme: Theme;
   readonly overlay: Overlay;
   readonly connectionOpen: boolean;
+  /** Whether the layouts menu is open. */
+  readonly layoutsOpen: boolean;
+  /** What the layouts menu was opened for, or null when for browsing. */
+  readonly layoutsIntent: LayoutsIntent | null;
+  /** The presets the user made for the connected robot; they are saved with its layout. */
+  readonly presets: readonly LayoutPreset[];
   readonly paused: ReadonlySet<WindowId>;
   readonly keyOverrides: KeyOverrides;
   readonly bindings: KeyBindings;
@@ -119,6 +134,30 @@ export interface ShellState {
   /** Opens an overlay, or closes it with null or when it is the one open and `toggle` is set. */
   readonly setOverlay: (overlay: Overlay, toggle?: boolean) => void;
   readonly setConnectionOpen: (open: boolean) => void;
+  /**
+   * Opens or closes the layouts menu.
+   *
+   * @param intent What it is opened for, when opening.
+   */
+  readonly setLayoutsOpen: (open: boolean, intent?: LayoutsIntent | null) => void;
+  /** Replaces the desktop and the user's presets, as when another robot's layout is loaded. */
+  readonly loadLayout: (desktop: Desktop<WindowPayload>, presets: readonly LayoutPreset[]) => void;
+  /** Adds a workspace built from a preset, named after it, and shows it. */
+  readonly applyPreset: (preset: LayoutPreset) => void;
+  /**
+   * Saves the active workspace as one of the user's presets, replacing the one of that name.
+   *
+   * @returns Whether it was saved; a blank name is not.
+   */
+  readonly savePreset: (name: string) => boolean;
+  /**
+   * Renames one of the user's presets.
+   *
+   * @returns Whether it was renamed; not when the new name is blank or another preset has it.
+   */
+  readonly renamePreset: (name: string, next: string) => boolean;
+  /** Deletes one of the user's presets. */
+  readonly deletePreset: (name: string) => void;
   readonly setKeyOverrides: (overrides: KeyOverrides) => void;
   readonly beginDrag: (subject: DragSubject, pointer: Point) => void;
   readonly moveDrag: (pointer: Point, surroundings: DragSurroundings) => void;
@@ -140,6 +179,7 @@ export interface ShellStoreOptions {
   readonly theme?: Theme;
   readonly keyOverrides?: KeyOverrides;
   readonly viewport?: Rect;
+  readonly presets?: readonly LayoutPreset[];
 }
 
 /** Creates the state of one shell. */
@@ -231,6 +271,9 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       theme: options.theme ?? 'dark',
       overlay: null,
       connectionOpen: false,
+      layoutsOpen: false,
+      layoutsIntent: null,
+      presets: options.presets ?? [],
       paused: new Set(),
       keyOverrides: options.keyOverrides ?? {},
       bindings: resolveBindings(options.keyOverrides),
@@ -308,6 +351,70 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         set({ overlay: toggle && get().overlay === overlay ? null : overlay }),
 
       setConnectionOpen: (connectionOpen) => set({ connectionOpen }),
+
+      setLayoutsOpen: (layoutsOpen, intent = null) =>
+        set({ layoutsOpen, layoutsIntent: layoutsOpen ? intent : null }),
+
+      loadLayout: (desktop, presets) => set({ desktop, presets, paused: new Set() }),
+
+      applyPreset: (preset) => {
+        const { desktop } = get();
+        const names = new Set(desktop.workspaces.map((workspace) => workspace.name));
+        let name = preset.name;
+
+        for (let number = 2; names.has(name); number += 1) {
+          name = `${preset.name} ${number}`;
+        }
+
+        const { workspace, windows } = presetWorkspace(preset, name, nextId);
+        set({
+          desktop: createDesktop(
+            [...desktop.workspaces, workspace],
+            [...desktop.windows.values(), ...windows],
+            desktop.workspaces.length
+          ),
+        });
+      },
+
+      savePreset: (name) => {
+        const { desktop, presets } = get();
+        const trimmed = name.trim();
+
+        if (trimmed === '') {
+          return false;
+        }
+
+        const preset = workspacePreset(desktop, desktop.active, trimmed);
+        set({
+          presets: presets.some((entry) => entry.name === trimmed)
+            ? presets.map((entry) => (entry.name === trimmed ? preset : entry))
+            : [...presets, preset],
+        });
+        return true;
+      },
+
+      renamePreset: (name, next) => {
+        const { presets } = get();
+        const trimmed = next.trim();
+
+        if (
+          trimmed === '' ||
+          !presets.some((entry) => entry.name === name) ||
+          (trimmed !== name && presets.some((entry) => entry.name === trimmed))
+        ) {
+          return false;
+        }
+
+        set({
+          presets: presets.map((entry) =>
+            entry.name === name ? { name: trimmed, root: entry.root } : entry
+          ),
+        });
+        return true;
+      },
+
+      deletePreset: (name) =>
+        set({ presets: get().presets.filter((entry) => entry.name !== name) }),
 
       setKeyOverrides: (keyOverrides) =>
         set({ keyOverrides, bindings: resolveBindings(keyOverrides) }),

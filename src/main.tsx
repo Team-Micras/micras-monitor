@@ -47,6 +47,6 @@ const robots = new RobotRegistry([micras]);
 
 createRoot(root).render(
   <StrictMode>
-    <App ports={ports} robots={robots} synthetic={synthetic} />
+    <App ports={ports} robots={robots} synthetic={synthetic} layouts={globalThis.localStorage} />
   </StrictMode>
 );

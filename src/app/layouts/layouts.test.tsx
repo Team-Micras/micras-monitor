@@ -1,0 +1,274 @@
+import type { ReactNode } from 'react';
+import { afterEach, describe, expect, test } from 'vitest';
+import { userEvent } from 'vitest/browser';
+import { render } from 'vitest-browser-react';
+
+import { TypeCode, decodeAccess } from '@/protocol';
+import { RobotRegistry, type LayoutPreset, type RobotPackage } from '@/robot-kit';
+import { mouse } from '@/robot-kit/fixtures/packages';
+import { activeWorkspace, leafIds } from '@/tiling';
+
+import { App } from '../app';
+import { createDemoRobot } from '../fake/demo-robot';
+import type { FakeRobot, FakeRobotOptions, FakeVariable } from '../fake/fake-robot';
+import { createShellStore, type ShellStore } from '../state/shell-store';
+import '../styles.css';
+import { LayoutBook, STORAGE_PREFIX } from './layout-book';
+import { MemoryStorage } from './memory-storage';
+
+const STREAM = decodeAccess(0x01);
+const NAMES = Array.from({ length: 12 }, (_, index) => `sensor/s${index}`);
+
+const PRESETS: LayoutPreset[] = [
+  { name: 'Overview', root: { window: { kind: 'log' } } },
+  {
+    name: 'Speeds',
+    root: { window: { kind: 'plot', title: 'Speeds', variables: ['sensor/s0', 'sensor/s1'] } },
+  },
+];
+
+function variables(...names: string[]): FakeVariable[] {
+  return names.map((name) => ({ name, type: TypeCode.F32, access: STREAM }));
+}
+
+interface Mounted {
+  readonly store: ShellStore;
+  readonly robot: FakeRobot;
+  readonly storage: MemoryStorage;
+  readonly screen: Awaited<ReturnType<typeof render>>;
+}
+
+interface Options {
+  readonly storage?: MemoryStorage;
+  readonly robot?: Partial<FakeRobotOptions>;
+  readonly packages?: readonly RobotPackage<ReactNode>[];
+}
+
+const robots: FakeRobot[] = [];
+
+afterEach(() => {
+  robots.splice(0).forEach((robot) => robot.disconnect());
+});
+
+async function mount(options: Options = {}): Promise<Mounted> {
+  const storage = options.storage ?? new MemoryStorage();
+  const robot = createDemoRobot({
+    connectMs: 5,
+    handshakeMs: 10,
+    configureMs: 5,
+    tickMs: 20,
+    name: 'rover',
+    variables: variables(...NAMES),
+    ...options.robot,
+  });
+  robots.push(robot);
+  const store = createShellStore({ theme: 'dark' });
+  const screen = await render(
+    <App
+      ports={robot.ports}
+      robots={new RobotRegistry(options.packages ?? [])}
+      store={store}
+      layouts={storage}
+      synthetic
+    />
+  );
+  return { store, robot, storage, screen };
+}
+
+async function connect({ robot }: Mounted): Promise<void> {
+  robot.connect({ transport: 'websocket', url: 'ws://robot' });
+  await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
+}
+
+function workspaceNames({ store }: Pick<Mounted, 'store'>): string[] {
+  return store.getState().desktop.workspaces.map((workspace) => workspace.name);
+}
+
+async function saved({ storage }: Mounted, key: string, count: number): Promise<void> {
+  await expect
+    .poll(() => new LayoutBook(storage).load(key, [])?.desktop?.workspaces.length)
+    .toBe(count);
+}
+
+async function launch(screen: Mounted['screen'], command: string): Promise<void> {
+  await userEvent.keyboard('{Control>}k{/Control}');
+  const input = screen.getByPlaceholder('Open a window or run an action…');
+  await expect.element(input).toHaveFocus();
+  await input.fill(command);
+  await userEvent.keyboard('{Enter}');
+  await expect.element(screen.getByRole('dialog', { name: 'Launcher' })).not.toBeInTheDocument();
+}
+
+describe('the layout of a robot', () => {
+  test('starts as an automatic layout from the schema of a robot without a package', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    expect(workspaceNames(mounted)).toEqual(['Overview', 'Sensor']);
+    await expect
+      .element(mounted.screen.getByRole('region', { name: 'Workspace Overview' }))
+      .toBeVisible();
+    await expect.element(mounted.screen.getByRole('tab', { name: 'Sensor' })).toBeVisible();
+  });
+
+  test('is restored when the robot connects again in a new visit', async () => {
+    const first = await mount();
+    await connect(first);
+    await first.screen.getByRole('button', { name: 'Add a workspace' }).click();
+    expect(workspaceNames(first)).toEqual(['Overview', 'Sensor', 'Workspace 3']);
+    await saved(first, 'name:rover', 3);
+    await first.screen.unmount();
+
+    const second = await mount({ storage: first.storage });
+    await connect(second);
+    expect(workspaceNames(second)).toEqual(['Overview', 'Sensor', 'Workspace 3']);
+    expect(second.store.getState().desktop.active).toBe(2);
+  });
+
+  test('stays on screen when the robot disconnects, and after it connects again', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    await mounted.screen.getByRole('button', { name: 'Add a workspace' }).click();
+    mounted.robot.disconnect();
+    await expect.poll(() => mounted.robot.ports.connection.status().kind).toBe('disconnected');
+    expect(workspaceNames(mounted)).toEqual(['Overview', 'Sensor', 'Workspace 3']);
+
+    await mounted.screen.getByRole('button', { name: 'Add a workspace' }).click();
+    await connect(mounted);
+    expect(workspaceNames(mounted)).toEqual(['Overview', 'Sensor', 'Workspace 3', 'Workspace 4']);
+  });
+
+  test('is kept by a schema that gains a variable, and shows the new variable in the drawer', async () => {
+    const first = await mount({ robot: { name: null } });
+    await connect(first);
+    first.store.getState().run({ type: 'renameWorkspace', index: 1, name: 'Mine' });
+    await saved(first, first.storage.key(0)?.slice(STORAGE_PREFIX.length) ?? '', 2);
+    await first.screen.unmount();
+
+    const second = await mount({
+      storage: first.storage,
+      robot: { name: null, variables: variables(...NAMES, 'sensor/extra') },
+    });
+    await connect(second);
+    expect(workspaceNames(second)).toEqual(['Overview', 'Mine']);
+    expect(first.storage.length).toBe(1);
+  });
+
+  test('is another for another robot', async () => {
+    const first = await mount();
+    await connect(first);
+    await first.screen.getByRole('button', { name: 'Add a workspace' }).click();
+    await saved(first, 'name:rover', 3);
+    await first.screen.unmount();
+
+    const other = await mount({
+      storage: first.storage,
+      robot: { name: 'crawler', variables: variables('leg/a', 'leg/b') },
+    });
+    await connect(other);
+    expect(workspaceNames(other)).toEqual(['Overview', 'Leg']);
+    await other.screen.unmount();
+
+    const again = await mount({ storage: first.storage });
+    await connect(again);
+    expect(workspaceNames(again)).toEqual(['Overview', 'Sensor', 'Workspace 3']);
+  });
+
+  test('starts as the presets of its package and is kept from then on', async () => {
+    const pkg = mouse({ id: 'rover', displayName: 'Rover', presets: PRESETS });
+    const first = await mount({ packages: [pkg] });
+    await connect(first);
+    expect(workspaceNames(first)).toEqual(['Overview', 'Speeds']);
+    expect(leafIds(activeWorkspace(first.store.getState().desktop).root)).toHaveLength(1);
+    first.store.getState().run({ type: 'renameWorkspace', index: 1, name: 'Mine' });
+    await saved(first, 'package:rover', 2);
+    await first.screen.unmount();
+
+    const second = await mount({ storage: first.storage, packages: [pkg] });
+    await connect(second);
+    expect(workspaceNames(second)).toEqual(['Overview', 'Mine']);
+  });
+
+  test('is the automatic layout once the saved one is corrupt', async () => {
+    const storage = new MemoryStorage();
+    storage.setItem(`${STORAGE_PREFIX}name:rover`, '{"version":1,"desktop":{"version":9}');
+    const mounted = await mount({ storage });
+    await connect(mounted);
+    expect(workspaceNames(mounted)).toEqual(['Overview', 'Sensor']);
+  });
+});
+
+describe('layout presets', () => {
+  test('are saved from the layouts menu and applied from it', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    const { screen, store } = mounted;
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+    await screen.getByRole('textbox', { name: 'Layout name' }).fill('Bench');
+    await screen.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.element(screen.getByRole('button', { name: 'Rename Bench' })).toBeVisible();
+
+    await screen.getByRole('button', { name: 'Bench', exact: true }).click();
+    expect(workspaceNames(mounted)).toEqual(['Overview', 'Sensor', 'Bench']);
+    expect(store.getState().desktop.active).toBe(2);
+    await expect
+      .element(screen.getByRole('button', { name: 'Rename Bench' }))
+      .not.toBeInTheDocument();
+    await saved(mounted, 'name:rover', 3);
+    expect(new LayoutBook(mounted.storage).load('name:rover', [])?.presets).toHaveLength(1);
+  });
+
+  test('are renamed and deleted from the layouts menu', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    const { screen, store } = mounted;
+    store.getState().savePreset('Bench');
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+    await screen.getByRole('button', { name: 'Rename Bench' }).click();
+    await screen.getByRole('textbox', { name: 'New name for Bench' }).fill('Track day');
+    await userEvent.keyboard('{Enter}');
+    expect(store.getState().presets.map((preset) => preset.name)).toEqual(['Track day']);
+
+    await screen.getByRole('button', { name: 'Delete Track day' }).click();
+    expect(store.getState().presets).toEqual([]);
+    await expect.element(screen.getByText('None yet.')).toBeVisible();
+  });
+
+  test('of the package are read only, and the workspace they make can be saved as a new one', async () => {
+    const pkg = mouse({ id: 'rover', displayName: 'Rover', presets: PRESETS });
+    const mounted = await mount({ packages: [pkg] });
+    await connect(mounted);
+    const { screen, store } = mounted;
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+    await expect.element(screen.getByText('Rover layouts')).toBeVisible();
+    await expect
+      .element(screen.getByRole('button', { name: 'Rename Speeds' }))
+      .not.toBeInTheDocument();
+
+    await screen.getByRole('button', { name: 'Speeds', exact: true }).click();
+    expect(workspaceNames(mounted)).toEqual(['Overview', 'Speeds', 'Speeds 2']);
+
+    await screen.getByRole('button', { name: 'Layouts' }).click();
+    await screen.getByRole('button', { name: 'Save', exact: true }).click();
+    expect(store.getState().presets.map((preset) => preset.name)).toEqual(['Speeds 2']);
+  });
+
+  test('have commands in the launcher', async () => {
+    const mounted = await mount();
+    await connect(mounted);
+    const { screen, store } = mounted;
+    store.getState().savePreset('Bench');
+
+    await launch(screen, 'apply layout Bench');
+    await expect.poll(() => workspaceNames(mounted)).toEqual(['Overview', 'Sensor', 'Bench']);
+
+    await launch(screen, 'rename layout Bench');
+    await expect.element(screen.getByRole('textbox', { name: 'New name for Bench' })).toBeVisible();
+    await userEvent.keyboard('{Escape}');
+
+    await launch(screen, 'delete layout Bench');
+    await expect.poll(() => store.getState().presets).toEqual([]);
+
+    await launch(screen, 'save workspace as a layout');
+    await expect.element(screen.getByRole('textbox', { name: 'Layout name' })).toHaveFocus();
+  });
+});

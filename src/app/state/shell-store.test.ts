@@ -297,3 +297,73 @@ describe('stop notices', () => {
     expect(shell.getState().stopNotice).toBeNull();
   });
 });
+
+describe('layout presets', () => {
+  const TRACKING = {
+    name: 'Wiring',
+    root: { window: { kind: 'plot', title: 'Speed', variables: ['pose/v'] } },
+  };
+
+  test('saves the active workspace as a preset, replacing one of the same name', () => {
+    const shell = store();
+    expect(shell.getState().savePreset('  Mine ')).toBe(true);
+    shell.getState().run({ type: 'switchWorkspace', index: 1 });
+    expect(shell.getState().savePreset('Mine')).toBe(true);
+    const { presets } = shell.getState();
+    expect(presets.map((preset) => preset.name)).toEqual(['Mine']);
+    expect(presets[0].root).toMatchObject({ split: 'column' });
+    expect(shell.getState().savePreset('   ')).toBe(false);
+  });
+
+  test('applies a preset as a new workspace with windows of their own, and shows it', () => {
+    const shell = store();
+    const before = shell.getState().desktop.windows.size;
+    shell.getState().applyPreset(TRACKING);
+    shell.getState().applyPreset(TRACKING);
+    const { desktop } = shell.getState();
+    expect(desktop.workspaces.map((workspace) => workspace.name).slice(-2)).toEqual([
+      'Wiring',
+      'Wiring 2',
+    ]);
+    expect(desktop.active).toBe(desktop.workspaces.length - 1);
+    expect(desktop.windows.size).toBe(before + 2);
+    expect(leafIds(activeWorkspace(desktop).root)).toHaveLength(1);
+  });
+
+  test('applies a preset saved from a workspace as the same tiles', () => {
+    const shell = store();
+    shell.getState().savePreset('Copy');
+    shell.getState().applyPreset(shell.getState().presets[0]);
+    const { desktop } = shell.getState();
+    const [first, last] = [desktop.workspaces[0], activeWorkspace(desktop)];
+    expect(leafIds(last.root)).toHaveLength(leafIds(first.root).length);
+  });
+
+  test('renames a preset unless the name is blank or taken', () => {
+    const shell = store();
+    shell.getState().savePreset('One');
+    shell.getState().savePreset('Two');
+    expect(shell.getState().renamePreset('One', 'Two')).toBe(false);
+    expect(shell.getState().renamePreset('One', ' ')).toBe(false);
+    expect(shell.getState().renamePreset('Missing', 'X')).toBe(false);
+    expect(shell.getState().renamePreset('One', 'Uno')).toBe(true);
+    expect(shell.getState().renamePreset('Uno', 'Uno')).toBe(true);
+    expect(shell.getState().presets.map((preset) => preset.name)).toEqual(['Uno', 'Two']);
+  });
+
+  test('deletes a preset', () => {
+    const shell = store();
+    shell.getState().savePreset('One');
+    shell.getState().deletePreset('One');
+    shell.getState().deletePreset('One');
+    expect(shell.getState().presets).toEqual([]);
+  });
+
+  test('opens the layouts menu for an intent, and forgets it on closing', () => {
+    const shell = store();
+    shell.getState().setLayoutsOpen(true, { kind: 'rename', name: 'One' });
+    expect(shell.getState().layoutsIntent).toEqual({ kind: 'rename', name: 'One' });
+    shell.getState().setLayoutsOpen(false);
+    expect(shell.getState().layoutsIntent).toBeNull();
+  });
+});

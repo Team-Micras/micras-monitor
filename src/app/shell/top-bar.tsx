@@ -1,5 +1,6 @@
 import { useConnectionStatus, useRobotPackage } from '../monitor-context';
 import { ConnectionPopover } from './connection-popover';
+import { LayoutsMenu } from './layouts-menu';
 import { SessionClock } from './session-clock';
 import { StopButton } from './stop-button';
 import { WorkspaceTabs } from './workspace-tabs';
@@ -21,6 +22,7 @@ export function TopBar({ onStop }: { readonly onStop: () => void }) {
       </div>
       <WorkspaceTabs />
       <div className="flex items-center justify-end gap-4">
+        <LayoutsMenu />
         <SessionClock />
         <StopButton onStop={onStop} />
       </div>

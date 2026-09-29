@@ -1,5 +1,5 @@
 /**
- * The desktop the shell opens with until layouts are saved per robot (slice 6): the four
+ * The desktop the shell shows before any robot has linked and when no layouts are kept: the four
  * workspaces of the approved design, with windows of each kind.
  *
  * @module

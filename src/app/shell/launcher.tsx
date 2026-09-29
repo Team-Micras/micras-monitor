@@ -1,5 +1,9 @@
 import {
   LayoutGridIcon,
+  LayoutTemplateIcon,
+  PencilIcon,
+  Trash2Icon,
+  SaveIcon,
   ListTreeIcon,
   MaximizeIcon,
   MoonIcon,
@@ -25,6 +29,7 @@ import {
 } from '../components/ui/command';
 import { formatChord } from '../keymap/chords';
 import { workspaceAction, type KeyAction } from '../keymap/keymap';
+import { useRobotPackage } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 import { WINDOW_KINDS } from '../windows/registry';
 
@@ -42,6 +47,8 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   const workspaces = useShell((state) => state.desktop.workspaces);
   const hasFocus = useShell((state) => focusedWindow(activeWorkspace(state.desktop)) !== null);
   const bindings = useShell((state) => state.bindings);
+  const presets = useShell((state) => state.presets);
+  const packagePresets = useRobotPackage()?.package.presets ?? [];
 
   const close = () => store.getState().setOverlay(null);
   const run = (action: () => void) => () => {
@@ -132,6 +139,53 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
             <PlusIcon />
             New workspace
           </CommandItem>
+        </CommandGroup>
+        <CommandGroup heading="Layouts">
+          <CommandItem
+            value="save workspace as a layout"
+            onSelect={run(() => store.getState().setLayoutsOpen(true, { kind: 'save' }))}
+          >
+            <SaveIcon />
+            Save workspace as a layout…
+          </CommandItem>
+          {packagePresets.map((preset) => (
+            <CommandItem
+              key={`package ${preset.name}`}
+              value={`apply layout ${preset.name} robot`}
+              onSelect={run(() => store.getState().applyPreset(preset))}
+            >
+              <LayoutTemplateIcon />
+              Apply layout {preset.name}
+            </CommandItem>
+          ))}
+          {presets.flatMap((preset) => [
+            <CommandItem
+              key={`apply ${preset.name}`}
+              value={`apply layout ${preset.name}`}
+              onSelect={run(() => store.getState().applyPreset(preset))}
+            >
+              <LayoutTemplateIcon />
+              Apply layout {preset.name}
+            </CommandItem>,
+            <CommandItem
+              key={`rename ${preset.name}`}
+              value={`rename layout ${preset.name}`}
+              onSelect={run(() =>
+                store.getState().setLayoutsOpen(true, { kind: 'rename', name: preset.name })
+              )}
+            >
+              <PencilIcon />
+              Rename layout {preset.name}…
+            </CommandItem>,
+            <CommandItem
+              key={`delete ${preset.name}`}
+              value={`delete layout ${preset.name}`}
+              onSelect={run(() => store.getState().deletePreset(preset.name))}
+            >
+              <Trash2Icon />
+              Delete layout {preset.name}
+            </CommandItem>,
+          ])}
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="App">

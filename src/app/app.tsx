@@ -4,6 +4,8 @@ import type { RobotRegistry } from '@/robot-kit';
 import { emergencyCommand } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
+import type { LayoutStorage } from './layouts/layout-book';
+import { useLayouts } from './layouts/use-layouts';
 import { TooltipProvider } from './components/ui/tooltip';
 import type { KeyAction } from './keymap/keymap';
 import { tilingCommandFor } from './keymap/tiling-commands';
@@ -39,10 +41,15 @@ export interface AppProps {
   readonly synthetic?: boolean;
   /** The shell's state, for tests; a new store with the defaults otherwise. */
   readonly store?: ShellStore;
+  /**
+   * Where the layouts are kept per robot, such as `localStorage`. Without it the desktop is never
+   * swapped for a robot's layout nor saved.
+   */
+  readonly layouts?: LayoutStorage;
 }
 
 /** The monitor: top bar, tiling of workspaces, status bar, drawer and launcher. */
-export function App({ ports, robots, synthetic = false, store: given }: AppProps) {
+export function App({ ports, robots, synthetic = false, store: given, layouts }: AppProps) {
   const [store] = useState(
     () => given ?? createShellStore({ theme: initialTheme(), keyOverrides: initialKeyOverrides() })
   );
@@ -52,7 +59,7 @@ export function App({ ports, robots, synthetic = false, store: given }: AppProps
     <MonitorContext value={{ ports, robots, selection, synthetic }}>
       <ShellStoreContext value={store}>
         <TooltipProvider>
-          <Shell />
+          <Shell layouts={layouts ?? null} />
         </TooltipProvider>
       </ShellStoreContext>
     </MonitorContext>
@@ -68,7 +75,7 @@ function focusWindowElement(store: ShellStore): void {
   }
 }
 
-function Shell() {
+function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
   const store = useShellStore();
   const { ports, selection } = useMonitor();
   const theme = useShell((state) => state.theme);
@@ -152,6 +159,7 @@ function Shell() {
 
   useKeymap(bindings, onAction, onType);
   useStreamDemand();
+  useLayouts(layouts);
 
   return (
     <StopActionContext value={() => void stop()}>
