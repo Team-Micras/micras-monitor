@@ -80,7 +80,7 @@ export interface StoredEpoch {
   /** Its gaps, in the order they were written; a later one with the same start replaces one before. */
   readonly gaps: readonly RecordedGap[];
 
-  /** Its blocks, in any order; decoded one at a time as they are taken. */
+  /** Its blocks, in index order; decoded one at a time as they are taken. */
   readonly blocks: Iterable<PersistedBlock>;
 }
 

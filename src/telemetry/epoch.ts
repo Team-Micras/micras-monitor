@@ -368,11 +368,11 @@ export class Epoch {
   }
 
   /**
-   * Take back a sealed block of a recording, in its place among the blocks by index, whatever
-   * order the recording gives them in.
+   * Take back a sealed block of a recording, after the ones taken back before it: the reader
+   * gives an epoch's blocks in index order, whatever order the file has them in.
    *
    * @returns The block, or undefined if the memory cap left no room for it.
-   * @throws If the block's columns are not the epoch's, or it is already there.
+   * @throws If the block's columns are not the epoch's, or its index is not past the last one.
    */
   restoreBlock(persisted: PersistedBlock): Block | undefined {
     const length = persisted.time.length;
@@ -389,8 +389,12 @@ export class Epoch {
       throw new Error(`Block ${persisted.ref.index} does not fit the columns of epoch ${this.id}`);
     }
 
-    if (this.blocks.some((block) => block.ref.index === persisted.ref.index)) {
-      throw new Error(`Block ${persisted.ref.index} of epoch ${this.id} was restored already`);
+    const last = this.blocks.at(-1);
+
+    if (last !== undefined && last.ref.index >= persisted.ref.index) {
+      throw new Error(
+        `Block ${persisted.ref.index} of epoch ${this.id} comes after block ${last.ref.index}`
+      );
     }
 
     const block = this.host.allocate({
@@ -414,8 +418,7 @@ export class Epoch {
     }
 
     this.host.seal(block);
-    const after = this.blocks.findIndex((other) => other.ref.index > persisted.ref.index);
-    this.blocks.splice(after < 0 ? this.blocks.length : after, 0, block);
+    this.blocks.push(block);
     this.storedCount = Math.max(this.storedCount, persisted.startSample + length);
     this.nextBlockIndex = Math.max(this.nextBlockIndex, persisted.ref.index + 1);
     return block;
