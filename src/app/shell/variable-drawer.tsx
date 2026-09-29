@@ -68,9 +68,6 @@ function groupVariables(variables: readonly RobotVariable[]): readonly Group[] {
   return order;
 }
 
-/** Finds the drawer's search field, which the shell sends typed characters to. */
-export const DRAWER_SEARCH_SELECTOR = '[data-drawer-search]';
-
 /**
  * The variables drawer (`/`): the schema's variables grouped by prefix, searchable, with their
  * latest values. A row dragged onto a window joins it, onto a window's edge opens a plot there;

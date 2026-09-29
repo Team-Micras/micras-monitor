@@ -10,15 +10,9 @@ import { createElement, useState } from 'react';
 import { emergencyCommand, roleVariable, type CommandSpec } from '@/robot-kit';
 
 import { Button } from '../../components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../../components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { LazyPart } from '../../lib/lazy-part';
+import { useEver } from '../../lib/use-ever';
 import { cn } from '../../lib/utils';
 import {
   useConnectionStatus,
@@ -31,6 +25,7 @@ import { useStopAction } from '../../shell/stop-action';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
 import { commandIcon } from './command-icons';
+import { LazyCommandConfirm } from './lazy-command-confirm';
 import {
   commandAvailability,
   outcomeMessage,
@@ -58,6 +53,7 @@ export function CommandsWindow(_props: WindowViewProps) {
   const [answers, setAnswers] = useState(0);
   const [confirming, setConfirming] = useState<CommandSpec | null>(null);
   const [asking, setAsking] = useState(false);
+  const askedOnce = useEver(asking);
   const stop = useStopAction();
 
   const linked = status.kind === 'linked';
@@ -136,31 +132,16 @@ export function CommandsWindow(_props: WindowViewProps) {
           {emergency.label}
         </button>
       )}
-      <Dialog open={asking} onOpenChange={setAsking}>
-        <DialogContent showCloseButton={false} className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{confirming?.label}</DialogTitle>
-            <DialogDescription>{confirming?.confirm}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setAsking(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (confirming !== null) {
-                  void send(confirming);
-                }
-
-                setAsking(false);
-              }}
-            >
-              {confirming?.label}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {askedOnce ? (
+        <LazyPart fallback={null} resetKey={asking}>
+          <LazyCommandConfirm
+            open={asking}
+            command={confirming}
+            onOpenChange={setAsking}
+            onConfirm={(command) => void send(command)}
+          />
+        </LazyPart>
+      ) : null}
     </div>
   );
 }

@@ -6,23 +6,25 @@ import type { RobotRegistry } from '@/robot-kit';
 import { emergencyCommand } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
-import { TooltipProvider } from './components/ui/tooltip';
 import type { KeyAction } from './keymap/keymap';
 import { tilingCommandFor } from './keymap/tiling-commands';
 import { useKeymap } from './keymap/use-keymap';
 import type { LayoutStorage } from './layouts/layout-book';
 import { useLayouts } from './layouts/use-layouts';
+import { TooltipProvider } from './components/ui/tooltip';
+import { LazyPart } from './lib/lazy-part';
+import { useEver } from './lib/use-ever';
 import { nothingToStop, stopAnswered, stopSent } from './lib/stop-outcome';
 import { MonitorContext, useMonitor } from './monitor-context';
 import { PackageSelector } from './package-selection';
 import type { MonitorPorts } from './ports';
 import { DeletedNotice } from './shell/deleted-notice';
-import { Launcher } from './shell/launcher';
+import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
+import { LazyLauncher, LazyVariableDrawer } from './shell/lazy-shell';
 import { StatusBar } from './shell/status-bar';
 import { StopActionContext } from './shell/stop-action';
 import { TopBar } from './shell/top-bar';
 import { UpdateNotice } from './shell/update-notice';
-import { DRAWER_SEARCH_SELECTOR, VariableDrawer } from './shell/variable-drawer';
 import { useStreamDemand } from './stream-demand';
 import {
   createShellStore,
@@ -86,6 +88,8 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
   const bindings = useShell((state) => state.bindings);
   const keyOverrides = useShell((state) => state.keyOverrides);
   const drawerOpen = useShell((state) => state.overlay === 'drawer');
+  const launcherOpen = useShell((state) => state.overlay === 'launcher');
+  const launcherWanted = useEver(launcherOpen);
   const presses = useRef(0);
 
   useEffect(() => applyTheme(theme), [theme]);
@@ -172,10 +176,18 @@ function Shell({ layouts }: { readonly layouts: LayoutStorage | null }) {
         <TopBar onStop={() => void stop()} />
         <main className="relative min-h-0 flex-1">
           <TilingView />
-          {drawerOpen ? <VariableDrawer /> : null}
+          {drawerOpen ? (
+            <LazyPart fallback={null} resetKey={drawerOpen}>
+              <LazyVariableDrawer />
+            </LazyPart>
+          ) : null}
         </main>
         <StatusBar />
-        <Launcher onAction={onAction} />
+        {launcherWanted ? (
+          <LazyPart fallback={null} resetKey={launcherOpen}>
+            <LazyLauncher onAction={onAction} />
+          </LazyPart>
+        ) : null}
         <DeletedNotice />
         <UpdateNotice />
         <DragGhost />

@@ -188,6 +188,7 @@ describe('connection', () => {
   test('the launcher opens the connection popover', async () => {
     const { screen } = await setup();
     await userEvent.keyboard('{Control>}k{/Control}');
+    await expect.element(screen.getByRole('dialog', { name: 'Launcher' })).toBeVisible();
     await userEvent.keyboard('Connection{Enter}');
     await expect.element(screen.getByRole('dialog', { name: 'Launcher' })).not.toBeInTheDocument();
     await expect
