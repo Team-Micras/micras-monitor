@@ -34,6 +34,8 @@ export interface FakeVariable {
   readonly typeTag?: string | null;
   /** Its value at a time in seconds since the link came up; a gentle wave when omitted. */
   readonly signal?: (seconds: number) => number;
+  /** The bytes of a blob at a time in seconds since the link came up; eight bytes of its id when omitted. */
+  readonly bytes?: (seconds: number) => Uint8Array;
 }
 
 /** A line the fake robot logs by itself. */
@@ -498,7 +500,7 @@ export class FakeRobot {
 
   #valueOf(variable: FakeVariable, id: number, seconds: number): TelemetryValue {
     if (variable.type === TypeCode.BLOB) {
-      return new Uint8Array(8).fill(id);
+      return variable.bytes?.(seconds) ?? new Uint8Array(8).fill(id);
     }
 
     const value =

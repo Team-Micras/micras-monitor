@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { mouse } from '@/robot-kit/fixtures/packages';
 
-import { BATTERY_RATE_HZ, READOUT_RATE_HZ, REVISION_RATE_HZ } from './rates';
+import { BATTERY_RATE_HZ, POSE_RATE_HZ, READOUT_RATE_HZ, REVISION_RATE_HZ } from './rates';
 import { windowDemand } from './registry';
 import type { ShellWindow } from './types';
 
@@ -30,6 +30,18 @@ describe('windowDemand', () => {
       { variable: 'maze/revision', rateHz: REVISION_RATE_HZ },
     ]);
     expect(windowDemand(win('type-view', ['grid']), PACKAGE)).toEqual([]);
+  });
+
+  test('asks the view of the map for the pose the package names', () => {
+    const posed = mouse({
+      roles: { ...PACKAGE.roles, 'pose.x': 'x', 'pose.y': 'y', 'pose.heading': 'theta' },
+    });
+    expect(windowDemand(win('type-view', ['maze']), posed)).toEqual([
+      { variable: 'maze/revision', rateHz: REVISION_RATE_HZ },
+      { variable: 'x', rateHz: POSE_RATE_HZ },
+      { variable: 'y', rateHz: POSE_RATE_HZ },
+      { variable: 'theta', rateHz: POSE_RATE_HZ },
+    ]);
   });
 
   test('asks for the variables of the other kinds, and for none of the views without any', () => {

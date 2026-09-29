@@ -21,6 +21,11 @@ export interface SchemaVariable {
 /** What a view of a serializable value receives. */
 export interface TypeViewProps<T> {
   readonly value: T;
+  /**
+   * The latest values of the robot's numeric roles the app follows for the view, such as the pose
+   * over a map; a role without a value is absent.
+   */
+  readonly roles?: Readonly<Partial<Record<Role, number>>>;
 }
 
 /**

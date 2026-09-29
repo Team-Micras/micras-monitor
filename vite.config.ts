@@ -15,7 +15,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
-          include: ['src/**/*.test.ts', 'tools/**/*.test.ts'],
+          include: ['src/**/*.test.ts', 'robots/**/*.test.ts', 'tools/**/*.test.ts'],
           environment: 'node',
         },
       },
@@ -23,7 +23,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'browser',
-          include: ['src/app/**/*.test.tsx'],
+          include: ['src/app/**/*.test.tsx', 'src/*.test.tsx', 'robots/**/*.test.tsx'],
           globalSetup: ['tools/browser-setup.ts'],
           browser: {
             enabled: true,

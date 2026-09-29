@@ -7,6 +7,7 @@
 
 import { TypeCode, decodeAccess } from '@/protocol';
 
+import { demoMazePosition, demoMazeRecord, demoMazeRevision } from './demo-maze';
 import { FakeRobot, type FakeRobotOptions, type FakeVariable } from './fake-robot';
 
 const STREAM = decodeAccess(0x01);
@@ -67,8 +68,8 @@ const VARIABLES: readonly FakeVariable[] = [
   { name: 'loop/worst_time_us', type: TypeCode.U32, access: STREAM, signal: () => 8 },
   counter('loop/missed_ticks', 0),
   counter('loop/saturated_iterations', 0),
-  f32('pose/x', (t) => 0.9 + 0.09 * Math.sin(t * 0.2)),
-  f32('pose/y', (t) => 1.43 + 0.05 * Math.cos(t * 0.2)),
+  f32('pose/x', (t) => demoMazePosition(t).x),
+  f32('pose/y', (t) => demoMazePosition(t).y),
   f32('pose/orientation', (t) => 1.571 + 0.02 * Math.sin(t * 1.1)),
   f32('pose/linear_speed', (t) => step(t) + 0.008 * Math.sin(t * 11)),
   f32('pose/angular_speed', (t) => 0.012 * Math.sin(t * 2.1)),
@@ -110,12 +111,18 @@ const VARIABLES: readonly FakeVariable[] = [
   quiet('gyroscope/scale', TypeCode.F32, 1.003),
   { name: 'objective', type: TypeCode.U8, access: STREAM_WRITE_IDLE, signal: () => 0 },
   { name: 'run_profile', type: TypeCode.U8, access: STREAM_WRITE, signal: () => 5 },
-  { name: 'maze', type: TypeCode.BLOB, access: PERSIST, typeTag: 'maze-grid' },
+  {
+    name: 'maze',
+    type: TypeCode.BLOB,
+    access: PERSIST,
+    typeTag: 'maze-grid',
+    bytes: demoMazeRecord,
+  },
   counter('link/dropped_samples', 0.8, 315),
   counter('link/dropped_logs', 0),
   { name: 'link/credit', type: TypeCode.U32, access: STREAM, signal: (t) => 86 + 40 * Math.sin(t) },
   counter('link/discarded_frames', 0),
-  counter('maze/revision', 0.3, 12),
+  { name: 'maze/revision', type: TypeCode.U32, access: STREAM, signal: demoMazeRevision },
 ];
 
 /**

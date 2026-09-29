@@ -33,6 +33,7 @@ import {
   BATTERY_RATE_HZ,
   EDITOR_RATE_HZ,
   PLOT_RATE_HZ,
+  POSE_RATE_HZ,
   READOUT_RATE_HZ,
   REVISION_RATE_HZ,
 } from './rates';
@@ -71,10 +72,13 @@ function roles(pkg: RobotPackage | null, wanted: readonly Role[], rateHz: number
   });
 }
 
-function revisionDemand(window: ShellWindow, pkg: RobotPackage | null): readonly StreamDemand[] {
+function mapDemand(window: ShellWindow, pkg: RobotPackage | null): readonly StreamDemand[] {
   const [blob] = window.payload.variables;
   return blob !== undefined && blob === roleVariable(pkg, 'map')
-    ? roles(pkg, ['map.revision'], REVISION_RATE_HZ)
+    ? [
+        ...roles(pkg, ['map.revision'], REVISION_RATE_HZ),
+        ...roles(pkg, ['pose.x', 'pose.y', 'pose.heading'], POSE_RATE_HZ),
+      ]
     : NOTHING;
 }
 
@@ -117,7 +121,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     icon: MapIcon,
     component: TypeViewWindow,
     acceptsVariables: false,
-    demand: revisionDemand,
+    demand: mapDemand,
   },
   {
     id: 'robot',

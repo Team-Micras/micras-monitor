@@ -1,7 +1,7 @@
 import { RefreshCwIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { roleVariable, type SerializableType } from '@/robot-kit';
+import { roleVariable, type Role, type SerializableType } from '@/robot-kit';
 
 import { Button } from '../../components/ui/button';
 import { useLinkUp, useLiveValue, useMonitor, useRobotPackage } from '../../monitor-context';
@@ -27,10 +27,26 @@ function revisionOf(pkg: ReactRobotPackage | null, name: string): string | null 
   return roleVariable(pkg, 'map') === name ? roleVariable(pkg, 'map.revision') : null;
 }
 
+function useRoleValue(
+  pkg: ReactRobotPackage | null,
+  role: Role,
+  follow: boolean
+): number | undefined {
+  const value = useLiveValue(follow ? roleVariable(pkg, role) : null)?.value;
+  return typeof value === 'number' ? value : undefined;
+}
+
+function definedRoles(
+  entries: readonly (readonly [Role, number | undefined])[]
+): Partial<Record<Role, number>> {
+  return Object.fromEntries(entries.filter(([, value]) => value !== undefined));
+}
+
 /**
  * A blob through the view of its serializable type, or as a hexadecimal dump when no package
  * decodes it. The blob is read once the schema has it, and read again when the value of the
- * package's revision of it changes from one it had, one READ at a time.
+ * package's revision of it changes from one it had, one READ at a time. The view of the map also
+ * gets the robot's pose.
  */
 export function TypeViewWindow({ window }: WindowViewProps) {
   const { reads, values } = useMonitor().ports;
@@ -39,6 +55,12 @@ export function TypeViewWindow({ window }: WindowViewProps) {
   const name = entry?.name ?? null;
   const latest = useLiveValue(name)?.value;
   const revision = name === null ? null : revisionOf(pkg, name);
+  const map = revision !== null;
+  const roles = definedRoles([
+    ['pose.x', useRoleValue(pkg, 'pose.x', map)],
+    ['pose.y', useRoleValue(pkg, 'pose.y', map)],
+    ['pose.heading', useRoleValue(pkg, 'pose.heading', map)],
+  ]);
   const linked = useLinkUp();
   const [failure, setFailure] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -135,7 +157,7 @@ export function TypeViewWindow({ window }: WindowViewProps) {
                 : 'Connect to a robot to read it.'}
           </p>
         ) : decoded?.kind === 'value' && serializable !== null ? (
-          <serializable.View key={serializable.tag} value={decoded.value} />
+          <serializable.View key={serializable.tag} value={decoded.value} roles={roles} />
         ) : (
           <>
             {decoded?.kind === 'error' ? (
