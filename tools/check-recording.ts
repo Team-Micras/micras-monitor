@@ -494,8 +494,8 @@ async function main(): Promise<void> {
       );
       check(
         'the second recording is saved whole',
-        second.durationUs >= (Date.now() - secondStarted - 10_000) * 1000,
-        `${clock(second.durationUs)} over ${((Date.now() - secondStarted) / 60_000).toFixed(1)} min of recording`
+        second.samples >= rest.reading.progress.samples,
+        `${second.samples} samples saved, ${rest.reading.progress.samples} written at the last reading, over ${((Date.now() - secondStarted) / 60_000).toFixed(1)} min of recording`
       );
       await recMenu(page, /Sessions/);
       await page
