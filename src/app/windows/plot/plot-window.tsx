@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from 'lucide-react';
+import { ChevronDownIcon, Undo2Icon } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import 'uplot/dist/uPlot.min.css';
 
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
 import { useMonitor } from '../../monitor-context';
+import { useShellStore } from '../../state/shell-store';
 import { useResolvedColors } from '../shared/document-theme';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { HistoryPort } from '../../ports';
@@ -32,10 +33,13 @@ const PLOT_FONT = '11px "Geist Mono Variable", ui-monospace, monospace';
 
 /**
  * A plot of the window's variables over the last seconds, one y axis per unit, drawn by uPlot
- * straight from the history. Paused, it keeps the window it had.
+ * straight from the history. Paused, it keeps the window it had. Dragging it, the wheel and, with
+ * the window focused, the arrow keys, + and − and Home move it through the whole history, which
+ * pauses it; End or Live follow the newest samples again.
  */
 export function PlotWindow({ window, paused, visible }: WindowViewProps) {
   const { history } = useMonitor().ports;
+  const shell = useShellStore();
   const presented = usePresentedVariables(window.payload.variables);
   const [spanS, setSpanS] = useState<number>(DEFAULT_PLOT_SPAN_S);
   const [status, setStatus] = useState<PlotStatus>(NO_STATUS);
@@ -68,7 +72,15 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
       spanUs: spanS * 1e6,
       theme,
       syncKey: PLOT_SYNC_KEY,
+      keys: element.closest<HTMLElement>('[data-window]') ?? element,
       onStatus: setStatus,
+      onDraw: (milliseconds, shown) => {
+        element.dataset.drawMs = milliseconds.toFixed(2);
+        element.dataset.windowStartUs = String(shown.startUs);
+        element.dataset.windowEndUs = String(shown.endUs);
+      },
+      onNavigate: () => shell.getState().setPaused(window.id, true),
+      onResume: () => shell.getState().setPaused(window.id, false),
     });
     plot.setPaused(paused);
     plot.setVisible(visible);
@@ -147,6 +159,18 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
         {rightUnits === '' ? null : (
           <span className="font-mono text-xs text-muted-foreground">{rightUnits} →</span>
         )}
+        {paused ? (
+          <Button
+            variant="outline"
+            size="xs"
+            className="pointer-events-auto"
+            aria-label="Back to live"
+            onClick={() => shell.getState().setPaused(window.id, false)}
+          >
+            <Undo2Icon />
+            Live
+          </Button>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -177,6 +201,7 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
         ref={host}
         data-plot
         data-empty={status.empty}
+        data-paused={paused}
         className="relative min-h-0 flex-1 overflow-hidden pt-7"
       />
       {hint === null ? null : (

@@ -103,6 +103,18 @@ describe('windows', () => {
     shell.getState().togglePause('maze');
     expect(shell.getState().paused.has('maze')).toBe(false);
   });
+
+  test('setPaused sets the pause however often it is asked, changing state only when it differs', () => {
+    const shell = store();
+    shell.getState().setPaused('maze', true);
+    const paused = shell.getState().paused;
+    shell.getState().setPaused('maze', true);
+
+    expect(shell.getState().paused).toBe(paused);
+    expect(paused.has('maze')).toBe(true);
+    shell.getState().setPaused('maze', false);
+    expect(shell.getState().paused.has('maze')).toBe(false);
+  });
 });
 
 describe('viewport, theme and overlays', () => {

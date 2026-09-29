@@ -9,12 +9,13 @@ import type {
   DecimateOptions,
   Decimation,
   Gap,
+  HistoryMark,
   SampleRun,
   SampleValue,
   TimeRange,
 } from '@/telemetry';
 
-export type { DecimateOptions, Decimation, Gap, SampleRun, SampleValue, TimeRange };
+export type { DecimateOptions, Decimation, Gap, HistoryMark, SampleRun, SampleValue, TimeRange };
 
 /** The stored history of the robot's variables, by name. Times are on the session timeline. */
 export interface HistoryPort {
@@ -47,6 +48,15 @@ export interface HistoryPort {
 
   /** The stored samples in `[startUs, endUs)`, as views valid until the next append. */
   samples(variable: string, startUs: number, endUs: number): Iterable<SampleRun>;
+
+  /** Where a variable's history stands, to ask {@link changedSince} later. */
+  historyMark(variable: string): HistoryMark | undefined;
+
+  /**
+   * Whether a window of a variable's history may look different than when the mark was taken,
+   * as when blocks came back from storage, so that a paused plot redraws only then.
+   */
+  changedSince(variable: string, mark: HistoryMark | undefined, window: TimeRange): boolean;
 
   /**
    * Calls `listener` after any of the variables changed, at most once per tick of the store;

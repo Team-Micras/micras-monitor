@@ -139,6 +139,8 @@ export interface ShellState {
   /** Moves or resizes a floating window, in tiling pixels. */
   readonly placeFloating: (id: WindowId, rect: Rect) => void;
   readonly togglePause: (id: WindowId) => void;
+  /** Pauses a window, as scrolling it back in time does, or makes it follow the live end again. */
+  readonly setPaused: (id: WindowId, paused: boolean) => void;
   readonly setTheme: (theme: Theme) => void;
   readonly toggleTheme: () => void;
   /** Opens an overlay, or closes it with null or when it is the one open and `toggle` is set. */
@@ -356,6 +358,22 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         }
 
         set({ paused });
+      },
+
+      setPaused: (id, paused) => {
+        if (get().paused.has(id) === paused) {
+          return;
+        }
+
+        const next = new Set(get().paused);
+
+        if (paused) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+
+        set({ paused: next });
       },
 
       setTheme: (theme) => set({ theme }),
