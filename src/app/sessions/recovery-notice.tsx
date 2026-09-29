@@ -24,7 +24,7 @@ export function RecoveryNotice({ onOpenList }: { readonly onOpenList: () => void
     <output
       aria-label="Recovered recording"
       data-recovered={recovered.map((entry) => entry.session.id).join(' ')}
-      className="fixed bottom-14 left-1/2 z-50 flex max-w-md -translate-x-1/2 items-center gap-3 rounded-xl border bg-popover py-1.5 pr-1.5 pl-3.5 text-sm text-popover-foreground shadow-md"
+      className="pointer-events-auto flex max-w-md items-center gap-3 rounded-xl border bg-popover py-1.5 pr-1.5 pl-3.5 text-sm text-popover-foreground shadow-md"
     >
       <HistoryIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0">

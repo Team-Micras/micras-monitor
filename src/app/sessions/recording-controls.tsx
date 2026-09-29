@@ -18,6 +18,7 @@ import { LazyPart } from '../lib/lazy-part';
 import { useEver } from '../lib/use-ever';
 import { cn } from '../lib/utils';
 import { useMonitor } from '../monitor-context';
+import { MemoryNotice } from './memory-notice';
 import { RecoveryNotice } from './recovery-notice';
 import { downloadSession } from './download';
 import type { SessionManager } from './session-manager';
@@ -61,7 +62,7 @@ function useLiveMemory(manager: SessionManager | null): number {
 function MemoryLine({ manager }: { readonly manager: SessionManager }) {
   const status = useStoreStatus(manager.live);
   const onDisk =
-    status.evictedBlocks > 0 ? ` · ${status.evictedBlocks} blocks read back from disk` : '';
+    status.evictedBlocks > 0 ? ` · ${status.evictedBlocks} blocks only in the file` : '';
   return (
     <p
       data-memory-used={status.usedBytes}
@@ -209,7 +210,10 @@ export function RecordingControls() {
           <LazySessionsDialog open={sessionsOpen} onOpenChange={setSessionsOpen} />
         </LazyPart>
       ) : null}
-      <RecoveryNotice onOpenList={() => setSessionsOpen(true)} />
+      <div className="pointer-events-none fixed bottom-14 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+        <MemoryNotice />
+        <RecoveryNotice onOpenList={() => setSessionsOpen(true)} />
+      </div>
     </>
   );
 }

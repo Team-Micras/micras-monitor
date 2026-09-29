@@ -355,6 +355,31 @@ describe('recovering after the tab died', () => {
   });
 });
 
+test('tells about the memory cap nearing, dropping the oldest history, and pausing it', () => {
+  const scheduler = new ManualScheduler();
+  const store = new TelemetryStore({ scheduler, blockSize: 1024, memoryCapBytes: 200_000 });
+  store.setSchema(VARIABLES);
+  store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: TypeCode.F32 }] });
+  const manager = new SessionManager({
+    store,
+    library: new MemorySessionLibrary(),
+    locks: new MemoryLocks(),
+    scheduler,
+    describe: () => ({ name: null, robot: {}, schema: [] }),
+  });
+  const kinds: string[] = [];
+  manager.subscribe(() => kinds.push(manager.state.memory?.kind ?? 'none'));
+
+  for (let index = 0; index < 40_000; index++) {
+    store.append(1, index & 0xffff, index * SAMPLE_US, [index]);
+  }
+
+  expect(kinds).toContain('warning');
+  expect(manager.state.memory).toMatchObject({ kind: 'dropped', capBytes: 200_000 });
+  manager.dismissMemory();
+  expect(manager.state.memory).toBeNull();
+});
+
 test('names sessions and their files', () => {
   expect(defaultSessionName('micras', Date.UTC(2026, 8, 29, 10, 42))).toMatch(/^micras · 29 Sep/);
   expect(defaultSessionName(null, 0)).toMatch(/^Session · /);

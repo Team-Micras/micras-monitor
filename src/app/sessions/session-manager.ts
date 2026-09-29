@@ -27,6 +27,7 @@ import {
   type RecordingSummary,
   type RecordingVariable,
   type Scheduler,
+  type TelemetryEvent,
 } from '@/telemetry';
 
 import type { RobotVariable } from '../ports';
@@ -91,6 +92,12 @@ export interface OpenedSession {
   readonly loadMs: number;
 }
 
+/** What the memory cap did to the live history, for the user to hear about. */
+export type MemoryNotice =
+  | { readonly kind: 'warning'; readonly usedBytes: number; readonly capBytes: number }
+  | { readonly kind: 'dropped'; readonly untilUs: number; readonly capBytes: number }
+  | { readonly kind: 'stopped'; readonly capBytes: number };
+
 /** A recording cut short that the last start recovered. */
 export interface RecoveredSession {
   readonly session: SessionInfo;
@@ -118,6 +125,8 @@ export interface SessionsState {
   readonly recovered: readonly RecoveredSession[];
   /** The last thing that went wrong, until the next action. */
   readonly error: string | null;
+  /** What the memory cap last did to the live history, until dismissed or it resumes. */
+  readonly memory: MemoryNotice | null;
   readonly storage: StorageEstimate | null;
 }
 
@@ -213,6 +222,10 @@ export function exportFileName(name: string): string {
   return (safe === '' ? 'session' : safe) + RECORDING_EXTENSION;
 }
 
+function pick(event: { readonly usedBytes: number; readonly capBytes: number }) {
+  return { usedBytes: event.usedBytes, capBytes: event.capBytes };
+}
+
 function spanOf(summary: RecordingSummary): number {
   return summary.range ? summary.range.endUs - summary.range.startUs : 0;
 }
@@ -244,8 +257,10 @@ export class SessionManager {
       opening: null,
       recovered: [],
       error: null,
+      memory: null,
       storage: null,
     };
+    options.store.onEvent((event) => this.#onStoreEvent(event));
   }
 
   /** The live store, which REC records. */
@@ -552,6 +567,38 @@ export class SessionManager {
   /** Stop showing the last error. */
   dismissError(): void {
     this.#set({ error: null });
+  }
+
+  /** Stop showing what the memory cap did. */
+  dismissMemory(): void {
+    this.#set({ memory: null });
+  }
+
+  #onStoreEvent(event: TelemetryEvent): void {
+    switch (event.type) {
+      case 'memory-warning':
+        this.#set({ memory: { kind: 'warning', ...pick(event) } });
+        return;
+      case 'history-dropped':
+        if (this.#state.memory?.kind !== 'dropped' || this.#state.memory.untilUs < event.untilUs) {
+          this.#set({
+            memory: { kind: 'dropped', untilUs: event.untilUs, capBytes: event.capBytes },
+          });
+        }
+
+        return;
+      case 'history-stopped':
+        this.#set({ memory: { kind: 'stopped', capBytes: event.capBytes } });
+        return;
+      case 'history-resumed':
+        if (this.#state.memory?.kind === 'stopped') {
+          this.#set({ memory: null });
+        }
+
+        return;
+      default:
+        return;
+    }
   }
 
   async #recover(session: SessionInfo): Promise<RecoveredSession | null> {
