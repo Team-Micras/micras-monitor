@@ -120,15 +120,36 @@ describe('the phone view', () => {
     await expect.element(screen.getByRole('status', { name: 'Stop outcome' })).toBeVisible();
   });
 
-  test('keeps STOP in reach after scrolling to the end of the column', async () => {
+  test('keeps STOP in reach after scrolling the overflowing column to its end', async () => {
     const { screen } = await open({ state: IDLE });
     await expect
       .element(screen.getByRole('button', { name: 'Explore', exact: true }))
       .toBeVisible();
+    const column = document.querySelector('[data-phone] main');
 
-    document.querySelector('[data-phone] main')?.scrollTo({ top: 10_000 });
+    if (!(column instanceof HTMLElement)) {
+      throw new Error('the phone has no column');
+    }
 
-    expect(rect('[data-phone] footer button').bottom).toBeLessThanOrEqual(PHONE.height);
+    await expect.poll(() => column.scrollHeight - column.clientHeight).toBeGreaterThan(200);
+    column.scrollTo({ top: column.scrollHeight });
+    await expect.poll(() => column.scrollTop).toBeGreaterThan(200);
+
+    const stop = document.querySelector('[data-phone] footer button');
+    const box = rect('[data-phone] footer button');
+    expect(box.bottom).toBeLessThanOrEqual(PHONE.height);
+    expect(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)).toBe(stop);
+  });
+
+  test('gives the theme toggle a touch-sized target', async () => {
+    const { screen } = await open({ state: IDLE });
+    await expect
+      .element(screen.getByRole('button', { name: 'Use the light theme' }))
+      .toBeInTheDocument();
+
+    const box = rect('[data-phone] main button[aria-label^="Use the"]');
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
   });
 
   test('sends a command from the phone', async () => {
@@ -183,5 +204,23 @@ describe('the update notice on the phone', () => {
 
     await reload.click();
     expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  test('never covers the STOP outcome', async () => {
+    const { updates } = waitingUpdate();
+    const { screen } = await open({ state: RUN, updates });
+    await screen.getByRole('button', { name: 'Stop', exact: true }).click();
+    await expect.element(screen.getByRole('status', { name: 'Stop outcome' })).toBeVisible();
+
+    const notice = rect('output[aria-label="Update available"]');
+    const outcome = rect('output[aria-label="Stop outcome"] p');
+    const overlap =
+      notice.left < outcome.right &&
+      outcome.left < notice.right &&
+      notice.top < outcome.bottom &&
+      outcome.top < notice.bottom;
+
+    expect(overlap).toBe(false);
+    expect(notice.bottom).toBeLessThan(rect('[data-phone] footer').top);
   });
 });

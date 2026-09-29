@@ -186,6 +186,7 @@ function ThemeToggle() {
     <Button
       variant="ghost"
       size="icon"
+      className="size-12"
       aria-label={theme === 'dark' ? 'Use the light theme' : 'Use the dark theme'}
       onClick={() => store.getState().toggleTheme()}
     >
