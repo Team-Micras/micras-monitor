@@ -95,6 +95,11 @@ export interface FakeRobotOptions {
   readonly logs?: readonly FakeLog[];
   /** The bytes per second the fake planner may spend; 3 KB/s, as a Bluetooth link, by default. */
   readonly budgetBytesPerSecond?: number;
+  /**
+   * The monotonic clock, in milliseconds, the robot times its samples by; `performance.now` by
+   * default, so a step of the wall clock neither stops nor floods them.
+   */
+  readonly now?: () => number;
 }
 
 const OK: CommandOutcome = { status: 'ok', reason: 0 };
@@ -174,7 +179,8 @@ export class FakeRobot {
   #variables: readonly RobotVariable[] = [];
   #timers: ReturnType<typeof setTimeout>[] = [];
   #ticker: ReturnType<typeof setInterval> | null = null;
-  readonly #origin = Date.now();
+  readonly #now: () => number;
+  readonly #origin: number;
   #startedAt = 0;
   #epoch = 0;
   #sequence = 0;
@@ -183,6 +189,8 @@ export class FakeRobot {
 
   constructor(options: FakeRobotOptions) {
     this.#options = options;
+    this.#now = options.now ?? (() => performance.now());
+    this.#origin = this.#now();
     this.store = new TelemetryStore({ scheduler: options.scheduler ?? FRAME_SCHEDULER });
     this.ports = {
       connection: {
@@ -370,7 +378,7 @@ export class FakeRobot {
       this.#unanswered.add(abandon);
       this.#later(this.#options.commandMs ?? 40, () => {
         this.#unanswered.delete(abandon);
-        const seconds = (Date.now() - this.#startedAt) / 1000;
+        const seconds = (this.#now() - this.#startedAt) / 1000;
         const value = this.#valueOf(this.#options.variables[id], id, seconds);
         this.store.setLatestValue(id, value);
         resolve({ status: 'ok', value });
@@ -389,14 +397,14 @@ export class FakeRobot {
   }
 
   #link(target: ConnectionTarget): void {
-    this.#startedAt = Date.now();
+    this.#startedAt = this.#now();
     this.log('info', 'HELLO_ACK received', 'link');
     this.#setStatus({
       kind: 'linked',
       target,
       robot: { name: this.#options.name, schemaHash: this.#options.schemaHash },
       phase: 'schema',
-      since: this.#startedAt,
+      since: Date.now(),
     });
   }
 
@@ -430,7 +438,7 @@ export class FakeRobot {
     });
     this.#setPhase('streaming');
     this.log('info', `group ${GROUP} streaming ${this.#streamed.length} variables`, 'link');
-    this.#nextSampleMs = Date.now() - (this.#samplesPerTick() - 1) * this.#stepMs();
+    this.#nextSampleMs = this.#now() - (this.#samplesPerTick() - 1) * this.#stepMs();
     this.#ticker = setInterval(() => this.#tick(), this.#tickMs());
     this.#tick();
   }
@@ -449,7 +457,7 @@ export class FakeRobot {
     }
 
     const stepMs = this.#stepMs();
-    const nowMs = Date.now();
+    const nowMs = this.#now();
     let atMs = Math.max(this.#nextSampleMs, nowMs - MAX_CATCH_UP_MS);
 
     if (immediately && atMs > nowMs) {
@@ -499,7 +507,7 @@ export class FakeRobot {
     const bytesPerSecond = this.#options.budgetBytesPerSecond ?? 3000;
     const overBudget = used > bytesPerSecond;
     const grantedHz = overBudget ? Math.floor((rateHz * bytesPerSecond) / used) : rateHz;
-    const seconds = (Date.now() - this.#startedAt) / 1000;
+    const seconds = (this.#now() - this.#startedAt) / 1000;
     this.#stats = {
       bytesInPerSecond: Math.min(used, bytesPerSecond),
       creditWindow: CREDIT_WINDOW,
@@ -518,7 +526,7 @@ export class FakeRobot {
   }
 
   #timeUs(): number {
-    return (Date.now() - this.#origin) * 1000;
+    return (this.#now() - this.#origin) * 1000;
   }
 
   #valueOf(variable: FakeVariable, id: number, seconds: number): TelemetryValue {

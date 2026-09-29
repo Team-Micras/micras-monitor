@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { decodeAccess, TypeCode } from '@/protocol';
 import { ManualScheduler } from '@/telemetry';
 
 import { subscribeThrottled } from '../monitor-context';
 import { createDemoRobot } from './demo-robot';
+import { FakeRobot } from './fake-robot';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
 const STOP = 5;
@@ -74,6 +76,54 @@ describe('FakeRobot', () => {
     vi.advanceTimersByTime(5);
     await expect(answer).resolves.toEqual({ status: 'ok', reason: 0 });
     expect(robot.ports.connection.status()).toMatchObject({ phase: 'configuring' });
+  });
+});
+
+describe('FakeRobot sampling', () => {
+  const TICK_MS = 100;
+
+  function sampler(now?: () => number) {
+    const robot = new FakeRobot({
+      name: 'sampler',
+      schemaHash: 1,
+      variables: [{ name: 'x', type: TypeCode.F32, access: decodeAccess(0x01) }],
+      connectMs: 10,
+      handshakeMs: 20,
+      configureMs: 10,
+      tickMs: TICK_MS,
+      scheduler: new ManualScheduler(),
+      now,
+    });
+    robot.connect(URL);
+    vi.advanceTimersByTime(40);
+    expect(robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
+    return { robot, stored: () => robot.store.variable('x')?.storedSamples ?? 0 };
+  }
+
+  test('keeps sampling when the wall clock steps back', () => {
+    const { stored } = sampler();
+    const before = stored();
+    vi.setSystemTime(Date.now() - 60_000);
+    vi.advanceTimersByTime(10 * TICK_MS);
+    expect(stored() - before).toBe(10);
+  });
+
+  test('catches up on the samples due since a late tick', () => {
+    let now = 1000;
+    const { stored } = sampler(() => now);
+    const before = stored();
+    now += 3000;
+    vi.advanceTimersByTime(TICK_MS);
+    expect(stored() - before).toBe(3000 / TICK_MS);
+  });
+
+  test('catches up on at most the last 10 s after a long stall', () => {
+    let now = 1000;
+    const { stored } = sampler(() => now);
+    const before = stored();
+    now += 60_000;
+    vi.advanceTimersByTime(TICK_MS);
+    expect(stored() - before).toBe(10_000 / TICK_MS + 1);
   });
 });
 
