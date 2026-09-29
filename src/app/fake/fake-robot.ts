@@ -14,6 +14,7 @@ import type {
   ConnectionStatus,
   ConnectionTarget,
   LinkPhase,
+  LinkStats,
   MonitorPorts,
   RobotVariable,
   Transport,
@@ -64,6 +65,17 @@ export interface FakeRobotOptions {
 }
 
 const OK: CommandOutcome = { status: 'ok', reason: 0 };
+const NO_STATS: LinkStats = {
+  bytesInPerSecond: 0,
+  creditWindow: 0,
+  creditOutstanding: 0,
+  framesDiscarded: 0,
+  samplesDropped: 0,
+  rttMs: Number.NaN,
+  budget: { bytesPerSecond: 0, used: 0, overBudget: false, planned: [] },
+};
+const NO_ENTRIES: readonly never[] = [];
+const NO_SUBSCRIPTION = () => () => undefined;
 const GROUP = 0;
 
 const FRAME_SCHEDULER: Scheduler = {
@@ -117,7 +129,27 @@ export class FakeRobot {
         subscribe: (listener) => this.#listen(this.#schemaListeners, listener),
       },
       values: this.store,
+      streams: { request: () => undefined },
+      history: this.store,
       commands: { send: (code, argument) => this.send(code, argument) },
+      writes: {
+        write: () =>
+          Promise.resolve({ status: 'failed', message: 'The fake robot takes no writes.' }),
+        pending: () => undefined,
+        subscribe: NO_SUBSCRIPTION,
+      },
+      reads: {
+        read: (name) => {
+          const latest = this.store.latest(name);
+          return Promise.resolve(
+            latest === undefined
+              ? { status: 'failed', message: `No value of ${name}.` }
+              : { status: 'ok', value: latest.value }
+          );
+        },
+      },
+      link: { stats: () => NO_STATS, subscribe: NO_SUBSCRIPTION },
+      log: { entries: () => NO_ENTRIES, subscribe: NO_SUBSCRIPTION },
     };
     this.#entries = options.variables.map((variable, id) => ({
       id,
