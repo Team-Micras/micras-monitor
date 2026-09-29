@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import { TypeCode } from '@/protocol';
 import type { BitmaskType, EnumType } from '@/robot-kit';
 
 import { formatReading, isStale, STALE_AFTER_US, staleAfterUs } from './readings';
@@ -24,6 +25,12 @@ describe('formatReading', () => {
     expect(formatReading(3n, STATE)).toBe('RUN');
     expect(formatReading(0.5, null)).toBe('0.500');
     expect(formatReading(undefined, STATE)).toBe('—');
+  });
+
+  test("reads the flags of a negative number from its two's complement", () => {
+    const high: BitmaskType = { kind: 'bitmask', name: 'High', flags: [{ bit: 7, label: 'TOP' }] };
+    expect(formatReading(-127, high, TypeCode.I8)).toBe('TOP');
+    expect(formatReading(127, high, TypeCode.I8)).toBe('none');
   });
 });
 

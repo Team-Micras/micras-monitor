@@ -5,8 +5,7 @@
  * @module
  */
 
-import { TypeCode } from '@/protocol';
-import { hasBit } from '@/robot-kit';
+import { TYPE_SIZE, TypeCode } from '@/protocol';
 
 import type { TelemetryValue, WriteValue } from '../../ports';
 
@@ -24,14 +23,29 @@ export function integerValue(
   return typeof value === 'boolean' ? Number(value) : undefined;
 }
 
-/** Whether a bit of an integer is set, exactly for bigints too. */
-export function bitSet(value: IntegerValue, bit: number): boolean {
-  return typeof value === 'bigint' ? ((value >> BigInt(bit)) & 1n) === 1n : hasBit(value, bit);
+function stored(value: IntegerValue, type: TypeCode): bigint {
+  return BigInt.asUintN(TYPE_SIZE[type] * 8, BigInt(value));
 }
 
 /**
- * An integer of the given type with one bit set or cleared, of the same kind as the one given;
- * a bigint stays within the range of its type, such as bit 63 of an `i64` making it negative.
+ * Whether a bit of an integer of the given type is set, in the two's complement of the type's
+ * width, exactly for bigints too.
+ */
+export function bitSet(value: IntegerValue, bit: number, type: TypeCode): boolean {
+  return Number.isInteger(Number(value)) && ((stored(value, type) >> BigInt(bit)) & 1n) === 1n;
+}
+
+const SIGNED_TYPES: ReadonlySet<TypeCode> = new Set([
+  TypeCode.I8,
+  TypeCode.I16,
+  TypeCode.I32,
+  TypeCode.I64,
+]);
+
+/**
+ * An integer of the given type with one bit set or cleared, of the same kind as the one given.
+ * The bit is changed in the two's complement of the type's width and the result is converted
+ * back, so it stays within the range of the type: bit 7 of an `i8` makes it negative.
  */
 export function withBit(
   value: IntegerValue,
@@ -39,17 +53,18 @@ export function withBit(
   on: boolean,
   type: TypeCode
 ): IntegerValue {
-  if (typeof value === 'bigint') {
-    const mask = 1n << BigInt(bit);
-    const changed = on ? value | mask : value & ~mask;
-    return type === TypeCode.I64 ? BigInt.asIntN(64, changed) : BigInt.asUintN(64, changed);
-  }
-
-  if (bitSet(value, bit) === on) {
+  if (typeof value === 'number' && !Number.isInteger(value)) {
     return value;
   }
 
-  return on ? value + 2 ** bit : value - 2 ** bit;
+  const width = TYPE_SIZE[type] * 8;
+  const mask = 1n << BigInt(bit);
+  const bits = stored(value, type);
+  const changed = on ? bits | mask : bits & ~mask;
+  const result = SIGNED_TYPES.has(type)
+    ? BigInt.asIntN(width, changed)
+    : BigInt.asUintN(width, changed);
+  return typeof value === 'bigint' ? result : Number(result);
 }
 
 /** Whether two integers are equal, across number and bigint. */

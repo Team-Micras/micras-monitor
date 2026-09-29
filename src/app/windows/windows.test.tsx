@@ -10,7 +10,7 @@ import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/ti
 import { App } from '../app';
 import { createDemoRobot } from '../fake/demo-robot';
 import type { FakeRobot, FakeRobotOptions } from '../fake/fake-robot';
-import type { CommandOutcome, MonitorPorts } from '../ports';
+import type { CommandOutcome, MonitorPorts, ReadOutcome } from '../ports';
 import { createShellStore, type ShellStore } from '../state/shell-store';
 import '../styles.css';
 import type { ShellWindow } from './types';
@@ -78,6 +78,7 @@ interface Options {
   readonly hidden?: TileNode;
   readonly robot?: Partial<FakeRobotOptions>;
   readonly send?: (code: number) => Promise<CommandOutcome>;
+  readonly read?: (name: string) => Promise<ReadOutcome> | undefined;
 }
 
 interface Harness {
@@ -98,7 +99,14 @@ function win(id: string, kind: string, variables: readonly string[] = []): Shell
   return { id, kind, payload: { variables } };
 }
 
-async function open({ windows, root, hidden, robot: overrides, send }: Options): Promise<Harness> {
+async function open({
+  windows,
+  root,
+  hidden,
+  robot: overrides,
+  send,
+  read: customRead,
+}: Options): Promise<Harness> {
   const robot = createDemoRobot({
     connectMs: 5,
     handshakeMs: 10,
@@ -115,7 +123,7 @@ async function open({ windows, root, hidden, robot: overrides, send }: Options):
     reads: {
       read: (name) => {
         reads.push(name);
-        return robot.ports.reads.read(name);
+        return customRead?.(name) ?? robot.ports.reads.read(name);
       },
     },
     commands: {
@@ -329,6 +337,30 @@ describe('Editor', () => {
     await expect.poll(() => readsOf('aux_flag')).toBe(2);
   });
 
+  test('says when a read failed, and reads again on request', async () => {
+    let failing = true;
+    const { screen, readsOf } = await open({
+      windows: [win('edit', 'editor', ['aux_flag'])],
+      root: leaf('edit'),
+      read: () =>
+        failing ? Promise.resolve({ status: 'failed', message: 'the robot timed out' }) : undefined,
+      robot: {
+        variables: [
+          { name: 'aux_flag', type: TypeCode.BOOL, access: decodeAccess(0x02), signal: () => 1 },
+        ],
+      },
+    });
+    await expect
+      .element(screen.getByRole('alert'))
+      .toHaveTextContent('Not read: the robot timed out');
+
+    failing = false;
+    await screen.getByRole('button', { name: 'Read again' }).click();
+    await expect.poll(() => readsOf('aux_flag')).toBe(2);
+    await expect.element(screen.getByRole('alert')).not.toBeInTheDocument();
+    await expect.element(screen.getByRole('switch')).toBeEnabled();
+  });
+
   test('says why the robot refused a write and keeps the confirmed value', async () => {
     const { screen } = await open({
       windows: [win('edit', 'editor', ['objective'])],
@@ -414,6 +446,52 @@ describe('Type view', () => {
     await expect.poll(() => readsOf('maze'), { timeout: 2000 }).toBe(2);
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(readsOf('maze')).toBe(2);
+  });
+});
+
+describe('A variable missing from the schema', () => {
+  test('shows as missing in readouts, plots, editors and type views, and the others still work', async () => {
+    const { screen } = await open({
+      windows: [
+        win('numbers', 'readouts', ['battery_voltage', 'ghost']),
+        win('plot', 'plot', ['battery_voltage', 'ghost']),
+        win('edit', 'editor', ['ghost']),
+        win('blob', 'type-view', ['ghost']),
+      ],
+      root: split(
+        'row',
+        0.5,
+        split('column', 0.5, leaf('numbers'), leaf('plot')),
+        split('column', 0.5, leaf('edit'), leaf('blob'))
+      ),
+    });
+    await expect.element(screen.getByText('missing', { exact: true })).toBeVisible();
+    expect(query('[data-readout="ghost"]')?.dataset.missing).toBe('true');
+    expect(query('[data-readout="battery_voltage"]')?.dataset.missing).toBe('false');
+    await expect
+      .poll(() => query('[data-readout="battery_voltage"] dd')?.textContent)
+      .toMatch(/12/);
+    await expect.element(screen.getByText('1 missing')).toBeVisible();
+    await expect
+      .element(screen.getByText('Missing: the schema of this robot has no such variable.'))
+      .toBeVisible();
+    await expect.element(screen.getByText('· missing from the schema')).toBeVisible();
+  });
+
+  test('is not called missing before any schema is loaded', async () => {
+    const robot = createDemoRobot();
+    const store = createShellStore({
+      theme: 'dark',
+      desktop: createDesktop(
+        [createWorkspace('Test', leaf('numbers'))],
+        [win('numbers', 'readouts', ['battery_voltage'])]
+      ),
+    });
+    const screen = await render(
+      <App ports={robot.ports} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
+    );
+    await expect.element(screen.getByRole('term')).toHaveTextContent('battery_voltage');
+    expect(query('[data-readout]')?.dataset.missing).toBe('false');
   });
 });
 

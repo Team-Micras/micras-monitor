@@ -36,7 +36,7 @@ function VariableList({
         typeof entry === 'string' ? (
           <li key={entry} className="flex justify-between gap-4 text-muted-foreground">
             <span className="truncate">{entry}</span>
-            <span>not in schema</span>
+            <span>{variables.length > 0 ? 'missing' : '—'}</span>
           </li>
         ) : (
           <PlaceholderRow key={entry.name} variable={entry} />

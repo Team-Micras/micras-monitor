@@ -5,6 +5,7 @@
  * @module
  */
 
+import { TypeCode } from '@/protocol';
 import { enumLabel, type BitmaskType, type EnumType } from '@/robot-kit';
 
 import { formatValue } from '../../lib/format';
@@ -30,10 +31,14 @@ export function staleAfterUs(rateHz: number): number {
 /**
  * A value in words: an enum's label, the labels of the set flags of a bitmask, else the value
  * as a readout shows it.
+ *
+ * @param type The variable's type, which decides the bits of a negative number; a 64 bit one when
+ *   omitted.
  */
 export function formatReading(
   value: TelemetryValue | undefined,
-  labels: EnumType | BitmaskType | null
+  labels: EnumType | BitmaskType | null,
+  type: TypeCode = TypeCode.U64
 ): string {
   if ((typeof value !== 'number' && typeof value !== 'bigint') || labels === null) {
     return formatValue(value);
@@ -43,7 +48,9 @@ export function formatReading(
     return enumLabel(labels, Number(value));
   }
 
-  const set = labels.flags.filter((flag) => bitSet(value, flag.bit)).map((flag) => flag.label);
+  const set = labels.flags
+    .filter((flag) => bitSet(value, flag.bit, type))
+    .map((flag) => flag.label);
   return set.length === 0 ? 'none' : set.join(' · ');
 }
 

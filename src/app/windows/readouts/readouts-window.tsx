@@ -47,10 +47,17 @@ function Readout({
   const unit = entry.presentation?.unit ?? null;
 
   return (
-    <div data-readout={entry.name} data-stale={stale} className="flex min-w-0 flex-col gap-1.5">
+    <div
+      data-readout={entry.name}
+      data-stale={stale}
+      data-missing={entry.missing}
+      className={cn('flex min-w-0 flex-col gap-1.5', entry.missing && 'opacity-60')}
+    >
       <dt className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
         <span className="truncate">{entry.name}</span>
-        {entry.variable === undefined ? <span>· not in schema</span> : null}
+        {entry.missing ? (
+          <span className="rounded border px-1 text-[10px] uppercase">missing</span>
+        ) : null}
         {stale ? <span className="rounded border px-1 text-[10px] uppercase">stale</span> : null}
       </dt>
       <dd
@@ -60,7 +67,7 @@ function Readout({
         )}
       >
         <span className="truncate">
-          {formatReading(latest?.value, entry.presentation?.labels ?? null)}
+          {formatReading(latest?.value, entry.presentation?.labels ?? null, entry.variable?.type)}
         </span>
         {unit === null ? null : (
           <span className="text-sm font-normal text-muted-foreground">{unit}</span>

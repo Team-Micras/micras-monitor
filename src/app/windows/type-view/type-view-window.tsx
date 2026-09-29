@@ -110,7 +110,8 @@ export function TypeViewWindow({ window }: WindowViewProps) {
   return (
     <div className="flex h-full flex-col gap-3 px-5 pt-1 pb-5">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-mono">{entry.presentation?.typeLabel ?? 'not in schema'}</span>
+        <span className="font-mono">{entry.presentation?.typeLabel ?? entry.name}</span>
+        {entry.missing ? <span data-missing>· missing from the schema</span> : null}
         {bytes === null ? null : <span className="font-mono">· {bytes.length} B</span>}
         {failure === null ? null : <span className="text-destructive">· {failure}</span>}
         <Button
@@ -127,7 +128,11 @@ export function TypeViewWindow({ window }: WindowViewProps) {
       <div className="min-h-0 flex-1 overflow-auto">
         {bytes === null ? (
           <p className="text-sm text-muted-foreground">
-            {linked ? 'Reading…' : 'Connect to a robot to read it.'}
+            {entry.missing
+              ? 'The schema of this robot has no such variable.'
+              : linked
+                ? 'Reading…'
+                : 'Connect to a robot to read it.'}
           </p>
         ) : decoded?.kind === 'value' && serializable !== null ? (
           <serializable.View key={serializable.tag} value={decoded.value} />

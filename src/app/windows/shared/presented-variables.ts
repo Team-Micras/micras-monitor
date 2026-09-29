@@ -21,6 +21,11 @@ export interface PresentedVariable {
   readonly presentation: VariablePresentation<ReactNode> | null;
   /** The CSS color of its series. */
   readonly color: string;
+  /**
+   * Whether a schema is loaded and has no such variable, as when the firmware dropped it. Without
+   * a schema, as while disconnected, nothing is missing: the variable is only not known yet.
+   */
+  readonly missing: boolean;
 }
 
 /** How many colors the theme has for series, `--chart-1` to `--chart-5`. */
@@ -39,6 +44,12 @@ export function usePresentedVariables(names: readonly string[]): readonly Presen
   return names.map((name, index) => {
     const variable = variables.find((entry) => entry.name === name);
     const presentation = variable === undefined ? null : presentVariable(pkg, variable);
-    return { name, variable, presentation, color: seriesColor(index, presentation?.color ?? null) };
+    return {
+      name,
+      variable,
+      presentation,
+      color: seriesColor(index, presentation?.color ?? null),
+      missing: variable === undefined && variables.length > 0,
+    };
   });
 }

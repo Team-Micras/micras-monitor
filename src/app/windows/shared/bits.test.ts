@@ -14,8 +14,8 @@ describe('bits', () => {
 
   test('keep every bit of a 64 bit value', () => {
     const high = (1n << 63n) | 1n;
-    expect(bitSet(high, 63)).toBe(true);
-    expect(bitSet(high, 62)).toBe(false);
+    expect(bitSet(high, 63, TypeCode.U64)).toBe(true);
+    expect(bitSet(high, 62, TypeCode.U64)).toBe(false);
     expect(withBit(high, 62, true, TypeCode.U64)).toBe(high | (1n << 62n));
     expect(withBit(high, 63, false, TypeCode.U64)).toBe(1n);
   });
@@ -24,6 +24,25 @@ describe('bits', () => {
     expect(withBit(1n, 63, true, TypeCode.I64)).toBe(-(1n << 63n) + 1n);
     expect(withBit(-(1n << 63n) + 1n, 63, false, TypeCode.I64)).toBe(1n);
     expect(withBit(1n, 63, true, TypeCode.U64)).toBe((1n << 63n) | 1n);
+  });
+
+  test("change bits of a signed number in the two's complement of its width", () => {
+    expect(withBit(1, 7, true, TypeCode.I8)).toBe(-127);
+    expect(withBit(-127, 7, false, TypeCode.I8)).toBe(1);
+    expect(withBit(-1, 0, false, TypeCode.I8)).toBe(-2);
+    expect(withBit(-2, 0, true, TypeCode.I8)).toBe(-1);
+    expect(withBit(1, 15, true, TypeCode.I16)).toBe(-32767);
+    expect(withBit(-32767, 15, false, TypeCode.I16)).toBe(1);
+    expect(withBit(-1, 9, false, TypeCode.I16)).toBe(-513);
+    expect(withBit(0, 31, true, TypeCode.I32)).toBe(-(2 ** 31));
+  });
+
+  test('read the bits of a negative number as the robot stores them', () => {
+    expect(bitSet(-127, 7, TypeCode.I8)).toBe(true);
+    expect(bitSet(-127, 1, TypeCode.I8)).toBe(false);
+    expect(bitSet(-127, 0, TypeCode.I8)).toBe(true);
+    expect(bitSet(-1, 15, TypeCode.I16)).toBe(true);
+    expect(bitSet(-32768, 14, TypeCode.I16)).toBe(false);
   });
 
   test('compare integers across number and bigint', () => {

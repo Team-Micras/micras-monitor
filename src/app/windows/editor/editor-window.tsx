@@ -1,4 +1,4 @@
-import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from 'lucide-react';
+import { CheckIcon, CircleAlertIcon, LoaderCircleIcon, RefreshCwIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import type { TypeCode } from '@/protocol';
@@ -68,6 +68,8 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
   const confirmed = useLiveValue(entry.name)?.value;
   const pending = usePendingWrite(entry.name);
   const [last, setLast] = useState<LastWrite | null>(null);
+  const [readFailure, setReadFailure] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
   const { variable, presentation } = entry;
   const reader = useRef<CoalescedReads | null>(null);
   const variableId = variable?.id;
@@ -78,10 +80,19 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
       return undefined;
     }
 
-    const current = new CoalescedReads(() => reads.read(entry.name));
+    let cancelled = false;
+    const current = new CoalescedReads(() =>
+      reads.read(entry.name).then((outcome) => {
+        if (!cancelled) {
+          setReading(false);
+          setReadFailure(outcome.status === 'failed' ? outcome.message : null);
+        }
+      })
+    );
     reader.current = current;
     current.request();
     return () => {
+      cancelled = true;
       current.close();
       reader.current = null;
     };
@@ -89,9 +100,17 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
 
   if (variable === undefined || presentation === null) {
     return (
-      <section className="flex flex-col gap-1">
+      <section
+        data-editor={entry.name}
+        data-missing={entry.missing}
+        className="flex flex-col gap-1"
+      >
         <h3 className="font-mono text-sm">{entry.name}</h3>
-        <p className="text-sm text-muted-foreground">Not in the schema of this robot.</p>
+        <p className="text-sm text-muted-foreground">
+          {entry.missing
+            ? 'Missing: the schema of this robot has no such variable.'
+            : 'Connect to a robot to edit it.'}
+        </p>
       </section>
     );
   }
@@ -103,7 +122,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
     ? 'The robot does not take writes of this variable.'
     : !linked
       ? 'Connect to a robot to write.'
-      : needsConfirmed && confirmed === undefined && pending === undefined
+      : needsConfirmed && confirmed === undefined && pending === undefined && readFailure === null
         ? 'Waiting for the robot to report the current value.'
         : null;
 
@@ -125,7 +144,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
   };
 
   const confirmedText =
-    confirmed === undefined ? '—' : formatReading(confirmed, presentation.labels);
+    confirmed === undefined ? '—' : formatReading(confirmed, presentation.labels, variable.type);
 
   return (
     <section data-editor={entry.name} className="flex flex-col gap-3">
@@ -154,7 +173,15 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
         disabledReason={disabledReason}
         pending={pending}
         last={last}
-        describe={(value) => formatReading(integerValue(value) ?? value, presentation.labels)}
+        readFailure={readFailure}
+        reading={reading}
+        onReadAgain={() => {
+          setReading(true);
+          reader.current?.request();
+        }}
+        describe={(value) =>
+          formatReading(integerValue(value) ?? value, presentation.labels, variable.type)
+        }
       />
     </section>
   );
@@ -195,11 +222,11 @@ function Control({
               key={flag.bit}
               label={flag.label}
               detail={`bit ${flag.bit}`}
-              checked={confirmed !== undefined && bitSet(confirmed, flag.bit)}
+              checked={confirmed !== undefined && bitSet(confirmed, flag.bit, type)}
               pending={
                 pending !== undefined &&
                 confirmed !== undefined &&
-                bitSet(pending, flag.bit) !== bitSet(confirmed, flag.bit)
+                bitSet(pending, flag.bit, type) !== bitSet(confirmed, flag.bit, type)
               }
               disabled={disabled || base === undefined}
               onChange={(on) => {
@@ -354,11 +381,17 @@ function WriteNote({
   disabledReason,
   pending,
   last,
+  readFailure,
+  reading,
+  onReadAgain,
   describe,
 }: {
   readonly disabledReason: string | null;
   readonly pending: WriteValue | undefined;
   readonly last: LastWrite | null;
+  readonly readFailure: string | null;
+  readonly reading: boolean;
+  readonly onReadAgain: () => void;
   readonly describe: (value: WriteValue) => string;
 }) {
   let note: ReactNode = null;
@@ -388,6 +421,25 @@ function WriteNote({
         <CircleAlertIcon className="size-3.5 shrink-0" />
         Not written: {last.outcome.message}
       </span>
+    );
+  } else if (readFailure !== null) {
+    note = (
+      <>
+        <span role="alert" className="flex items-center gap-2 text-destructive">
+          <CircleAlertIcon className="size-3.5 shrink-0" />
+          Not read: {readFailure}
+        </span>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="ml-auto"
+          disabled={reading}
+          onClick={onReadAgain}
+        >
+          <RefreshCwIcon className={reading ? 'animate-spin' : undefined} />
+          Read again
+        </Button>
+      </>
     );
   } else if (last?.outcome?.status === 'confirmed') {
     note = (

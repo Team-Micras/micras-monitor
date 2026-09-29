@@ -109,6 +109,7 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
   useEffect(() => controller.current?.setVisible(visible), [visible]);
   useEffect(() => controller.current?.setSpan(spanS * 1e6), [spanS]);
 
+  const missing = presented.filter((entry) => entry.missing).map((entry) => entry.name);
   const hint =
     variables.length === 0
       ? 'Drag a variable here from the drawer'
@@ -127,6 +128,15 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
         {status.dropped > 0 ? (
           <span className="rounded-md border border-chart-5/40 bg-card px-2 py-0.5 font-mono text-xs text-chart-5">
             {status.dropped} dropped
+          </span>
+        ) : null}
+        {missing.length > 0 ? (
+          <span
+            data-missing
+            title={missing.join(', ')}
+            className="rounded-md border bg-card px-2 py-0.5 font-mono text-xs text-muted-foreground"
+          >
+            {missing.length} missing
           </span>
         ) : null}
         {status.notStored > 0 ? (
