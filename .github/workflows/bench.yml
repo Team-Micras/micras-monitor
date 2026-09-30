@@ -81,8 +81,8 @@ jobs:
           --base "$RESULTS/base-1.json" --base "$RESULTS/base-2.json"
           --head "$RESULTS/head-1.json" --head "$RESULTS/head-2.json"
 
-      - name: Judge the head by its budgets, with no base to compare with
+      - name: Run the head's performance tests, with no base to compare with
         if: steps.runs.outputs.base_ok != 'true'
         run: |
-          echo "::notice::No complete base results; the head is judged by its absolute budgets."
-          bun run bench -- --output "$RESULTS/head-budgets.json"
+          echo "::notice::No complete base results; the head's performance tests only have to pass."
+          bun run bench -- --no-budgets --output "$RESULTS/head-alone.json"

@@ -103,6 +103,12 @@ describe('compareWithBaseline against another run', () => {
     );
   });
 
+  test('fails when the head shares no timing with the base', () => {
+    const verdict = compareWithBaseline({}, { [PLOTS]: { frameP95Ms: 2 } }, 'shared');
+    expect(verdict.failed).toBe(true);
+    expect(verdict.lines).toContain('No timing was measured on both sides: FAILED');
+  });
+
   test('still fails a timing both sides measured that regressed', () => {
     const verdict = compareWithBaseline(
       { [PLOTS]: { frameP95Ms: 3.6 }, added: { p95: 1 } },

@@ -100,7 +100,8 @@ export type BaselineMode = 'strict' | 'shared';
  * Judges every timing against a baseline: it fails past {@link RATIO} times the baseline plus
  * {@link SLACK_MS}. A test or timing on one side only fails in `strict` mode and is a notice in
  * `shared` mode, so a baseline cannot go stale unnoticed while a change that adds a bench can
- * still be compared with a base commit that lacks it.
+ * still be compared with a base commit that lacks it. Two runs that share no timing at all fail in
+ * either mode, since nothing was compared.
  */
 export function compareWithBaseline(
   results: BenchTimings,
@@ -109,6 +110,7 @@ export function compareWithBaseline(
 ): Verdict {
   const lines: string[] = [];
   let failed = false;
+  let compared = 0;
   const fail = (line: string) => {
     lines.push(line);
     failed = true;
@@ -127,6 +129,7 @@ export function compareWithBaseline(
         continue;
       }
 
+      compared += 1;
       const limit = RATIO * base + SLACK_MS;
       const line = `${name}: ${key} ${value.toFixed(2)} ms against ${base.toFixed(2)} ms (limit ${limit.toFixed(2)} ms)`;
 
@@ -144,6 +147,10 @@ export function compareWithBaseline(
         unmatched(`${name}: ${key} is in the baseline but was not measured`);
       }
     }
+  }
+
+  if (compared === 0) {
+    fail('No timing was measured on both sides: FAILED');
   }
 
   return { lines, failed };
