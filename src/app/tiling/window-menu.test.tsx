@@ -9,7 +9,6 @@ import {
   shellWindow,
   shownWorkspace,
   tiledIds,
-  workspaceNames,
   type ShellApp,
 } from '../fixtures/shell-app';
 import type { ShellStore } from '../state/shell-store';
@@ -88,15 +87,5 @@ describe('the window keys', () => {
     await expect.poll(() => floating(store)).toEqual(['a']);
     await userEvent.keyboard('{Alt>}q{/Alt}');
     await expect.poll(() => [...store.getState().desktop.windows.keys()]).toEqual(['b']);
-  });
-});
-
-describe('the workspace tab menu', () => {
-  test('closes a workspace from a right click, keeping its windows', async () => {
-    const { store, screen } = await open();
-    await screen.getByRole('tab', { name: 'One' }).click({ button: 'right' });
-    await screen.getByRole('menuitem', { name: /keep its windows/ }).click();
-    await expect.poll(() => workspaceNames(store)).toEqual(['Two']);
-    expect(tiledIds(store, 0)).toEqual(['a', 'b']);
   });
 });

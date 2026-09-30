@@ -82,6 +82,15 @@ export type LayoutsIntent =
   | { readonly kind: 'save' }
   | { readonly kind: 'rename'; readonly name: string };
 
+/**
+ * A workspace about to be closed, waiting for the user to say what becomes of its windows: close
+ * them too, or move them to another workspace. `windows` is the choice the dialog starts on.
+ */
+export interface WorkspaceClosing {
+  readonly index: number;
+  readonly windows: 'close' | 'move';
+}
+
 /** A preset the user deleted, kept for a moment so that the deletion can be undone. */
 export interface DeletedPreset {
   /** Tells one deletion from the next. */
@@ -112,6 +121,8 @@ export interface ShellState {
   readonly keyOverrides: KeyOverrides;
   readonly bindings: KeyBindings;
   readonly drag: DragState | null;
+  /** The workspace whose closing waits for the user's choice, or null. */
+  readonly closingWorkspace: WorkspaceClosing | null;
   /** Whether a gap is being dragged, which turns off the windows' transitions. */
   readonly resizing: boolean;
   /** What the last STOP came to, shown under the button until it times out. */
@@ -135,6 +146,15 @@ export interface ShellState {
   readonly addVariable: (id: WindowId, name: string) => void;
   /** Adds a workspace with a name no other has, and shows it. */
   readonly addWorkspace: () => void;
+  /**
+   * Closes a workspace, asking first what becomes of its windows: an empty one closes at once, and
+   * the last one never does.
+   *
+   * @param windows What the question starts on: closing the windows, or moving them.
+   */
+  readonly requestCloseWorkspace: (index: number, windows: WorkspaceClosing['windows']) => void;
+  /** Answers or dismisses the question {@link ShellState.requestCloseWorkspace} asked. */
+  readonly setClosingWorkspace: (closing: WorkspaceClosing | null) => void;
   /** Sets a split's ratio from a gap being dragged. */
   readonly resizeSplit: (path: NodePath, ratio: number) => void;
   /** Moves the two splits that meet at a window's corner so that their gaps cross at a point. */
@@ -299,6 +319,7 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       keyOverrides: options.keyOverrides ?? {},
       bindings: resolveBindings(options.keyOverrides),
       drag: null,
+      closingWorkspace: null,
       resizing: false,
       stopNotice: null,
 
@@ -347,6 +368,23 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         get().run({ type: 'addWorkspace', name: `Workspace ${number}` });
         get().run({ type: 'switchWorkspace', index: get().desktop.workspaces.length - 1 });
       },
+
+      requestCloseWorkspace: (index, windows) => {
+        const { workspaces } = get().desktop;
+        const workspace = workspaces[index];
+
+        if (workspace === undefined || workspaces.length === 1) {
+          return;
+        }
+
+        if (workspace.root === null && workspace.floating.length === 0) {
+          get().run({ type: 'removeWorkspace', index, policy: 'closeWindows' });
+        } else {
+          set({ closingWorkspace: { index, windows } });
+        }
+      },
+
+      setClosingWorkspace: (closingWorkspace) => set({ closingWorkspace }),
 
       resizeSplit: (path, ratio) => update(resizeSplit(get().desktop, path, ratio, get().metrics)),
 

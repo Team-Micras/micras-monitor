@@ -27,6 +27,11 @@ export async function press(from: Point, to: Point): Promise<void> {
   await commands.mouse(steps);
 }
 
+/** Moves the mouse, held or not, to a point in several steps. */
+export async function moveTo(to: Point): Promise<void> {
+  await commands.mouse([{ type: 'move', ...to, steps: 6 }]);
+}
+
 /** Releases the mouse where it is. */
 export async function release(): Promise<void> {
   await commands.mouse([{ type: 'up' }]);

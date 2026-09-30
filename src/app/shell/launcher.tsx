@@ -1,4 +1,6 @@
 import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
   LayoutGridIcon,
   LayoutTemplateIcon,
   ListTreeIcon,
@@ -44,6 +46,8 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   const store = useShellStore();
   const open = useShell((state) => state.overlay === 'launcher');
   const workspaces = useShell((state) => state.desktop.workspaces);
+  const active = useShell((state) => state.desktop.active);
+  const shown = workspaces.at(active)?.name ?? '';
   const hasFocus = useShell((state) => focusedWindow(activeWorkspace(state.desktop)) !== null);
   const bindings = useShell((state) => state.bindings);
   const presets = useShell((state) => state.presets);
@@ -152,6 +156,43 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
             <PlusIcon />
             New workspace
           </CommandItem>
+          {workspaces.length > 1 ? (
+            <>
+              <CommandItem
+                value={`move workspace ${shown} left`}
+                disabled={active === 0}
+                onSelect={run(() => onAction('workspace.move-left'))}
+              >
+                <ArrowLeftIcon />
+                Move {shown} left
+                {shortcut('workspace.move-left')}
+              </CommandItem>
+              <CommandItem
+                value={`move workspace ${shown} right`}
+                disabled={active === workspaces.length - 1}
+                onSelect={run(() => onAction('workspace.move-right'))}
+              >
+                <ArrowRightIcon />
+                Move {shown} right
+                {shortcut('workspace.move-right')}
+              </CommandItem>
+              <CommandItem
+                value={`close workspace ${shown} move its windows`}
+                onSelect={run(() => store.getState().requestCloseWorkspace(active, 'move'))}
+              >
+                <XIcon />
+                Close {shown}, move its windows…
+                {shortcut('workspace.close')}
+              </CommandItem>
+              <CommandItem
+                value={`close workspace ${shown} and its windows`}
+                onSelect={run(() => store.getState().requestCloseWorkspace(active, 'close'))}
+              >
+                <Trash2Icon />
+                Close {shown} and its windows…
+              </CommandItem>
+            </>
+          ) : null}
         </CommandGroup>
         <CommandGroup heading="Layouts">
           <CommandItem

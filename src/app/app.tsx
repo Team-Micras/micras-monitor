@@ -164,7 +164,11 @@ function Shell({
 
   const onAction = (action: KeyAction) => {
     const state = store.getState();
-    const command = tilingCommandFor<WindowPayload>(action, state.desktop.workspaces.length);
+    const command = tilingCommandFor<WindowPayload>(
+      action,
+      state.desktop.workspaces.length,
+      state.desktop.active
+    );
 
     if (command !== null) {
       state.run(command);
@@ -188,6 +192,9 @@ function Shell({
 
         return;
       }
+      case 'workspace.close':
+        state.requestCloseWorkspace(state.desktop.active, 'move');
+        return;
       case 'launcher':
         state.setOverlay('launcher', true);
         return;

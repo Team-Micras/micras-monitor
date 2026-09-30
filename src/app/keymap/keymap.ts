@@ -17,6 +17,9 @@ export type KeyAction =
   | `swap.${Direction}`
   | `workspace.${WorkspaceDigit}`
   | `send-to-workspace.${WorkspaceDigit}`
+  | 'workspace.move-left'
+  | 'workspace.move-right'
+  | 'workspace.close'
   | 'window.maximize'
   | 'window.float'
   | 'window.close'
@@ -87,6 +90,27 @@ export const ACTIONS: readonly ActionSpec[] = [
     defaults: [`Alt+Shift+${digit}`],
     inText: true,
   })),
+  {
+    id: 'workspace.move-left',
+    label: 'Move the workspace left',
+    group: 'Workspaces',
+    defaults: ['Alt+Shift+PageUp'],
+    inText: true,
+  },
+  {
+    id: 'workspace.move-right',
+    label: 'Move the workspace right',
+    group: 'Workspaces',
+    defaults: ['Alt+Shift+PageDown'],
+    inText: true,
+  },
+  {
+    id: 'workspace.close',
+    label: 'Close the workspace',
+    group: 'Workspaces',
+    defaults: ['Alt+Shift+W'],
+    inText: true,
+  },
   { id: 'stop', label: 'Stop the robot', group: 'Robot', defaults: ['Space'], inText: false },
   { id: 'launcher', label: 'Launcher', group: 'App', defaults: ['Ctrl+K', 'Meta+K'], inText: true },
   { id: 'drawer', label: 'Variables', group: 'App', defaults: ['/'], inText: false },

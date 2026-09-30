@@ -28,6 +28,8 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   ArrowUp: '↑',
   ArrowDown: '↓',
   Escape: 'Esc',
+  PageUp: 'PgUp',
+  PageDown: 'PgDn',
 };
 
 /**

@@ -193,5 +193,21 @@ describe('tilingCommandFor', () => {
     expect(tilingCommandFor('send-to-workspace.9', 4)).toBeNull();
     expect(tilingCommandFor('stop', 4)).toBeNull();
     expect(tilingCommandFor('launcher', 4)).toBeNull();
+    expect(tilingCommandFor('workspace.close', 4)).toBeNull();
+  });
+
+  test('moves the shown workspace a place, and nowhere past either end', () => {
+    expect(tilingCommandFor('workspace.move-left', 3, 1)).toEqual({
+      type: 'moveWorkspace',
+      from: 1,
+      to: 0,
+    });
+    expect(tilingCommandFor('workspace.move-right', 3, 1)).toEqual({
+      type: 'moveWorkspace',
+      from: 1,
+      to: 2,
+    });
+    expect(tilingCommandFor('workspace.move-left', 3, 0)).toBeNull();
+    expect(tilingCommandFor('workspace.move-right', 3, 2)).toBeNull();
   });
 });

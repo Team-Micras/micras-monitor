@@ -124,6 +124,26 @@ describe('the layout of a robot', () => {
     expect(second.store.getState().desktop.active).toBe(2);
   });
 
+  test('keeps the order the workspaces were moved to', async () => {
+    const first = await mount();
+    await connect(first);
+    await expect.element(first.screen.getByRole('tab', { name: 'Sensor' })).toBeVisible();
+    await userEvent.keyboard('{Alt>}{Shift>}{PageDown}{/Shift}{/Alt}');
+    expect(workspaceNames(first)).toEqual(['Sensor', 'Overview']);
+    await expect
+      .poll(() =>
+        new LayoutBook(first.storage)
+          .load('name:rover', [])
+          ?.desktop?.workspaces.map((workspace) => workspace.name)
+      )
+      .toEqual(['Sensor', 'Overview']);
+    await first.screen.unmount();
+
+    const second = await mount({ storage: first.storage });
+    await connect(second);
+    expect(workspaceNames(second)).toEqual(['Sensor', 'Overview']);
+  });
+
   test('stays on screen when the robot disconnects, and after it connects again', async () => {
     const mounted = await mount();
     await connect(mounted);
