@@ -27,10 +27,8 @@ import { SessionsContext } from './sessions/sessions-context';
 import { SessionView } from './sessions/session-view';
 import { Announcer } from './shell/announcer';
 import { Announcements } from './shell/announcements';
-import { DeletedNotice } from './shell/deleted-notice';
-import { RemovedVariableNotice } from './shell/removed-variable-notice';
 import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
-import { LazyLauncher, LazyVariableDrawer } from './shell/lazy-shell';
+import { LazyLauncher, LazyUndoNotices, LazyVariableDrawer } from './shell/lazy-shell';
 import { useReloadBlocked } from './shell/reload-guard';
 import { StatusBar } from './shell/status-bar';
 import { StopActionContext } from './shell/stop-action';
@@ -134,6 +132,10 @@ function Shell({
   const drawerOpen = useShell((state) => state.overlay === 'drawer');
   const launcherOpen = useShell((state) => state.overlay === 'launcher');
   const launcherWanted = useEver(launcherOpen);
+  const undoable = useShell(
+    (state) => state.deletedPreset !== null || state.removedVariable !== null
+  );
+  const undoWanted = useEver(undoable);
   const presses = useRef(0);
   const phone = usePhone();
   const plan = phonePlan(useRobotPackage()?.package ?? null, useVariables());
@@ -255,8 +257,11 @@ function Shell({
         </div>
       )}
       <Announcements />
-      <DeletedNotice />
-      <RemovedVariableNotice />
+      {undoWanted ? (
+        <LazyPart fallback={null} resetKey={undoable}>
+          <LazyUndoNotices />
+        </LazyPart>
+      ) : null}
       <UpdateNotice updates={updates} blockedBy={blockedBy} />
     </StopActionContext>
   );

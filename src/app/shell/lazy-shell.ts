@@ -9,3 +9,13 @@ export const LazyLauncher = lazyWithRetry(() =>
 export const LazyVariableDrawer = lazyWithRetry(() =>
   import('./variable-drawer').then((module) => ({ default: module.VariableDrawer }))
 ).Component;
+
+/** The question of what becomes of a closing workspace's windows, loaded when first asked. */
+export const LazyCloseWorkspaceDialog = lazyWithRetry(() =>
+  import('./close-workspace-dialog').then((module) => ({ default: module.CloseWorkspaceDialog }))
+).Component;
+
+/** The undo notices, loaded when something is first removed. */
+export const LazyUndoNotices = lazyWithRetry(() =>
+  import('./undo-notices').then((module) => ({ default: module.UndoNotices }))
+).Component;
