@@ -5,6 +5,8 @@ import { playwright } from '@vitest/browser-playwright';
 import { VitePWA } from 'vite-plugin-pwa';
 import { configDefaults, defineConfig } from 'vitest/config';
 
+import { mouse } from './tools/browser-mouse';
+
 const PERFORMANCE_TESTS = ['src/**/*-performance.test.{ts,tsx}'];
 
 function chromium() {
@@ -14,6 +16,7 @@ function chromium() {
     provider: playwright(),
     viewport: { width: 1440, height: 900 },
     instances: [{ browser: 'chromium' as const }],
+    commands: { mouse },
   };
 }
 
