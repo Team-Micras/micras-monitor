@@ -62,6 +62,7 @@ export {
 export {
   addWorkspace,
   moveWorkspace,
+  neighborWorkspace,
   removeWorkspace,
   renameWorkspace,
   type RemovePolicy,

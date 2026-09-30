@@ -38,6 +38,7 @@ import {
   type Desktop,
   type Direction,
   type LayoutMetrics,
+  type RemovePolicy,
   type Side,
   type WindowId,
 } from './index';
@@ -244,7 +245,12 @@ const lifecycle: Operation = (world) => {
     return moveWorkspace(world.desktop, anyIndex(world), anyIndex(world));
   }
 
-  const policy = world.random() < 0.5 ? 'closeWindows' : 'mergeIntoNeighbor';
+  const policies: readonly RemovePolicy[] = [
+    'closeWindows',
+    'mergeIntoNeighbor',
+    { mergeInto: anyIndex(world) },
+  ];
+  const policy = pick(world.random, policies) ?? 'closeWindows';
   return removeWorkspace(world.desktop, anyIndex(world), policy, world.metrics);
 };
 

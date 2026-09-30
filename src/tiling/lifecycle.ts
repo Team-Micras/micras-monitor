@@ -12,10 +12,18 @@ import { absorb, createWorkspace, windowIds } from './workspace';
 
 /**
  * What happens to the windows of a removed workspace: `closeWindows` closes them;
- * `mergeIntoNeighbor` moves them into the neighbor that is shown in its place, tiled windows by
- * the dwindle rule and floating ones with their rects.
+ * `mergeIntoNeighbor` moves them into the neighbor that is shown in its place, and `mergeInto`
+ * into the workspace at that index, which is then shown in its place; tiled windows go by the
+ * dwindle rule and floating ones keep their rects.
  */
-export type RemovePolicy = 'closeWindows' | 'mergeIntoNeighbor';
+export type RemovePolicy = 'closeWindows' | 'mergeIntoNeighbor' | { readonly mergeInto: number };
+
+/**
+ * The workspace that takes over from a removed one: the one before it, or else the one after.
+ */
+export function neighborWorkspace(index: number): number {
+  return index > 0 ? index - 1 : index + 1;
+}
 
 function checkName(name: string): void {
   if (name === '') {
@@ -86,9 +94,10 @@ function movedIndex(index: number, from: number, to: number): number {
 }
 
 /**
- * Removes a workspace, dealing with its windows by `policy`. Its neighbor, the workspace before
- * it or else the one after, takes over: it receives merged windows and is shown when the removed
- * workspace was. The last workspace cannot be removed; a desktop always keeps one.
+ * Removes a workspace, dealing with its windows by `policy`. Its neighbor (see
+ * {@link neighborWorkspace}), or the workspace its windows are merged into, takes over: it is
+ * shown when the removed workspace was. The last workspace cannot be removed; a desktop always
+ * keeps one, and merging into the removed workspace itself or into none changes nothing.
  */
 export function removeWorkspace<P>(
   desktop: Desktop<P>,
@@ -97,28 +106,29 @@ export function removeWorkspace<P>(
   metrics: LayoutMetrics
 ): Desktop<P> {
   const removed = desktop.workspaces[index];
+  const heir = typeof policy === 'object' ? policy.mergeInto : neighborWorkspace(index);
+  const receiver = desktop.workspaces[heir];
 
-  if (removed === undefined || desktop.workspaces.length === 1) {
+  if (removed === undefined || receiver === undefined || heir === index) {
     return desktop;
   }
 
-  const neighbor = index > 0 ? index - 1 : index + 1;
   const workspaces =
-    policy === 'mergeIntoNeighbor'
-      ? desktop.workspaces.with(neighbor, absorb(desktop.workspaces[neighbor], removed, metrics))
-      : desktop.workspaces;
+    policy === 'closeWindows'
+      ? desktop.workspaces
+      : desktop.workspaces.with(heir, absorb(receiver, removed, metrics));
   const windows =
     policy === 'closeWindows' ? without(desktop.windows, windowIds(removed)) : desktop.windows;
   return {
     windows,
     workspaces: workspaces.toSpliced(index, 1),
-    active: activeAfterRemoving(desktop.active, index, neighbor),
+    active: activeAfterRemoving(desktop.active, index, heir),
   };
 }
 
-function activeAfterRemoving(active: number, removed: number, neighbor: number): number {
+function activeAfterRemoving(active: number, removed: number, heir: number): number {
   if (active === removed) {
-    return neighbor < removed ? neighbor : neighbor - 1;
+    return heir < removed ? heir : heir - 1;
   }
 
   return active > removed ? active - 1 : active;

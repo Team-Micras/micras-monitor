@@ -8,6 +8,7 @@ import {
   leaf,
   leafIds,
   moveWorkspace,
+  neighborWorkspace,
   removeWorkspace,
   renameWorkspace,
   split,
@@ -103,6 +104,28 @@ describe('removing workspaces', () => {
     d = removeWorkspace(d, 2, 'mergeIntoNeighbor', METRICS);
     expect(d.workspaces[1].floating).toEqual([{ id: 'c', rect, dock: null }]);
     expect(d.active).toBe(1);
+  });
+
+  test('merging into a chosen workspace moves the windows there and shows it', () => {
+    const d = removeWorkspace(four(1), 1, { mergeInto: 2 }, METRICS);
+    expect(names(d)).toEqual(['A', 'C', 'D']);
+    expect(leafIds(d.workspaces[1].root)).toEqual(['c', 'b1', 'b2']);
+    expect(d.active).toBe(1);
+    const shown = removeWorkspace(four(3), 0, { mergeInto: 3 }, METRICS);
+    expect(names(shown)).toEqual(['B', 'C', 'D']);
+    expect(leafIds(shown.workspaces[2].root)).toEqual(['a']);
+    expect(shown.active).toBe(2);
+  });
+
+  test('merging into itself or into no workspace changes nothing', () => {
+    const d = four(0);
+    expect(removeWorkspace(d, 1, { mergeInto: 1 }, METRICS)).toBe(d);
+    expect(removeWorkspace(d, 1, { mergeInto: 7 }, METRICS)).toBe(d);
+  });
+
+  test('the neighbor is the workspace before, or the one after the first', () => {
+    expect(neighborWorkspace(0)).toBe(1);
+    expect(neighborWorkspace(3)).toBe(2);
   });
 
   test('the last workspace and unknown indices stay', () => {
