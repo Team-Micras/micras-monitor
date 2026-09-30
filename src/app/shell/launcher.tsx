@@ -37,8 +37,8 @@ import { WINDOW_KINDS } from '../windows/registry';
 /**
  * The launcher (Ctrl+K): open windows, go to workspaces, act on the focused window and reach
  * the rest of the app by typing. Its search field takes the focus while it is open, so Space
- * types there; the field lets go of it the moment the launcher closes, so Space is STOP again
- * while the dialog fades out.
+ * types there, even when the launcher opens again while it is still fading out; the field lets go
+ * of it the moment the launcher closes, so Space is STOP again while the dialog fades out.
  *
  * @param onAction Runs a keymap action, so that the launcher and the keys do the same thing.
  */
@@ -47,7 +47,9 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   const open = useShell((state) => state.overlay === 'launcher');
   const workspaces = useShell((state) => state.desktop.workspaces);
   const active = useShell((state) => state.desktop.active);
-  const shown = workspaces.at(active)?.name ?? '';
+  const shownWorkspace = workspaces.at(active);
+  const shown = shownWorkspace?.name ?? '';
+  const shownEmpty = shownWorkspace?.root === null && shownWorkspace.floating.length === 0;
   const hasFocus = useShell((state) => focusedWindow(activeWorkspace(state.desktop)) !== null);
   const bindings = useShell((state) => state.bindings);
   const presets = useShell((state) => state.presets);
@@ -56,10 +58,24 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   const packageName = robotPackage?.displayName;
 
   const opener = useRef<HTMLElement | null>(null);
+  const search = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
-    if (open && document.activeElement instanceof HTMLElement) {
-      opener.current = document.activeElement;
+    const focused = document.activeElement;
+
+    if (
+      open &&
+      focused instanceof HTMLElement &&
+      focused !== document.body &&
+      focused.closest('[cmdk-root]') === null
+    ) {
+      opener.current = focused;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      search.current?.focus({ preventScroll: true });
     }
   }, [open]);
 
@@ -97,7 +113,7 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
         opener.current?.focus({ preventScroll: true });
       }}
     >
-      <CommandInput placeholder="Open a window or run an action…" />
+      <CommandInput ref={search} placeholder="Open a window or run an action…" />
       <CommandList>
         <CommandEmpty>Nothing matches.</CommandEmpty>
         <CommandGroup heading="Open a window">
@@ -176,21 +192,34 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
                 Move {shown} right
                 {shortcut('workspace.move-right')}
               </CommandItem>
-              <CommandItem
-                value={`close workspace ${shown} move its windows`}
-                onSelect={run(() => store.getState().requestCloseWorkspace(active, 'move'))}
-              >
-                <XIcon />
-                Close {shown}, move its windows…
-                {shortcut('workspace.close')}
-              </CommandItem>
-              <CommandItem
-                value={`close workspace ${shown} and its windows`}
-                onSelect={run(() => store.getState().requestCloseWorkspace(active, 'close'))}
-              >
-                <Trash2Icon />
-                Close {shown} and its windows…
-              </CommandItem>
+              {shownEmpty ? (
+                <CommandItem
+                  value={`close workspace ${shown}`}
+                  onSelect={run(() => store.getState().requestCloseWorkspace(active, 'close'))}
+                >
+                  <XIcon />
+                  Close {shown}
+                  {shortcut('workspace.close')}
+                </CommandItem>
+              ) : (
+                <>
+                  <CommandItem
+                    value={`close workspace ${shown} move its windows`}
+                    onSelect={run(() => store.getState().requestCloseWorkspace(active, 'move'))}
+                  >
+                    <XIcon />
+                    Close {shown}, move its windows…
+                    {shortcut('workspace.close')}
+                  </CommandItem>
+                  <CommandItem
+                    value={`close workspace ${shown} and its windows`}
+                    onSelect={run(() => store.getState().requestCloseWorkspace(active, 'close'))}
+                  >
+                    <Trash2Icon />
+                    Close {shown} and its windows…
+                  </CommandItem>
+                </>
+              )}
             </>
           ) : null}
         </CommandGroup>

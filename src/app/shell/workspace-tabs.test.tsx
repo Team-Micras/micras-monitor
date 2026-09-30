@@ -224,6 +224,20 @@ describe('closing a workspace', () => {
     expect(tiledIds(store, 0)).toEqual(['c', 'a', 'b']);
   });
 
+  test('from the launcher, for an empty workspace, closes it without asking', async () => {
+    const { store, screen } = await open();
+    await userEvent.keyboard('{Alt>}3{/Alt}');
+    await userEvent.keyboard('{Control>}k{/Control}');
+    await screen.getByPlaceholder('Open a window or run an action…').fill('close workspace three');
+    await expect
+      .element(screen.getByRole('option', { name: /^Close Three/ }))
+      .toHaveTextContent(/^Close Three(?!…)/);
+    expect(screen.getByRole('option', { name: /move its windows/ }).query()).toBeNull();
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => workspaceNames(store)).toEqual(['One', 'Two']);
+    expect(store.getState().closingWorkspace).toBeNull();
+  });
+
   test('from the launcher, with or without its windows', async () => {
     const { store, screen } = await open();
     await launch(screen, 'close workspace one move its windows');
