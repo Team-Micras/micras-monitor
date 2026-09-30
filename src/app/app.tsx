@@ -6,7 +6,7 @@ import type { RobotRegistry } from '@/robot-kit';
 import { emergencyCommand } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
-import type { KeyAction } from './keymap/keymap';
+import { actionFor, type KeyAction } from './keymap/keymap';
 import { tilingCommandFor } from './keymap/tiling-commands';
 import { useKeymap } from './keymap/use-keymap';
 import type { LayoutStorage } from './layouts/layout-book';
@@ -25,6 +25,8 @@ import type { MonitorPorts } from './ports';
 import type { SessionManager } from './sessions/session-manager';
 import { SessionsContext } from './sessions/sessions-context';
 import { SessionView } from './sessions/session-view';
+import { Announcer } from './shell/announcer';
+import { Announcements } from './shell/announcements';
 import { DeletedNotice } from './shell/deleted-notice';
 import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
 import { LazyLauncher, LazyVariableDrawer } from './shell/lazy-shell';
@@ -86,7 +88,9 @@ export function App({
       <SessionsContext value={sessions ?? null}>
         <ShellStoreContext value={store}>
           <TooltipProvider>
-            <Shell layouts={layouts ?? null} updates={updates} />
+            <Announcer>
+              <Shell layouts={layouts ?? null} updates={updates} />
+            </Announcer>
           </TooltipProvider>
         </ShellStoreContext>
       </SessionsContext>
@@ -167,6 +171,8 @@ function Shell({
 
       if (action.startsWith('focus.')) {
         focusWindowElement(store);
+      } else if (action.startsWith('swap.') || action === 'window.close') {
+        requestAnimationFrame(() => focusWindowElement(store));
       }
 
       return;
@@ -198,7 +204,9 @@ function Shell({
 
   const onType = (event: KeyboardEvent) => {
     const search =
-      drawerOpen && event.key !== '/' ? document.querySelector(DRAWER_SEARCH_SELECTOR) : null;
+      drawerOpen && event.key !== '/' && actionFor(bindings, event) !== 'window.pause'
+        ? document.querySelector(DRAWER_SEARCH_SELECTOR)
+        : null;
 
     if (search instanceof HTMLInputElement) {
       search.focus();
@@ -238,6 +246,7 @@ function Shell({
           <DragGhost />
         </div>
       )}
+      <Announcements />
       <DeletedNotice />
       <UpdateNotice updates={updates} blockedBy={blockedBy} />
     </StopActionContext>

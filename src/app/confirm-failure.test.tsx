@@ -73,7 +73,7 @@ describe('the confirmation of a dangerous command whose code fails to load', () 
     const save = screen.getByRole('button', { name: 'Save' });
     await save.click();
     await expect
-      .element(screen.getByRole('alert').filter({ hasText: "Couldn't open the confirmation" }))
+      .element(screen.getByText("Couldn't open the confirmation — reload").first())
       .toBeVisible();
     expect(sent).toEqual([]);
 

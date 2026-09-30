@@ -1,11 +1,21 @@
-import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from 'react';
+import {
+  Component,
+  Suspense,
+  useEffect,
+  type ContextType,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react';
 
 import { retryFailedLoads } from '@/lazy/lazy-with-retry';
 
 import { Button } from '../components/ui/button';
+import { AnnounceContext } from '../shell/announce';
 
 interface WindowErrorBoundaryProps {
   readonly children: ReactNode;
+  /** The window's name, for the announcement that it failed. */
+  readonly title?: string;
 }
 
 interface WindowErrorBoundaryState {
@@ -28,6 +38,8 @@ export class WindowErrorBoundary extends Component<
   WindowErrorBoundaryProps,
   WindowErrorBoundaryState
 > {
+  static override contextType = AnnounceContext;
+  declare context: ContextType<typeof AnnounceContext>;
   override state: WindowErrorBoundaryState = { failed: false, again: false };
   private retried = false;
 
@@ -41,6 +53,7 @@ export class WindowErrorBoundary extends Component<
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
     console.error('A window failed', error, info.componentStack);
+    this.context(`Couldn't load ${this.props.title ?? 'this window'}`);
 
     if (this.retried) {
       this.setState({ again: true });
@@ -64,8 +77,8 @@ export class WindowErrorBoundary extends Component<
     }
 
     return (
-      <div
-        role="alert"
+      <section
+        aria-label="Window failed to load"
         className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted-foreground"
       >
         <p>Couldn&apos;t load this window</p>
@@ -84,7 +97,7 @@ export class WindowErrorBoundary extends Component<
             </Button>
           ) : null}
         </div>
-      </div>
+      </section>
     );
   }
 }

@@ -21,6 +21,7 @@ import {
   useRobotPackage,
 } from '../../monitor-context';
 import type { CommandOutcome } from '../../ports';
+import { useAnnounce } from '../../shell/announce';
 import { useStopAction } from '../../shell/stop-action';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
@@ -59,6 +60,7 @@ export function CommandsWindow({
   const askedOnce = useEver(asking);
   const [asks, setAsks] = useState(0);
   const stop = useStopAction();
+  const announce = useAnnounce();
 
   const linked = status.kind === 'linked';
 
@@ -77,6 +79,13 @@ export function CommandsWindow({
   const emergency = emergencyCommand(pkg);
   const buttons = pkg.commands.filter((command) => command !== emergency);
 
+  const show = (message: OutcomeMessage) => {
+    setAnswer(message);
+    setAnswers((count) => count + 1);
+
+    announce(message.detail === null ? message.title : `${message.title}: ${message.detail}`);
+  };
+
   const send = async (command: CommandSpec) => {
     setInFlight((current) => new Set(current).add(command.code));
     const outcome: CommandOutcome = await commands
@@ -90,14 +99,12 @@ export function CommandsWindow({
       next.delete(command.code);
       return next;
     });
-    setAnswer(outcomeMessage(command, outcome, pkg, labels));
-    setAnswers((count) => count + 1);
+    show(outcomeMessage(command, outcome, pkg, labels));
   };
 
   const confirmFailed = () => {
     setAsking(false);
-    setAnswer({ tone: 'failed', title: "Couldn't open the confirmation — reload", detail: null });
-    setAnswers((count) => count + 1);
+    show({ tone: 'failed', title: "Couldn't open the confirmation — reload", detail: null });
   };
 
   const press = (command: CommandSpec) => {
@@ -137,7 +144,7 @@ export function CommandsWindow({
           disabled={!underWay}
           title={emergency.description}
           onClick={stop}
-          className="mt-auto flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-destructive/85 text-base font-semibold text-white shadow-sm transition-colors hover:bg-destructive focus-visible:ring-[3px] focus-visible:ring-destructive/40 focus-visible:outline-none disabled:opacity-45"
+          className="mt-auto flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-stop text-base font-semibold text-stop-foreground shadow-sm transition-colors hover:brightness-90 focus-visible:ring-[3px] focus-visible:ring-stop/40 focus-visible:outline-none disabled:opacity-45"
         >
           <CircleXIcon className="size-5" aria-hidden />
           {emergency.label}
@@ -217,7 +224,6 @@ function Answer({
 
   return (
     <div
-      role={message.tone === 'ok' ? 'status' : 'alert'}
       data-tone={message.tone}
       data-answer={sequence}
       className={cn(

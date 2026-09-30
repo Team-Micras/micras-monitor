@@ -521,7 +521,9 @@ describe('Commands', () => {
     await expect.element(screen.getByRole('dialog')).toBeVisible();
     await settled();
     await screen.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
-    await expect.element(screen.getByRole('alert')).toHaveTextContent('Refused — robot not idle');
+    await expect
+      .element(screen.getByText('Refused — robot not idle', { exact: true }))
+      .toBeVisible();
     expect(sent).toEqual([3]);
 
     await screen.getByRole('main').getByRole('button', { name: 'Stop' }).click();

@@ -65,7 +65,7 @@ describe('a window that fails to load', () => {
   test('leaves the app and every STOP working, and loads on retry once the chunk works', async () => {
     const { screen, sent } = await mount();
 
-    const failures = screen.getByRole('alert').filter({ hasText: "Couldn't load this window" });
+    const failures = screen.getByRole('region', { name: 'Window failed to load' });
     await expect.element(failures.first()).toBeVisible();
     await expect.element(screen.getByRole('region', { name: 'Workspace Overview' })).toBeVisible();
     expect(chunk.attempts).toBeGreaterThan(0);
