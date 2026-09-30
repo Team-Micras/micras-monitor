@@ -7,12 +7,17 @@
  * robot are not counted in it; the total of every script and stylesheet is printed for
  * reference.
  *
+ * It also reports the largest chunk before gzip against the chunk size Vite warns past
+ * (`CHUNK_SIZE_WARNING_KB`, in kB of 1000 bytes, as Vite counts them).
+ *
  * Run with `bun run size` after `bun run build`. It only reports; it never fails the check.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+
+import { CHUNK_SIZE_WARNING_KB } from '../vite.config';
 
 const TARGET_KB = 250;
 const DIST = join(import.meta.dirname, '..', 'dist');
@@ -98,3 +103,14 @@ console.log(`total            ${kb(totalBytes)}  (${everything.length} files)`);
 console.log(
   `counted          ${kb(counted)} of the ${TARGET_KB} KB target (eager + first workspace)`
 );
+
+const [largest] = everything
+  .filter((file) => file.endsWith('.js'))
+  .map((file) => ({ file, kB: statSync(join(DIST, file)).size / 1000 }))
+  .toSorted((left, right) => right.kB - left.kB);
+
+if (largest !== undefined) {
+  console.log(
+    `largest chunk    ${largest.kB.toFixed(1)} kB before gzip of the ${CHUNK_SIZE_WARNING_KB} kB warning limit (${largest.file})`
+  );
+}

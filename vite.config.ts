@@ -30,7 +30,7 @@ const DARK_COLOR = '#0a0a0a';
  * The largest chunk shipped, the entry with React DOM, is about 380 kB before gzip; a warning past
  * this means one grew.
  */
-const CHUNK_SIZE_WARNING_KB = 400;
+export const CHUNK_SIZE_WARNING_KB = 400;
 
 /** The GitHub Pages site serves the app from `/micras-monitor/`; anywhere else it is the root. */
 const base = process.env.BASE_PATH ?? '/';
