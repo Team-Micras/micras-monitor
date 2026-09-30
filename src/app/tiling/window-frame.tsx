@@ -30,6 +30,7 @@ import { useConnectionStatus, useLinkUp, useLiveValue } from '../monitor-context
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowKind, windowTitle } from '../windows/registry';
 import type { ShellWindow } from '../windows/types';
+import { windowElementId } from './dom-ids';
 import { startPointerDrag, surroundingsAt } from './pointer-drag';
 import { WindowErrorBoundary } from './window-error-boundary';
 
@@ -127,6 +128,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
 
   return (
     <section
+      id={windowElementId(window.id)}
       aria-label={title}
       aria-hidden={!visible}
       inert={!visible}
@@ -136,7 +138,8 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
       onPointerDownCapture={focus}
       className={cn(
         'absolute flex flex-col overflow-hidden rounded-xl border bg-card text-card-foreground outline-none',
-        animate && 'transition-[left,top,width,height,opacity] duration-200 ease-out',
+        animate &&
+          'transition-[left,top,width,height,opacity] duration-200 ease-out motion-reduce:transition-none',
         focused ? 'border-foreground/25 shadow-sm' : 'border-border',
         floating && 'shadow-2xl',
         dragged && 'opacity-40',
@@ -237,7 +240,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
         </DropdownMenu>
       </header>
       <div className="min-h-0 flex-1">
-        <WindowErrorBoundary>
+        <WindowErrorBoundary title={title}>
           <View window={window} paused={paused} visible={visible} />
         </WindowErrorBoundary>
       </div>

@@ -9,6 +9,8 @@ import { useShell, useShellStore } from '../state/shell-store';
 import { windowTitle } from '../windows/registry';
 import { DropPreview } from './drop-preview';
 import { GutterHandle } from './gutter-handle';
+import { useScreenTabOrder } from './screen-tab-order';
+import { tabOrder } from './tab-order';
 import { WindowFrame } from './window-frame';
 
 function Keys({ action }: { readonly action: KeyAction }) {
@@ -62,6 +64,11 @@ export function TilingView() {
   const focused = focusedWindow(workspace);
   const placed = new Map(layoutDesktop(desktop, metrics).map((entry) => [entry.id, entry]));
   const { gutters } = layoutWorkspace(workspace, metrics);
+  const order = tabOrder([...placed.values()]);
+  useScreenTabOrder(container, {
+    tiled: order.tiled.map((entry) => entry.id),
+    floating: order.floating.map((entry) => entry.id),
+  });
   const empty = workspace.root === null && workspace.floating.length === 0;
 
   return (
