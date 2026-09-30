@@ -239,7 +239,7 @@ function Shell({
   useLayouts(layouts);
 
   return (
-    <CommandTrackerContext value={(id, change) => store.getState().trackCommand(id, change)}>
+    <CommandTrackerContext value={store.getState().trackCommand}>
       <StopActionContext value={() => void stop()}>
         {phone ? (
           <PhoneView plan={plan} />
