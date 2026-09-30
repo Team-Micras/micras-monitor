@@ -34,6 +34,19 @@ describe('The test projects', () => {
     expect(project(name).exclude).toEqual(expect.arrayContaining([...configDefaults.exclude]));
   });
 
+  test.each([
+    ['unit', 6],
+    ['browser', 4],
+    ['performance', 1],
+    ['e2e', 1],
+  ])('%s runs at most %i files at once, in a group of its own', (name, workers) => {
+    expect(project(name).maxWorkers).toBe(workers);
+    const orders = ['unit', 'browser', 'performance', 'e2e'].map(
+      (other) => project(other).sequence?.groupOrder
+    );
+    expect(new Set(orders).size).toBe(orders.length);
+  });
+
   test('performance runs against the simulated robot with room to start it', () => {
     expect(project('performance')).toMatchObject({
       globalSetup: ['tools/browser-setup.ts'],

@@ -17,6 +17,13 @@ function chromium() {
   };
 }
 
+/**
+ * How many test files run at once, so a full check stays near half the cores of the reference
+ * notebook and well under 4 GB: each browser file is a Chromium page of 150–250 MB. The groups run
+ * one after the other, unit tests first, and the performance tests alone, one file at a time.
+ */
+const WORKERS = { unit: 6, browser: 4, performance: 1, e2e: 1 } as const;
+
 const DARK_COLOR = '#0a0a0a';
 
 /**
@@ -89,6 +96,8 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
+          maxWorkers: WORKERS.unit,
+          sequence: { groupOrder: 0 },
           include: ['src/**/*.test.ts', 'robots/**/*.test.ts', 'tools/**/*.test.ts'],
           exclude: [...configDefaults.exclude, ...PERFORMANCE_TESTS],
           environment: 'node',
@@ -99,6 +108,8 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'e2e',
+          maxWorkers: WORKERS.e2e,
+          sequence: { groupOrder: 3 },
           include: ['e2e/**/*.test.ts'],
           environment: 'node',
           testTimeout: 90_000,
@@ -109,6 +120,8 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'browser',
+          maxWorkers: WORKERS.browser,
+          sequence: { groupOrder: 1 },
           include: [
             'src/app/**/*.test.tsx',
             'src/lazy/**/*.test.tsx',
@@ -132,7 +145,8 @@ export default defineConfig({
           testTimeout: 60_000,
           hookTimeout: 60_000,
           expect: { poll: { timeout: 10_000 } },
-          sequence: { groupOrder: 1 },
+          maxWorkers: WORKERS.performance,
+          sequence: { groupOrder: 2 },
           browser: chromium(),
         },
       },
