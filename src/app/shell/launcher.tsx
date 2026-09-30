@@ -13,7 +13,7 @@ import {
   Trash2Icon,
   XIcon,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
@@ -24,7 +24,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
   CommandShortcut,
 } from '../components/ui/command';
 import { formatChord } from '../keymap/chords';
@@ -51,6 +50,14 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   const robotPackage = useRobotPackage()?.package ?? null;
   const packagePresets = robotPackage?.presets ?? [];
   const packageName = robotPackage?.displayName;
+
+  const opener = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement) {
+      opener.current = document.activeElement;
+    }
+  }, [open]);
 
   const close = () => store.getState().setOverlay(null);
   const run = (action: () => void) => () => {
@@ -81,6 +88,10 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
       title="Launcher"
       description="Open a window or run an action"
       showCloseButton={false}
+      onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        opener.current?.focus({ preventScroll: true });
+      }}
     >
       <CommandInput placeholder="Open a window or run an action…" />
       <CommandList>
@@ -190,8 +201,7 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
             </CommandItem>,
           ])}
         </CommandGroup>
-        <CommandSeparator />
-        <CommandGroup heading="App">
+        <CommandGroup heading="App" className="mt-1 border-t">
           <CommandItem onSelect={run(() => store.getState().setOverlay('drawer'))}>
             <ListTreeIcon />
             Variables

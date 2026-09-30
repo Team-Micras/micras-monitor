@@ -9,7 +9,13 @@ import {
   SearchIcon,
   XIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 
 import { presentVariable } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
@@ -30,6 +36,7 @@ import type { RobotVariable } from '../ports';
 import { useShell, useShellStore } from '../state/shell-store';
 import { startPointerDrag, surroundingsAt } from '../tiling/pointer-drag';
 import { PLOT_KIND, windowKind } from '../windows/registry';
+import { trapTab } from './focus-trap';
 
 type Filter = 'all' | 'plotted' | 'writable';
 
@@ -86,6 +93,7 @@ export function VariableDrawer() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const panel = useRef<HTMLElement>(null);
 
   const plotted = new Set([...windows.values()].flatMap((window) => window.payload.variables));
   const needle = query.trim().toLowerCase();
@@ -123,6 +131,27 @@ export function VariableDrawer() {
     setCollapsed(next);
   };
 
+  useLayoutEffect(() => {
+    const opener = document.activeElement;
+    const element = panel.current;
+    element?.focus({ preventScroll: true });
+    const trap = (event: KeyboardEvent) => element !== null && trapTab(event, element);
+    element?.addEventListener('keydown', trap);
+
+    return () => {
+      element?.removeEventListener('keydown', trap);
+      const active = document.activeElement;
+
+      if (
+        opener instanceof HTMLElement &&
+        opener.isConnected &&
+        (active === document.body || element?.contains(active) === true)
+      ) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && store.getState().drag === null) {
@@ -142,9 +171,11 @@ export function VariableDrawer() {
 
   return (
     <aside
+      ref={panel}
+      tabIndex={-1}
       aria-label="Variables"
       data-drawer
-      className="absolute top-3.5 bottom-3.5 left-3.5 z-30 flex w-[380px] flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-2xl animate-in fade-in-0 slide-in-from-left-4 duration-200"
+      className="absolute top-3.5 bottom-3.5 left-3.5 z-30 flex w-[380px] flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-2xl outline-none animate-in fade-in-0 slide-in-from-left-4 duration-200"
     >
       <header className="flex items-start justify-between gap-2 px-5 pt-4">
         <div>
@@ -193,7 +224,7 @@ export function VariableDrawer() {
                 filter === option && 'bg-accent text-foreground'
               )}
             >
-              {option} <span className="ml-1 text-xs opacity-70">{counts[option]}</span>
+              {option} <span className="ml-1 text-xs">{counts[option]}</span>
             </button>
           ))}
         </div>

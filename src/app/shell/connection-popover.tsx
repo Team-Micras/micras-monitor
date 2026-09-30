@@ -94,7 +94,7 @@ export function ConnectionPopover() {
           <ChevronDownIcon className="text-muted-foreground" aria-hidden />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80">
+      <PopoverContent align="start" className="w-80" aria-label="Connection">
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
             {(['websocket', 'bluetooth'] as const).map((option) => {
@@ -164,11 +164,7 @@ function StatusLine({
   }
 
   if (status.kind === 'failed') {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {status.message}
-      </p>
-    );
+    return <p className="text-sm text-destructive">{status.message}</p>;
   }
 
   if (status.kind === 'disconnected') {
