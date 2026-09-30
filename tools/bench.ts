@@ -11,9 +11,11 @@
  * - `bun run bench -- --record` stores the run as the new baseline, named after this host or
  *   `BENCH_MACHINE`.
  * - `bun run bench -- --output <file>` writes the run's timings to a file and judges only the
- *   budgets, as CI does for the base commit.
- * - `bun run bench -- --against <file>` judges the run against that file instead of the stored
- *   baseline.
+ *   budgets.
+ * - `bun run bench -- --against <file>` judges the run against another run's file instead of the
+ *   stored baseline; a test or timing only one of them has is noted, not failed.
+ * - `bun run bench -- --no-budgets` skips the absolute budgets, as CI does, where only a relative
+ *   regression counts (`tools/bench-diff.ts`).
  *
  * Run it on an otherwise idle machine; it is not part of `bun run check`, which must not depend
  * on the load of the machine.
@@ -92,6 +94,7 @@ const { values: options } = parseArgs({
     record: { type: 'boolean', default: false },
     output: { type: 'string' },
     against: { type: 'string' },
+    'no-budgets': { type: 'boolean', default: false },
   },
 });
 const { passed, results } = await run();
@@ -104,9 +107,13 @@ const record: BenchRecord = {
 console.log('\nPerformance budget');
 results.forEach(({ summary }, name) => console.log(`${name}\n  ${summary}`));
 
-const budgets = checkBudgets(results);
-print('Absolute budgets', budgets);
-let failed = !passed || budgets.failed;
+let failed = !passed;
+
+if (!options['no-budgets']) {
+  const budgets = checkBudgets(results);
+  print('Absolute budgets', budgets);
+  failed ||= budgets.failed;
+}
 
 if (options.output !== undefined) {
   writeRecord(options.output, record);
@@ -119,7 +126,11 @@ if (options.record) {
   }
 } else if (options.against !== undefined || options.output === undefined) {
   const baseline = readRecord(options.against ?? STORED_BASELINE);
-  const verdict = compareWithBaseline(record.tests, baseline.tests);
+  const verdict = compareWithBaseline(
+    record.tests,
+    baseline.tests,
+    options.against === undefined ? 'strict' : 'shared'
+  );
   print(`Against the baseline of ${baseline.recorded} on ${baseline.machine}`, verdict);
   failed ||= verdict.failed;
 }

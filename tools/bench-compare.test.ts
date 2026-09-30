@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
-import { checkBudgets, compareWithBaseline, isBenchRecord, timingsOf } from './bench-compare';
+import {
+  bestOf,
+  checkBudgets,
+  compareWithBaseline,
+  isBenchRecord,
+  timingsOf,
+} from './bench-compare';
 import type { BenchResult } from './bench-result';
 
 const PLOTS = 'eight live plots';
@@ -10,7 +16,7 @@ function budgeted(frameP95Ms: number): BenchResult {
   return { timings: { frameP95Ms, intervalP95Ms: 16.7 }, budgets: { frameP95Ms: 8 }, summary: '' };
 }
 
-describe('compareWithBaseline', () => {
+describe('compareWithBaseline against the stored baseline', () => {
   test('passes timings within 1.5 times their baseline plus 0.5 ms', () => {
     const verdict = compareWithBaseline(
       { [PLOTS]: { frameP95Ms: 3.5 } },
@@ -76,5 +82,45 @@ describe('records', () => {
     expect(
       isBenchRecord({ recorded: '2026-09-29', machine: 'host', tests: { x: { y: 'z' } } })
     ).toBe(false);
+  });
+});
+
+describe('compareWithBaseline against another run', () => {
+  test('notes the tests and timings only one side has, without failing', () => {
+    const verdict = compareWithBaseline(
+      { [PLOTS]: { frameP95Ms: 2, added: 1 }, renamed: { p95: 1 } },
+      { [PLOTS]: { frameP95Ms: 2, removed: 1 }, [SESSION]: { p95: 1 } },
+      'shared'
+    );
+    expect(verdict.failed).toBe(false);
+    expect(verdict.lines).toEqual(
+      expect.arrayContaining([
+        `${PLOTS}: added 1.00 ms has no baseline: notice`,
+        'renamed: p95 1.00 ms has no baseline: notice',
+        `${PLOTS}: removed is in the baseline but was not measured: notice`,
+        `${SESSION}: p95 is in the baseline but was not measured: notice`,
+      ])
+    );
+  });
+
+  test('still fails a timing both sides measured that regressed', () => {
+    const verdict = compareWithBaseline(
+      { [PLOTS]: { frameP95Ms: 3.6 }, added: { p95: 1 } },
+      { [PLOTS]: { frameP95Ms: 2 } },
+      'shared'
+    );
+    expect(verdict.failed).toBe(true);
+    expect(verdict.lines.join('\n')).toContain('REGRESSED');
+  });
+});
+
+describe('bestOf', () => {
+  test('keeps each timing at its lowest over the runs that measured it', () => {
+    expect(
+      bestOf([
+        { [PLOTS]: { frameP95Ms: 2.4 }, [SESSION]: { p95: 1 } },
+        { [PLOTS]: { frameP95Ms: 2.1, other: 3 } },
+      ])
+    ).toEqual({ [PLOTS]: { frameP95Ms: 2.1, other: 3 }, [SESSION]: { p95: 1 } });
   });
 });

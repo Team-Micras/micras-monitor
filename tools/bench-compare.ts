@@ -90,17 +90,31 @@ export function checkBudgets(results: ReadonlyMap<string, BenchResult>): Verdict
 }
 
 /**
- * Judges every timing against a baseline: it fails past {@link RATIO} times the baseline plus
- * {@link SLACK_MS}, and whenever the two do not hold the same tests and timings, so a test that
- * stopped reporting, or one that never had a baseline, cannot pass unnoticed.
+ * How a baseline is held to the tests that ran: `strict` for the stored baseline, where a test or
+ * timing on one side only fails, since it means the baseline is stale; `shared` for the base
+ * commit's run, where a bench added, renamed or removed by the change under test is only noted.
  */
-export function compareWithBaseline(results: BenchTimings, baseline: BenchTimings): Verdict {
+export type BaselineMode = 'strict' | 'shared';
+
+/**
+ * Judges every timing against a baseline: it fails past {@link RATIO} times the baseline plus
+ * {@link SLACK_MS}. A test or timing on one side only fails in `strict` mode and is a notice in
+ * `shared` mode, so a baseline cannot go stale unnoticed while a change that adds a bench can
+ * still be compared with a base commit that lacks it.
+ */
+export function compareWithBaseline(
+  results: BenchTimings,
+  baseline: BenchTimings,
+  mode: BaselineMode = 'strict'
+): Verdict {
   const lines: string[] = [];
   let failed = false;
   const fail = (line: string) => {
     lines.push(line);
     failed = true;
   };
+  const unmatched = (line: string) =>
+    mode === 'strict' ? fail(`${line}: FAILED`) : lines.push(`${line}: notice`);
 
   for (const [name, timings] of Object.entries(results)) {
     const stored = baseline[name];
@@ -109,7 +123,7 @@ export function compareWithBaseline(results: BenchTimings, baseline: BenchTiming
       const base = stored?.[key];
 
       if (base === undefined) {
-        fail(`${name}: ${key} ${value.toFixed(2)} ms has no baseline: FAILED`);
+        unmatched(`${name}: ${key} ${value.toFixed(2)} ms has no baseline`);
         continue;
       }
 
@@ -127,10 +141,30 @@ export function compareWithBaseline(results: BenchTimings, baseline: BenchTiming
   for (const [name, timings] of Object.entries(baseline)) {
     for (const key of Object.keys(timings)) {
       if (results[name]?.[key] === undefined) {
-        fail(`${name}: ${key} is in the baseline but was not measured: FAILED`);
+        unmatched(`${name}: ${key} is in the baseline but was not measured`);
       }
     }
   }
 
   return { lines, failed };
+}
+
+/**
+ * The best of several runs: each timing at its lowest over the runs that measured it, so a
+ * reading taken while the machine was busy counts for less.
+ */
+export function bestOf(runs: readonly BenchTimings[]): BenchTimings {
+  const best: Record<string, Record<string, number>> = {};
+
+  for (const run of runs) {
+    for (const [name, timings] of Object.entries(run)) {
+      const kept = (best[name] ??= {});
+
+      for (const [key, value] of Object.entries(timings)) {
+        kept[key] = Math.min(kept[key] ?? Number.POSITIVE_INFINITY, value);
+      }
+    }
+  }
+
+  return best;
 }
