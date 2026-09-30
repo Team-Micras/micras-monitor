@@ -84,7 +84,9 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
   const onTitlePointerDown = (event: ReactPointerEvent) => {
     if (
       event.button !== 0 ||
-      (event.target instanceof Element && event.target.closest('button') !== null)
+      !(event.target instanceof Element) ||
+      !event.currentTarget.contains(event.target) ||
+      event.target.closest('button') !== null
     ) {
       return;
     }
@@ -195,7 +197,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem
               disabled={floating}
-              onSelect={() => store.getState().run({ type: 'toggleMaximize' })}
+              onSelect={() => store.getState().run({ type: 'toggleMaximize', id: window.id })}
             >
               <MaximizeIcon />
               {maximized ? 'Restore' : 'Maximize'}

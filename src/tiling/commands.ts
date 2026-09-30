@@ -60,7 +60,7 @@ export type Command<P = unknown> =
       readonly follow?: boolean;
     }
   | { readonly type: 'toggleFloating'; readonly id?: WindowId }
-  | { readonly type: 'toggleMaximize' }
+  | { readonly type: 'toggleMaximize'; readonly id?: WindowId }
   | { readonly type: 'close'; readonly id?: WindowId }
   | { readonly type: 'open'; readonly window: TilingWindow<P>; readonly at?: EdgePlacement }
   | { readonly type: 'addWorkspace'; readonly name: string; readonly at?: number }
@@ -103,7 +103,7 @@ export function execute<P>(
     case 'toggleFloating':
       return onWindow(desktop, command.id, (id) => toggleFloating(desktop, id, metrics));
     case 'toggleMaximize':
-      return toggleMaximize(desktop);
+      return toggleMaximize(desktop, command.id);
     case 'close':
       return onWindow(desktop, command.id, (id) => closeWindow(desktop, id));
     case 'open':

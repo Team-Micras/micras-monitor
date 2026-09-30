@@ -59,6 +59,14 @@ describe('commands', () => {
     expect(leafIds(d.workspaces[1].root)).toEqual(['log']);
   });
 
+  test('maximize the window they name, focusing it, and restore the tiling', () => {
+    let d = run(overview(), { type: 'toggleMaximize', id: 'maze' });
+    expect(d.workspaces[0].maximized).toBe('maze');
+    expect(focusedWindow(d.workspaces[0])).toBe('maze');
+    d = run(d, { type: 'toggleMaximize', id: 'maze' });
+    expect(d.workspaces[0].maximized).toBeNull();
+  });
+
   test('with no window to act on, change nothing', () => {
     const empty = desktopOf([createWorkspace('Empty')]);
     for (const command of [

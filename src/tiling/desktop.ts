@@ -312,15 +312,28 @@ export function moveToWorkspace<P>(
   };
 }
 
-/** Maximizes the focused tiled window of the active workspace, or restores the tiling. */
-export function toggleMaximize<P>(desktop: Desktop<P>): Desktop<P> {
-  return updateWorkspace(desktop, desktop.active, (ws) => {
+/**
+ * Maximizes a tiled window, focusing it, or restores the tiling of its workspace when a window
+ * of that workspace is maximized.
+ *
+ * @param id The window; the focused window of the active workspace by default.
+ */
+export function toggleMaximize<P>(
+  desktop: Desktop<P>,
+  id: WindowId | null = focusedWindow(activeWorkspace(desktop))
+): Desktop<P> {
+  const index = id === null ? desktop.active : workspaceOf(desktop, id);
+
+  if (index === -1) {
+    return desktop;
+  }
+
+  return updateWorkspace(desktop, index, (ws) => {
     if (ws.maximized !== null) {
       return { ...ws, maximized: null };
     }
 
-    const focused = focusedWindow(ws);
-    return focused !== null && isTiled(ws, focused) ? { ...ws, maximized: focused } : ws;
+    return id !== null && isTiled(ws, id) ? { ...withFocus(ws, id), maximized: id } : ws;
   });
 }
 
