@@ -1,159 +1,127 @@
 /**
- * The performance budget: runs the `performance` test project in Chromium and compares each
- * timing its tests report with the baseline stored in `tools/bench-baseline.json`.
+ * The performance budget: runs the `performance` test project in Chromium and judges each timing
+ * its tests report twice (`tools/bench-compare.ts`): against the absolute budget a test declares,
+ * such as the plan's 8 ms p95 of frame work, and against a baseline, failing past 1.5 times it
+ * plus 0.5 ms, so a relative regression fails on any machine that measured its own baseline.
  *
- * A timing fails when it grows past {@link RATIO} times its baseline plus {@link SLACK_MS}, the
- * resolution a browser gives `performance.now`; only a relative regression fails, so the numbers
- * hold on any machine that recorded its own baseline. `bun run bench -- --record` runs the tests
- * and stores what they measured as the new baseline.
+ * The baseline is `tools/bench-baseline.json`, this notebook's, unless `--against <file>` names
+ * the results of another run, as CI does with the base commit's on the same runner.
  *
- * Run with `bun run bench` on an otherwise idle machine; it is not part of `bun run check`,
- * which must not depend on the load of the machine.
+ * - `bun run bench` judges a run against the stored baseline.
+ * - `bun run bench -- --record` stores the run as the new baseline, named after this host or
+ *   `BENCH_MACHINE`.
+ * - `bun run bench -- --output <file>` writes the run's timings to a file and judges only the
+ *   budgets, as CI does for the base commit.
+ * - `bun run bench -- --against <file>` judges the run against that file instead of the stored
+ *   baseline.
+ *
+ * Run it on an otherwise idle machine; it is not part of `bun run check`, which must not depend
+ * on the load of the machine.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
+import { parseArgs } from 'node:util';
 
-import type { TestCase } from 'vitest/node';
-import { startVitest } from 'vitest/node';
+import { startVitest, type TestCase } from 'vitest/node';
 
-/** How much a timing may grow over its baseline before the bench fails. */
-const RATIO = 1.5;
-/** Added to every allowance, so a timing near the clock's resolution does not fail by one tick. */
-const SLACK_MS = 0.5;
-const BASELINE = join(import.meta.dirname, 'bench-baseline.json');
+import {
+  checkBudgets,
+  compareWithBaseline,
+  isBenchRecord,
+  isBenchResult,
+  timingsOf,
+  type Verdict,
+} from './bench-compare';
+import type { BenchRecord, BenchResult } from './bench-result';
 
-/** The stored baseline: the timings of each performance test, by its full name. */
-interface Baseline {
-  readonly recorded: string;
-  readonly machine: string;
-  readonly tests: Readonly<Record<string, Readonly<Record<string, number>>>>;
-}
+const STORED_BASELINE = join(import.meta.dirname, 'bench-baseline.json');
 
-/** What a performance test hands the bench through its meta, as `src/app/fixtures/bench.ts` puts it. */
-interface Measured {
-  readonly timings: Readonly<Record<string, number>>;
-  readonly summary: string;
-}
-
-async function run(): Promise<{ passed: boolean; tests: TestCase[] }> {
+async function run(): Promise<{ passed: boolean; results: Map<string, BenchResult> }> {
   const vitest = await startVitest('test', [], { project: ['performance'], watch: false });
 
   try {
-    const tests = vitest.state
+    const tests: TestCase[] = vitest.state
       .getTestModules()
       .flatMap((module) => Array.from(module.children.allTests()));
+    const results = new Map<string, BenchResult>();
+
+    for (const test of tests) {
+      const bench: unknown = Reflect.get(test.meta(), 'bench');
+
+      if (isBenchResult(bench)) {
+        results.set(test.fullName, bench);
+      }
+    }
+
     return {
       passed: tests.length > 0 && tests.every((test) => test.result().state === 'passed'),
-      tests,
+      results,
     };
   } finally {
     await vitest.close();
   }
 }
 
-function measured(test: TestCase): Measured | undefined {
-  const bench: unknown = Reflect.get(test.meta(), 'bench');
-  return isMeasured(bench) ? bench : undefined;
-}
+function readRecord(path: string): BenchRecord {
+  const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
 
-function isMeasured(value: unknown): value is Measured {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'summary' in value &&
-    typeof value.summary === 'string' &&
-    'timings' in value &&
-    typeof value.timings === 'object' &&
-    value.timings !== null &&
-    Object.values(value.timings).every((timing) => typeof timing === 'number')
-  );
-}
-
-function readBaseline(): Baseline | undefined {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(readFileSync(BASELINE, 'utf8'));
-  } catch {
-    return undefined;
+  if (!isBenchRecord(value)) {
+    throw new Error(`${path} holds no bench timings`);
   }
 
-  return isBaseline(value) ? value : undefined;
+  return value;
 }
 
-function isBaseline(value: unknown): value is Baseline {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'recorded' in value &&
-    'machine' in value &&
-    'tests' in value &&
-    typeof value.tests === 'object' &&
-    value.tests !== null
-  );
+function writeRecord(path: string, record: BenchRecord): void {
+  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`);
 }
 
-function compare(name: string, timings: Readonly<Record<string, number>>, baseline?: Baseline) {
-  const stored = baseline?.tests[name];
-  let regressed = false;
-
-  for (const [key, value] of Object.entries(timings)) {
-    const base = stored?.[key];
-
-    if (base === undefined) {
-      console.log(`  ${key.padEnd(16)} ${value.toFixed(2)} ms, no baseline`);
-      continue;
-    }
-
-    const limit = RATIO * base + SLACK_MS;
-    const verdict = value > limit ? 'REGRESSED' : 'ok';
-    regressed ||= value > limit;
-    console.log(
-      `  ${key.padEnd(16)} ${value.toFixed(2)} ms against ${base.toFixed(2)} ms (limit ${limit.toFixed(2)} ms): ${verdict}`
-    );
-  }
-
-  return regressed;
+function localDate(): string {
+  return new Date().toLocaleDateString('sv-SE');
 }
 
-function rounded(timings: Readonly<Record<string, number>>): Record<string, number> {
-  return Object.fromEntries(
-    Object.entries(timings).map(([key, value]) => [key, Math.round(value * 100) / 100])
-  );
+function print(title: string, verdict: Verdict): void {
+  console.log(`\n${title}`);
+  verdict.lines.forEach((line) => console.log(`  ${line}`));
 }
 
-const { passed, tests } = await run();
-const results = tests.flatMap((test) => {
-  const bench = measured(test);
-  return bench === undefined ? [] : [{ name: test.fullName, bench }];
+const { values: options } = parseArgs({
+  options: {
+    record: { type: 'boolean', default: false },
+    output: { type: 'string' },
+    against: { type: 'string' },
+  },
 });
-const record = process.argv.includes('--record');
-const baseline = readBaseline();
-let failed = !passed;
+const { passed, results } = await run();
+const record: BenchRecord = {
+  recorded: localDate(),
+  machine: process.env.BENCH_MACHINE ?? hostname(),
+  tests: timingsOf(results),
+};
 
 console.log('\nPerformance budget');
+results.forEach(({ summary }, name) => console.log(`${name}\n  ${summary}`));
 
-if (baseline !== undefined && !record) {
-  console.log(`  baseline recorded ${baseline.recorded} on ${baseline.machine}`);
+const budgets = checkBudgets(results);
+print('Absolute budgets', budgets);
+let failed = !passed || budgets.failed;
+
+if (options.output !== undefined) {
+  writeRecord(options.output, record);
 }
 
-for (const { name, bench } of results) {
-  console.log(`${name}\n  ${bench.summary}`);
-
-  if (!record) {
-    failed = compare(name, bench.timings, baseline) || failed;
+if (options.record) {
+  if (!failed) {
+    writeRecord(STORED_BASELINE, record);
+    console.log(`\nStored the baseline in ${STORED_BASELINE}`);
   }
-}
-
-if (record && passed) {
-  const stored: Baseline = {
-    recorded: new Date().toISOString().slice(0, 10),
-    machine: process.env.BENCH_MACHINE ?? 'reference notebook, headless Chromium',
-    tests: Object.fromEntries(results.map(({ name, bench }) => [name, rounded(bench.timings)])),
-  };
-  writeFileSync(BASELINE, `${JSON.stringify(stored, null, 2)}\n`);
-  console.log(`\nStored the baseline in ${BASELINE}`);
+} else if (options.against !== undefined || options.output === undefined) {
+  const baseline = readRecord(options.against ?? STORED_BASELINE);
+  const verdict = compareWithBaseline(record.tests, baseline.tests);
+  print(`Against the baseline of ${baseline.recorded} on ${baseline.machine}`, verdict);
+  failed ||= verdict.failed;
 }
 
 if (failed) {

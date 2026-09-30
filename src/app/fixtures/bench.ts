@@ -1,19 +1,15 @@
 /**
  * What a performance test measured, handed to `bun run bench` (`tools/bench.ts`) through the
- * test's meta, which compares its timings with a stored baseline.
+ * test's meta, which judges its timings against their budgets and a baseline.
  *
  * @module
  */
 
 import type { TestContext } from 'vitest';
 
-/** What one performance test measured. */
-export interface BenchResult {
-  /** Timings in milliseconds, lower being better, that the bench compares with its baseline. */
-  readonly timings: Readonly<Record<string, number>>;
-  /** What was measured, in one line, for the reader. */
-  readonly summary: string;
-}
+import type { BenchResult } from '../../../tools/bench-result';
+
+export type { BenchResult };
 
 declare module 'vitest' {
   interface TaskMeta {
