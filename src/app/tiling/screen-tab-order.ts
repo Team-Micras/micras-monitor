@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, type RefObject } from 'react';
 
 import type { WindowId } from '@/tiling';
 
-import { TABBABLE } from '../shell/focus-trap';
+import { tabbableIn } from '../shell/focus-trap';
 
 /** The windows Tab visits, in screen order; the gaps between them come after the tiles. */
 export interface ScreenOrder {
@@ -16,9 +16,7 @@ interface Stop {
 }
 
 function reachable(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(
-    (element) => element.closest('[inert]') === null
-  );
+  return tabbableIn(root).filter((element) => element.closest('[inert]') === null);
 }
 
 function stopsOf(container: HTMLElement, order: ScreenOrder): Stop[] {
@@ -41,11 +39,10 @@ function stopsOf(container: HTMLElement, order: ScreenOrder): Stop[] {
 }
 
 function outside(container: HTMLElement, forward: boolean): HTMLElement | undefined {
-  const others = [...document.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+  const others = tabbableIn(document).filter(
     (element) =>
       !container.contains(element) &&
       element.closest('[inert]') === null &&
-      element.getClientRects().length > 0 &&
       Boolean(
         container.compareDocumentPosition(element) &
         (forward ? Node.DOCUMENT_POSITION_FOLLOWING : Node.DOCUMENT_POSITION_PRECEDING)

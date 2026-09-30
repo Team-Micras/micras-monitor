@@ -3,6 +3,18 @@ export const TABBABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
+ * The controls Tab reaches inside a root, in page order: focusable by Tab and on screen, so a
+ * hidden control or one taken out of the Tab order never counts as the first or the last.
+ *
+ * @param root Where to look.
+ */
+export function tabbableIn(root: ParentNode): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+    (element) => element.tabIndex >= 0 && element.getClientRects().length > 0
+  );
+}
+
+/**
  * Keeps Tab and Shift+Tab inside a panel: past its last control the focus goes to its first,
  * and back from the first to the last. Call it from the panel's keydown.
  */
@@ -11,7 +23,7 @@ export function trapTab(event: KeyboardEvent, panel: HTMLElement): void {
     return;
   }
 
-  const controls = [...panel.querySelectorAll<HTMLElement>(TABBABLE)];
+  const controls = tabbableIn(panel);
   const first = controls.at(0);
   const last = controls.at(-1);
 
