@@ -100,6 +100,16 @@ export interface DeletedPreset {
   readonly index: number;
 }
 
+/** A variable the user took out of a window, kept for a moment so that it can be put back. */
+export interface RemovedVariable {
+  /** Tells one removal from the next. */
+  readonly id: number;
+  readonly window: WindowId;
+  readonly name: string;
+  /** Where it was among the window's variables. */
+  readonly index: number;
+}
+
 /** The shell's state and what changes it. */
 export interface ShellState {
   readonly desktop: Desktop<WindowPayload>;
@@ -115,8 +125,13 @@ export interface ShellState {
   readonly layoutsIntent: LayoutsIntent | null;
   /** The presets the user made for the connected robot; they are saved with its layout. */
   readonly presets: readonly LayoutPreset[];
-  /** The preset deleted last, until the notice about it times out or is dismissed. */
+  /**
+   * The preset deleted last, until the notice about it times out or is dismissed. Only the last
+   * removal can be undone, so this and {@link ShellState.removedVariable} are never both set.
+   */
   readonly deletedPreset: DeletedPreset | null;
+  /** The variable taken out of a window last, until the notice about it times out. */
+  readonly removedVariable: RemovedVariable | null;
   readonly paused: ReadonlySet<WindowId>;
   readonly keyOverrides: KeyOverrides;
   readonly bindings: KeyBindings;
@@ -144,6 +159,15 @@ export interface ShellState {
   ) => WindowId;
   /** Adds a variable to a window that shows variables, once. */
   readonly addVariable: (id: WindowId, name: string) => void;
+  /**
+   * Takes a variable out of a window, which {@link ShellState.undoRemoveVariable} puts back. The
+   * window stays, even with no variable left.
+   */
+  readonly removeVariable: (id: WindowId, name: string) => void;
+  /** Puts the variable removed last back where it was, if its window is still open. */
+  readonly undoRemoveVariable: () => void;
+  /** Forgets the removed variable of a notice, if it is still the one kept. */
+  readonly clearRemovedVariable: (id: number) => void;
   /** Adds a workspace with a name no other has, and shows it. */
   readonly addWorkspace: () => void;
   /**
@@ -225,6 +249,7 @@ export interface ShellStoreOptions {
 /** Creates the state of one shell. */
 export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
   let counter = 0;
+  let removals = 0;
 
   return createStore<ShellState>()((set, get) => {
     const update = (desktop: Desktop<WindowPayload>) => {
@@ -315,6 +340,7 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       layoutsIntent: null,
       presets: options.presets ?? [],
       deletedPreset: null,
+      removedVariable: null,
       paused: new Set(),
       keyOverrides: options.keyOverrides ?? {},
       bindings: resolveBindings(options.keyOverrides),
@@ -352,9 +378,53 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
           return;
         }
 
-        const payload = { ...window.payload, variables: [...window.payload.variables, name] };
-        const windows = new Map(desktop.windows).set(id, { ...window, payload });
-        set({ desktop: { ...desktop, windows } });
+        set({ desktop: withVariables(desktop, id, [...window.payload.variables, name]) });
+      },
+
+      removeVariable: (id, name) => {
+        const { desktop } = get();
+        const window = desktop.windows.get(id);
+        const index = window?.payload.variables.indexOf(name) ?? -1;
+
+        if (window === undefined || index === -1) {
+          return;
+        }
+
+        removals += 1;
+        set({
+          desktop: withVariables(desktop, id, window.payload.variables.toSpliced(index, 1)),
+          removedVariable: { id: removals, window: id, name, index },
+          deletedPreset: null,
+        });
+      },
+
+      undoRemoveVariable: () => {
+        const { desktop, removedVariable: removed } = get();
+        const window = removed === null ? undefined : desktop.windows.get(removed.window);
+
+        if (removed === null) {
+          return;
+        }
+
+        if (window === undefined || window.payload.variables.includes(removed.name)) {
+          set({ removedVariable: null });
+          return;
+        }
+
+        set({
+          desktop: withVariables(
+            desktop,
+            removed.window,
+            window.payload.variables.toSpliced(removed.index, 0, removed.name)
+          ),
+          removedVariable: null,
+        });
+      },
+
+      clearRemovedVariable: (id) => {
+        if (get().removedVariable?.id === id) {
+          set({ removedVariable: null });
+        }
       },
 
       addWorkspace: () => {
@@ -434,7 +504,7 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         set({ layoutsOpen, layoutsIntent: layoutsOpen ? intent : null }),
 
       loadLayout: (desktop, presets) =>
-        set({ desktop, presets, deletedPreset: null, paused: new Set() }),
+        set({ desktop, presets, deletedPreset: null, removedVariable: null, paused: new Set() }),
 
       applyPreset: (preset) => {
         const { desktop } = get();
@@ -500,6 +570,7 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
           set({
             presets: presets.filter((entry) => entry.name !== name),
             deletedPreset: { id: (deletedPreset?.id ?? 0) + 1, preset: presets[index], index },
+            removedVariable: null,
           });
         }
       },
@@ -609,6 +680,24 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       },
     };
   });
+}
+
+function withVariables(
+  desktop: Desktop<WindowPayload>,
+  id: WindowId,
+  variables: readonly string[]
+): Desktop<WindowPayload> {
+  const window = desktop.windows.get(id);
+
+  if (window === undefined) {
+    return desktop;
+  }
+
+  const windows = new Map(desktop.windows).set(id, {
+    ...window,
+    payload: { ...window.payload, variables },
+  });
+  return { ...desktop, windows };
 }
 
 /** Carries the shell's store to its components. */

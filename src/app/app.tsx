@@ -28,6 +28,7 @@ import { SessionView } from './sessions/session-view';
 import { Announcer } from './shell/announcer';
 import { Announcements } from './shell/announcements';
 import { DeletedNotice } from './shell/deleted-notice';
+import { RemovedVariableNotice } from './shell/removed-variable-notice';
 import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
 import { LazyLauncher, LazyVariableDrawer } from './shell/lazy-shell';
 import { useReloadBlocked } from './shell/reload-guard';
@@ -255,6 +256,7 @@ function Shell({
       )}
       <Announcements />
       <DeletedNotice />
+      <RemovedVariableNotice />
       <UpdateNotice updates={updates} blockedBy={blockedBy} />
     </StopActionContext>
   );

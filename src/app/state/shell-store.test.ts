@@ -413,3 +413,72 @@ describe('deleting a preset', () => {
     expect(shell.getState().deletedPreset).toBeNull();
   });
 });
+
+function variablesOf(shell: ShellStore, id: WindowId): readonly string[] | undefined {
+  return shell.getState().desktop.windows.get(id)?.payload.variables;
+}
+
+describe('removing a variable from a window', () => {
+  test('takes it out and can be undone, back where it was', () => {
+    const shell = store();
+    const id = shell.getState().openWindow('plot', ['a', 'b', 'c']);
+    shell.getState().removeVariable(id, 'b');
+    expect(variablesOf(shell, id)).toEqual(['a', 'c']);
+    expect(shell.getState().removedVariable).toMatchObject({ window: id, name: 'b', index: 1 });
+    shell.getState().undoRemoveVariable();
+    expect(variablesOf(shell, id)).toEqual(['a', 'b', 'c']);
+    expect(shell.getState().removedVariable).toBeNull();
+  });
+
+  test('keeps the window with no variable left', () => {
+    const shell = store();
+    const id = shell.getState().openWindow('plot', ['a']);
+    shell.getState().removeVariable(id, 'a');
+    expect(variablesOf(shell, id)).toEqual([]);
+  });
+
+  test('changes nothing for a variable the window does not show', () => {
+    const shell = store();
+    const id = shell.getState().openWindow('plot', ['a']);
+    const desktop = shell.getState().desktop;
+    shell.getState().removeVariable(id, 'b');
+    expect(shell.getState().desktop).toBe(desktop);
+    expect(shell.getState().removedVariable).toBeNull();
+  });
+
+  test('is not undone into a closed window, nor twice over one added back since', () => {
+    const shell = store();
+    const id = shell.getState().openWindow('plot', ['a', 'b']);
+    shell.getState().removeVariable(id, 'a');
+    shell.getState().addVariable(id, 'a');
+    shell.getState().undoRemoveVariable();
+    expect(variablesOf(shell, id)).toEqual(['b', 'a']);
+    shell.getState().removeVariable(id, 'a');
+    shell.getState().run({ type: 'close', id });
+    shell.getState().undoRemoveVariable();
+    expect(shell.getState().desktop.windows.has(id)).toBe(false);
+    expect(shell.getState().removedVariable).toBeNull();
+  });
+
+  test('replaces a deleted preset as what can be undone, and the other way round', () => {
+    const shell = store();
+    const id = shell.getState().openWindow('plot', ['a', 'b']);
+    shell.getState().savePreset('One');
+    shell.getState().deletePreset('One');
+    shell.getState().removeVariable(id, 'a');
+    expect(shell.getState().deletedPreset).toBeNull();
+    shell.getState().savePreset('Two');
+    shell.getState().deletePreset('Two');
+    expect(shell.getState().removedVariable).toBeNull();
+  });
+
+  test('forgets only the removal a notice was about', () => {
+    const shell = store();
+    const id = shell.getState().openWindow('plot', ['a', 'b']);
+    shell.getState().removeVariable(id, 'a');
+    const first = shell.getState().removedVariable?.id ?? 0;
+    shell.getState().removeVariable(id, 'b');
+    shell.getState().clearRemovedVariable(first);
+    expect(shell.getState().removedVariable?.name).toBe('b');
+  });
+});

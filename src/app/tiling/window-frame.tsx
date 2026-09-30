@@ -1,6 +1,7 @@
 import {
   EllipsisIcon,
   MaximizeIcon,
+  MinusCircleIcon,
   PauseIcon,
   PictureInPicture2Icon,
   PlayIcon,
@@ -25,13 +26,13 @@ import {
 import { formatChord } from '../keymap/chords';
 import type { KeyAction } from '../keymap/keymap';
 import { cn } from '../lib/utils';
-import { formatValue } from '../lib/format';
-import { useConnectionStatus, useLinkUp, useLiveValue } from '../monitor-context';
+import { useConnectionStatus } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowKind, windowTitle } from '../windows/registry';
 import type { ShellWindow } from '../windows/types';
 import { windowElementId } from './dom-ids';
 import { startPointerDrag, surroundingsAt } from './pointer-drag';
+import { SeriesChips } from './series-chips';
 import { WindowErrorBoundary } from './window-error-boundary';
 
 /** How a window sits in the tiling. */
@@ -43,8 +44,6 @@ export interface WindowFrameProps {
   /** Its place in the floating stack, for floating windows. */
   readonly stackIndex: number;
 }
-
-const SERIES_COLORS = ['bg-chart-1', 'bg-chart-2', 'bg-chart-3', 'bg-chart-4', 'bg-chart-5'];
 
 /**
  * A window of the tiling: frame, title bar and the view of its kind. It is positioned
@@ -67,6 +66,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
   const Icon = kind.icon;
   const title = windowTitle(window);
   const { rect, floating, visible } = placed;
+  const { variables } = window.payload;
 
   const shortcut = (action: KeyAction) => {
     const chord = bindings.get(action)?.[0];
@@ -161,15 +161,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
       >
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <h2 className="shrink-0 text-sm font-medium">{title}</h2>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          {window.payload.variables.slice(0, 3).map((name, index) => (
-            <SeriesChip
-              key={name}
-              name={name}
-              color={SERIES_COLORS[index % SERIES_COLORS.length]}
-            />
-          ))}
-        </div>
+        <SeriesChips window={window.id} title={title} variables={variables} />
         {paused ? (
           <span className="rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
             Paused
@@ -229,6 +221,25 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
                 )}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            {variables.length > 0 ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <MinusCircleIcon />
+                  Remove variable
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {variables.map((name) => (
+                    <DropdownMenuItem
+                      key={name}
+                      className="font-mono text-xs"
+                      onSelect={() => store.getState().removeVariable(window.id, name)}
+                    >
+                      {name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
@@ -255,24 +266,5 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
         />
       ) : null}
     </section>
-  );
-}
-
-function SeriesChip({ name, color }: { readonly name: string; readonly color: string }) {
-  const value = useLiveValue(name)?.value;
-  const linked = useLinkUp();
-
-  return (
-    <span
-      data-series={name}
-      data-value={typeof value === 'number' ? value : undefined}
-      className="flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 font-mono text-xs"
-    >
-      <span className={cn('size-2 shrink-0 rounded-[2px]', color)} aria-hidden />
-      <span className="text-muted-foreground">{name}</span>
-      <span className={cn('tabular-nums', !linked && 'text-muted-foreground')}>
-        {formatValue(value)}
-      </span>
-    </span>
   );
 }
