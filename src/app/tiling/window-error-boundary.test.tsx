@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { seriousViolations } from '@/axe-check';
+import { Announcer } from '../shell/announcer';
 import { WindowErrorBoundary } from './window-error-boundary';
 
 const load = { broken: true };
@@ -39,5 +41,21 @@ describe('WindowErrorBoundary', () => {
     );
     await expect.element(screen.getByText("Couldn't load this window")).toBeVisible();
     await expect.element(hint).not.toBeInTheDocument();
+  });
+
+  test('announces the window that failed to load, once, by its title', async () => {
+    load.broken = true;
+    const screen = await render(
+      <Announcer>
+        <WindowErrorBoundary title="Maze">
+          <View />
+        </WindowErrorBoundary>
+      </Announcer>
+    );
+    await expect.element(screen.getByText("Couldn't load this window")).toBeVisible();
+    await expect
+      .poll(() => document.querySelector('[data-announcer="polite"]')?.textContent)
+      .toBe("Couldn't load Maze");
+    expect(await seriousViolations()).toEqual([]);
   });
 });

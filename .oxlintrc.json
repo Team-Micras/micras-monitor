@@ -245,6 +245,8 @@
         "src/main.tsx",
         "src/composition.test.tsx",
         "src/phone.test.tsx",
+        "src/a11y.test.tsx",
+        "src/a11y-phone.test.tsx",
         "src/phone-plan.test.ts"
       ],
       "rules": {
