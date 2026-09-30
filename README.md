@@ -51,6 +51,10 @@ browser; the installed PWA does not have that problem.
 | `P`                                     | Pause the focused window                                             |
 | `Alt+1..9`                              | Go to a workspace                                                    |
 | `Alt+Shift+1..9`                        | Send the focused window to a workspace                               |
+| `Alt+Shift+PgUp/PgDn`                   | Move the workspace left or right                                     |
+| `Alt+Shift+W`                           | Close the workspace, asking where its windows go                     |
+| `Delete` on a series' remove button     | Take the variable out of the window                                  |
+| `Ctrl+Z`                                | Undo the last layout deleted or variable removed                     |
 | `Ctrl+K` (`Meta+K`)                     | Launcher                                                             |
 | `/`                                     | Variables drawer                                                     |
 | `Esc`                                   | Close the drawer, a dialog or a menu                                 |
@@ -63,9 +67,13 @@ The keymap reads overrides from the browser's storage (`src/app/state/key-overri
 
 A workspace is a tiling of windows (Plot, Readouts, Editor, Type view such as the maze, Robot,
 Commands, Log, Link). Drag a window's title to swap it (centre of another window), split it (edge)
-or send it to another workspace (drop on its tab); drag a gap or use the keyboard to resize; drag a
-variable from the drawer onto a window to add it or onto an edge to plot it in a new window. The
-window menu floats, maximizes and moves windows.
+or send it to another workspace (drop on its tab); drag a gap or use the keyboard to resize, or a
+corner where two gaps meet to resize both at once; drag a variable from the drawer onto a window to
+add it or onto an edge to plot it in a new window, and take it out again with the × on its chip in
+the title bar (the "+N" list holds the ones past the third) or from the window menu. The window
+menu floats, maximizes and moves windows. Drag a workspace tab along the bar to reorder the
+workspaces; its right-click menu moves it, or closes it with its windows or moving them to another
+workspace.
 
 The robot's package brings layouts (for Micras: Overview, Tracking, Sensors, Maze run). The Layouts
 menu applies them as a new workspace and saves your own. Layouts are kept per robot and refer to
