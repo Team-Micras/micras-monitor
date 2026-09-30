@@ -18,7 +18,7 @@ jobs:
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
       BASE_DIR: ${{ github.workspace }}/../base
-      BASE_RESULTS: ${{ github.workspace }}/../base-bench.json
+      RESULTS: ${{ github.workspace }}/../bench-results
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,28 +39,50 @@ jobs:
       - name: Check out the base commit
         id: base
         run: |
+          mkdir -p "$RESULTS"
           if [[ "$BASE_SHA" =~ ^0*$ ]] || ! git cat-file -e "$BASE_SHA^{commit}"; then
-            echo "::notice::No base commit to compare with; the head is judged by its budgets only."
+            echo "::notice::No base commit to compare with."
             exit 0
           fi
           git worktree add --detach "$BASE_DIR" "$BASE_SHA"
-          if grep -q -- '--output' "$BASE_DIR/tools/bench.ts" 2>/dev/null; then
-            echo "benched=true" >> "$GITHUB_OUTPUT"
+          if grep -q -- "'no-budgets'" "$BASE_DIR/tools/bench.ts" 2>/dev/null; then
+            echo "benchable=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::The base commit has no bench to compare with; the head is judged by its budgets only."
+            echo "::notice::The base commit has no bench to compare with."
           fi
 
-      - name: Bench the base commit
-        if: steps.base.outputs.benched == 'true'
+      - name: Install the base commit
+        if: steps.base.outputs.benchable == 'true'
         working-directory: ${{ env.BASE_DIR }}
         run: |
           bun install --frozen-lockfile
-          bun run bench -- --output "$BASE_RESULTS" || echo "::warning::The base commit misses its own budgets."
+          bunx playwright install chromium
 
-      - name: Bench the head against the base
-        if: steps.base.outputs.benched == 'true'
-        run: bun run bench -- --against "$BASE_RESULTS"
+      - name: Bench the base and the head, twice, one after the other
+        id: runs
+        if: steps.base.outputs.benchable == 'true'
+        run: |
+          base_ok=true
+          for round in 1 2; do
+            base_file="$RESULTS/base-$round.json"
+            if ! (cd "$BASE_DIR" && bun run bench -- --no-budgets --output "$base_file") \
+              || ! test -s "$base_file"; then
+              echo "::notice::Round $round of the base commit's bench failed."
+              base_ok=false
+            fi
+            bun run bench -- --no-budgets --output "$RESULTS/head-$round.json"
+          done
+          echo "base_ok=$base_ok" >> "$GITHUB_OUTPUT"
 
-      - name: Bench the head against its budgets
-        if: steps.base.outputs.benched != 'true'
-        run: bun run bench -- --output "$RUNNER_TEMP/head-bench.json"
+      - name: Compare the head with the base
+        if: steps.runs.outputs.base_ok == 'true'
+        run: >-
+          bun tools/bench-diff.ts
+          --base "$RESULTS/base-1.json" --base "$RESULTS/base-2.json"
+          --head "$RESULTS/head-1.json" --head "$RESULTS/head-2.json"
+
+      - name: Judge the head by its budgets, with no base to compare with
+        if: steps.runs.outputs.base_ok != 'true'
+        run: |
+          echo "::notice::No complete base results; the head is judged by its absolute budgets."
+          bun run bench -- --output "$RESULTS/head-budgets.json"
