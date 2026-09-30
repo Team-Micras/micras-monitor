@@ -1,0 +1,66 @@
+name: Bench
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+      BASE_DIR: ${{ github.workspace }}/../base
+      BASE_RESULTS: ${{ github.workspace }}/../base-bench.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
+
+      - run: bunx playwright install --with-deps chromium
+
+      - name: Check out the base commit
+        id: base
+        run: |
+          if [[ "$BASE_SHA" =~ ^0*$ ]] || ! git cat-file -e "$BASE_SHA^{commit}"; then
+            echo "::notice::No base commit to compare with; the head is judged by its budgets only."
+            exit 0
+          fi
+          git worktree add --detach "$BASE_DIR" "$BASE_SHA"
+          if grep -q -- '--output' "$BASE_DIR/tools/bench.ts" 2>/dev/null; then
+            echo "benched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The base commit has no bench to compare with; the head is judged by its budgets only."
+          fi
+
+      - name: Bench the base commit
+        if: steps.base.outputs.benched == 'true'
+        working-directory: ${{ env.BASE_DIR }}
+        run: |
+          bun install --frozen-lockfile
+          bun run bench -- --output "$BASE_RESULTS" || echo "::warning::The base commit misses its own budgets."
+
+      - name: Bench the head against the base
+        if: steps.base.outputs.benched == 'true'
+        run: bun run bench -- --against "$BASE_RESULTS"
+
+      - name: Bench the head against its budgets
+        if: steps.base.outputs.benched != 'true'
+        run: bun run bench -- --output "$RUNNER_TEMP/head-bench.json"
