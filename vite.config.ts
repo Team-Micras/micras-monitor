@@ -5,7 +5,7 @@ import { playwright } from '@vitest/browser-playwright';
 import { VitePWA } from 'vite-plugin-pwa';
 import { configDefaults, defineConfig } from 'vitest/config';
 
-import { mouse } from './tools/browser-mouse';
+import { mouse } from './tools/browser-mouse.ts';
 
 const PERFORMANCE_TESTS = ['src/**/*-performance.test.{ts,tsx}'];
 
