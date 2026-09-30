@@ -150,6 +150,26 @@ describe('LiveRobot against the simulated robot', () => {
     expect(reloaded.live.ports.schema.variables()).toEqual(before.live.ports.schema.variables());
   });
 
+  test('plans every streamed variable when all are asked for at the loop rate', async () => {
+    const { live } = start();
+    await streaming(live);
+    const streamed = live.ports.schema.variables().filter((entry) => entry.access.stream);
+    live.ports.streams.request({
+      windows: streamed.map((entry) => ({ variable: entry.name, rateHz: 8000 })),
+      pinned: [],
+    });
+
+    await waitFor(
+      () => live.planner?.plan?.rates.length === streamed.length,
+      3000,
+      'a plan of every streamed variable'
+    );
+    expect(live.planner?.plan?.rates.map((rate) => rate.variable).toSorted()).toEqual(
+      streamed.map((entry) => entry.name).toSorted()
+    );
+    await waitFor(() => live.store.latest('imu/gyro_z') !== undefined, 3000, 'a sample');
+  });
+
   test('reads a blob on demand into the latest values', async () => {
     const { live } = start();
     await streaming(live);
