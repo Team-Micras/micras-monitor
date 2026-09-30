@@ -13,7 +13,7 @@ import { formatChord } from '../keymap/chords';
 import type { KeyAction } from '../keymap/keymap';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowTitle } from '../windows/registry';
-import { CORNER_INSET, CornerHandle } from './corner-handle';
+import { CornerHandle } from './corner-handle';
 import { DropPreview } from './drop-preview';
 import { GutterHandle } from './gutter-handle';
 import { useScreenTabOrder } from './screen-tab-order';
@@ -112,7 +112,7 @@ export function TilingView() {
         });
         return <GutterHandle key={gutter.path} gutter={gutter} label={`Resize ${a} and ${b}`} />;
       })}
-      {cornerHandles(desktop, metrics, CORNER_INSET).map((handle) => (
+      {cornerHandles(desktop, metrics).map((handle) => (
         <CornerHandle key={`${handle.id} ${handle.corner}`} handle={handle} />
       ))}
       {empty ? (

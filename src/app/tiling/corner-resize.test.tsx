@@ -24,7 +24,7 @@ async function open(): Promise<ShellApp> {
           'row',
           0.5,
           split('column', 0.5, leaf('a'), leaf('b')),
-          split('column', 0.5, leaf('c'), leaf('d'))
+          split('column', 0.6, leaf('c'), leaf('d'))
         )
       ),
     ],
@@ -54,13 +54,11 @@ function windowRect(id: string): DOMRect {
 }
 
 describe('dragging the corner of a tiled window', () => {
-  test('shows a diagonal resize cursor where two gaps meet', async () => {
+  test('shows a diagonal resize cursor where two gaps cross', async () => {
     await open();
     expect(getComputedStyle(corner('a bottom-right')).cursor).toBe('nwse-resize');
-    expect(getComputedStyle(corner('b top-right')).cursor).toBe('nesw-resize');
     expect(getComputedStyle(corner('c bottom-left')).cursor).toBe('nesw-resize');
-    expect(getComputedStyle(corner('d top-left')).cursor).toBe('nwse-resize');
-    expect(document.querySelector('[data-corner="a top-left"]')).toBeNull();
+    expect(document.querySelectorAll('[data-corner]')).toHaveLength(2);
   });
 
   test('resizes both splits at once, live, and its neighbors with it', async () => {
@@ -77,26 +75,44 @@ describe('dragging the corner of a tiled window', () => {
     expect(store.getState().resizing).toBe(false);
     expect(ratio(store, '')).toBeGreaterThan(0.5);
     expect(ratio(store, '0')).toBeGreaterThan(0.5);
-    expect(ratio(store, '1')).toBe(0.5);
+    expect(ratio(store, '1')).toBe(0.6);
   });
 
-  test('from the corner of the window below, moves the same two gaps', async () => {
+  test('from the other side of the vertical gap, moves the split on that side', async () => {
     const { store } = await open();
-    const from = pointIn(corner('b top-right'));
+    const from = pointIn(corner('c bottom-left'));
     await drag(from, { x: from.x - 100, y: from.y - 60 });
     expect(ratio(store, '')).toBeLessThan(0.5);
-    expect(ratio(store, '0')).toBeLessThan(0.5);
-    expect(ratio(store, '1')).toBe(0.5);
+    expect(ratio(store, '1')).toBeLessThan(0.6);
+    expect(ratio(store, '0')).toBe(0.5);
   });
 
   test('stops at the minimum size of every window', async () => {
     await open();
     await settled();
-    const from = pointIn(corner('d top-left'));
+    const from = pointIn(corner('c bottom-left'));
     await drag(from, { x: from.x + 2000, y: from.y + 2000 });
     await settled();
-    expect(Math.round(windowRect('d').width)).toBe(TILING_SPACING.minWidth);
+    expect(Math.round(windowRect('c').width)).toBe(TILING_SPACING.minWidth);
     expect(Math.round(windowRect('d').height)).toBe(TILING_SPACING.minHeight);
     expect(Math.round(windowRect('c').height)).toBeGreaterThan(TILING_SPACING.minHeight);
+  });
+
+  test('leaves a click just inside the corner of a window to the window', async () => {
+    const { store } = await open();
+    const a = windowRect('a');
+    const reached: EventTarget[] = [];
+    const record = (event: Event) => {
+      if (event.target !== null) {
+        reached.push(event.target);
+      }
+    };
+    document.addEventListener('pointerdown', record, true);
+    await drag({ x: a.right - 6, y: a.bottom - 6 }, { x: a.right - 6, y: a.bottom - 6 });
+    document.removeEventListener('pointerdown', record, true);
+    const target = reached[0];
+    expect(target instanceof Element && target.closest('[data-window="a"]') !== null).toBe(true);
+    expect(store.getState().resizing).toBe(false);
+    expect(ratio(store, '')).toBe(0.5);
   });
 });

@@ -37,7 +37,7 @@ export interface CornerSplits {
 export interface CornerHandle extends CornerSplits {
   readonly id: WindowId;
   readonly corner: Corner;
-  /** Its hit area: the window's corner and the quarter of the gaps' crossing next to it. */
+  /** Its hit area: where the two gaps cross. */
   readonly rect: Rect;
 }
 
@@ -80,41 +80,48 @@ export function cornerSplits(
   return row === null || column === null ? null : { row, column };
 }
 
-function handleRect(tile: Rect, corner: Corner, metrics: LayoutMetrics, inset: number): Rect {
-  const reach = metrics.gap / 2;
-  const size = inset + reach;
-  const x = corner.endsWith('right') ? tile.x + tile.width - inset : tile.x - reach;
-  const y = corner.startsWith('bottom') ? tile.y + tile.height - inset : tile.y - reach;
-  return { x, y, width: size, height: size };
+function crossingRect(row: Gutter, column: Gutter): Rect {
+  return { x: row.rect.x, width: row.rect.width, y: column.rect.y, height: column.rect.height };
+}
+
+function sameRect(a: Rect, b: Rect): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
 /**
- * Every corner of the active workspace's tiled windows where two gaps meet. Where four windows
- * meet, each owns the quarter of the crossing next to it, so the handles never overlap. A
- * maximized window leaves no handles, as it leaves no gaps.
- *
- * @param inset How far each handle reaches into its window, in pixels.
+ * Every corner of the active workspace's tiled windows where two gaps meet. Each handle covers
+ * only where the two gaps cross, which lies inside the outer split's gap, so it never covers a
+ * window. Where two corners share a crossing, as when four windows meet in a grid, the first in
+ * reading order keeps it. A maximized window leaves no handles, as it leaves no gaps.
  */
-export function cornerHandles(
-  desktop: Desktop,
-  metrics: LayoutMetrics,
-  inset: number
-): CornerHandle[] {
+export function cornerHandles(desktop: Desktop, metrics: LayoutMetrics): CornerHandle[] {
   const workspace = activeWorkspace(desktop);
 
   if (workspace.maximized !== null) {
     return [];
   }
 
-  const { tiles } = layoutTree(workspace.root, metrics);
-  return [...tiles].flatMap(([id, tile]) =>
-    CORNERS.flatMap((corner) => {
+  const { tiles, gutters } = layoutTree(workspace.root, metrics);
+  const gutter = (path: NodePath) => gutters.find((entry) => entry.path === path);
+  const handles: CornerHandle[] = [];
+
+  for (const id of tiles.keys()) {
+    for (const corner of CORNERS) {
       const splits = cornerSplits(workspace.root, id, corner);
-      return splits === null
-        ? []
-        : [{ id, corner, ...splits, rect: handleRect(tile, corner, metrics, inset) }];
-    })
-  );
+      const row = splits === null ? undefined : gutter(splits.row);
+      const column = splits === null ? undefined : gutter(splits.column);
+
+      if (splits !== null && row !== undefined && column !== undefined) {
+        const rect = crossingRect(row, column);
+
+        if (!handles.some((handle) => sameRect(handle.rect, rect))) {
+          handles.push({ id, corner, ...splits, rect });
+        }
+      }
+    }
+  }
+
+  return handles;
 }
 
 function gutterAt(desktop: Desktop, path: NodePath, metrics: LayoutMetrics): Gutter | undefined {

@@ -6,6 +6,7 @@ import {
   cornerHandles,
   cornerSplits,
   createWorkspace,
+  layoutTree,
   leaf,
   nodeAt,
   resizeCorner,
@@ -13,6 +14,7 @@ import {
   toggleMaximize,
   type Desktop,
   type NodePath,
+  type Rect,
 } from './index';
 
 function ratioOf(desktop: Desktop, path: NodePath): number {
@@ -51,28 +53,77 @@ describe('the splits at a corner', () => {
   });
 });
 
+function staggered(): Desktop<string> {
+  const root = split(
+    'row',
+    0.6,
+    split('column', 0.5, leaf('track'), leaf('robot')),
+    split('column', 0.6, leaf('maze'), leaf('profile'))
+  );
+  return desktopOf([createWorkspace('Overview', root)]);
+}
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 describe('corner handles', () => {
-  test('sit where two gaps meet, each over its own quarter of the crossing', () => {
-    const handles = cornerHandles(overview(), METRICS, 8);
+  test('sit where two gaps cross, one per crossing', () => {
+    const handles = cornerHandles(staggered(), METRICS);
     expect(handles.map(({ id, corner }) => `${id} ${corner}`)).toEqual([
       'track bottom-right',
-      'robot top-right',
       'maze bottom-left',
-      'profile top-left',
     ]);
-    const track = tileOf(overview(), 'track');
+    const track = tileOf(staggered(), 'track');
+    const maze = tileOf(staggered(), 'maze');
     expect(handles[0].rect).toEqual({
-      x: track.x + track.width - 8,
-      y: track.y + track.height - 8,
-      width: 8 + METRICS.gap / 2,
-      height: 8 + METRICS.gap / 2,
+      x: track.x + track.width,
+      y: track.y + track.height,
+      width: METRICS.gap,
+      height: METRICS.gap,
     });
-    const robot = handles[1].rect;
-    expect(robot.y).toBe(handles[0].rect.y + handles[0].rect.height);
+    expect(handles[1].rect).toEqual({
+      x: track.x + track.width,
+      y: maze.y + maze.height,
+      width: METRICS.gap,
+      height: METRICS.gap,
+    });
+  });
+
+  test('keep one handle where four windows meet on aligned gaps', () => {
+    expect(cornerHandles(overview(), METRICS).map(({ id, corner }) => `${id} ${corner}`)).toEqual([
+      'track bottom-right',
+    ]);
+  });
+
+  test('never cover a window', () => {
+    const nested = desktopOf([
+      createWorkspace(
+        'Nested',
+        split(
+          'row',
+          0.4,
+          split('column', 0.3, leaf('a'), leaf('b')),
+          split('column', 0.5, leaf('c'), split('row', 0.5, leaf('d'), leaf('e')))
+        )
+      ),
+    ]);
+
+    for (const desktop of [overview(), staggered(), nested]) {
+      const { tiles } = layoutTree(desktop.workspaces[0].root, METRICS);
+      const handles = cornerHandles(desktop, METRICS);
+      expect(handles.length).toBeGreaterThan(0);
+
+      for (const handle of handles) {
+        for (const tile of tiles.values()) {
+          expect(overlaps(handle.rect, tile)).toBe(false);
+        }
+      }
+    }
   });
 
   test('are none while a window is maximized', () => {
-    expect(cornerHandles(toggleMaximize(overview()), METRICS, 8)).toEqual([]);
+    expect(cornerHandles(toggleMaximize(overview()), METRICS)).toEqual([]);
   });
 });
 

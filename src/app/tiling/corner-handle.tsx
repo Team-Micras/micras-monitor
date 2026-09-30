@@ -6,11 +6,8 @@ import { cn } from '../lib/utils';
 import { useShellStore } from '../state/shell-store';
 import { startPointerDrag } from './pointer-drag';
 
-/** How far a corner handle reaches into its window, in pixels. */
-export const CORNER_INSET = 10;
-
 /**
- * The corner of a tiled window where a vertical and a horizontal gap meet. Dragging it moves both
+ * Where a vertical and a horizontal gap meet at the corner of a tiled window. Dragging it moves both
  * splits at once, with the same minimum sizes and live preview as dragging either gap; the point
  * grabbed stays under the pointer. It is left out of the Tab order and hidden from assistive
  * technology, since each of its gaps is a keyboard splitter of its own.
