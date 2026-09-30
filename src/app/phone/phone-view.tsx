@@ -162,14 +162,18 @@ function PhoneStop() {
 
   return (
     <footer className="relative shrink-0 border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      <output aria-label="Stop outcome" className="absolute right-4 bottom-full left-4 z-50 mb-2">
+      <output
+        aria-label="Stop outcome"
+        aria-live="off"
+        className="absolute right-4 bottom-full left-4 z-50 mb-2"
+      >
         {notice === null ? null : <StopNoticeView notice={notice} />}
       </output>
       <button
         type="button"
         onClick={onStop}
         disabled={!connected || stop === null}
-        className="flex h-16 w-full touch-manipulation items-center justify-center gap-3 rounded-2xl bg-destructive/85 text-xl font-semibold text-white shadow-sm transition-colors active:bg-destructive focus-visible:ring-[3px] focus-visible:ring-destructive/40 focus-visible:outline-none disabled:opacity-45"
+        className="flex h-16 w-full touch-manipulation items-center justify-center gap-3 rounded-2xl bg-stop text-xl font-semibold text-stop-foreground shadow-sm transition-colors active:brightness-90 focus-visible:ring-[3px] focus-visible:ring-stop/40 focus-visible:outline-none disabled:opacity-45"
       >
         <CircleXIcon className="size-7" aria-hidden />
         {stop?.label ?? 'Stop'}

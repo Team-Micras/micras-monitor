@@ -52,7 +52,12 @@ export function LinkWindow(_props: WindowViewProps) {
       />
       {budget.overBudget ? <OverBudget stats={stats} /> : null}
       {streams.length === 0 ? null : (
-        <div className="-mx-2 min-h-0 flex-1 overflow-auto px-2">
+        <section
+          aria-label="Streams"
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region must be reachable by keyboard
+          tabIndex={0}
+          className="-mx-2 min-h-0 flex-1 overflow-auto px-2"
+        >
           <table className="w-full font-mono text-xs tabular-nums">
             <thead className="sticky top-0 bg-card text-muted-foreground">
               <tr>
@@ -75,7 +80,7 @@ export function LinkWindow(_props: WindowViewProps) {
               ))}
             </tbody>
           </table>
-        </div>
+        </section>
       )}
     </div>
   );
@@ -136,7 +141,7 @@ function OverBudget({ stats }: { readonly stats: LinkStats }) {
   return (
     <p
       role="alert"
-      className="flex items-start gap-2 rounded-lg border border-amber-500/40 px-3 py-2 text-xs text-amber-600 dark:text-amber-400"
+      className="flex items-start gap-2 rounded-lg border border-amber-500/40 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
     >
       <TriangleAlertIcon className="mt-px size-3.5 shrink-0" aria-hidden />
       The windows ask for more than the link carries: {cut}{' '}

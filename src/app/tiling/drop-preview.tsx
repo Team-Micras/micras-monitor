@@ -38,7 +38,7 @@ export function DropPreview() {
   return (
     <div
       data-drop-preview={target.kind}
-      className="pointer-events-none absolute z-40 flex items-center justify-center rounded-xl border border-foreground/30 bg-foreground/8 transition-[left,top,width,height] duration-150 ease-out"
+      className="pointer-events-none absolute z-40 flex items-center justify-center rounded-xl border border-foreground/30 bg-foreground/8 transition-[left,top,width,height] duration-150 ease-out motion-reduce:transition-none"
       style={{ left: preview.x, top: preview.y, width: preview.width, height: preview.height }}
     >
       <span className="flex items-center gap-2 rounded-lg border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md">

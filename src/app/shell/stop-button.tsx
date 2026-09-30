@@ -41,15 +41,21 @@ export function StopButton({ onStop }: { readonly onStop: () => void }) {
         onClick={onStop}
         disabled={!connected || stop === null}
         title={stop?.description}
-        className="flex h-9 items-center gap-2 rounded-lg bg-destructive/85 pr-1.5 pl-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-destructive focus-visible:ring-[3px] focus-visible:ring-destructive/40 focus-visible:outline-none disabled:opacity-45"
+        className="flex h-9 items-center gap-2 rounded-lg bg-stop pr-1.5 pl-3 text-sm font-semibold text-stop-foreground shadow-sm transition-colors hover:brightness-90 focus-visible:ring-[3px] focus-visible:ring-stop/40 focus-visible:outline-none disabled:opacity-45"
       >
         <CircleXIcon className="size-4" aria-hidden />
         {stop?.label ?? 'Stop'}
         {chord === undefined ? null : (
-          <Kbd className="h-6 bg-white/20 px-1.5 text-white">{formatChord(chord).join('+')}</Kbd>
+          <Kbd className="h-6 bg-black/25 px-1.5 text-stop-foreground">
+            {formatChord(chord).join('+')}
+          </Kbd>
         )}
       </button>
-      <output aria-label="Stop outcome" className="absolute top-full right-0 z-50 mt-2">
+      <output
+        aria-label="Stop outcome"
+        aria-live="off"
+        className="absolute top-full right-0 z-50 mt-2"
+      >
         {notice === null ? null : <StopNoticeView notice={notice} />}
       </output>
     </div>
