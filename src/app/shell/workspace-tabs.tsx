@@ -1,5 +1,10 @@
 import { ArrowLeftIcon, ArrowRightIcon, PlusIcon, Trash2Icon } from 'lucide-react';
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 
 import { neighborWorkspace } from '@/tiling';
 
@@ -111,13 +116,18 @@ export function WorkspaceTabs() {
           store.getState().run({ type: 'moveWorkspace', from: index, to });
         }
       },
-      onCancel: () => setReorder(null),
+      onCancel: () => {
+        dragged.current = false;
+        setReorder(null);
+      },
     });
   };
 
-  const onTabClick = (index: number) => {
-    if (dragged.current) {
-      dragged.current = false;
+  const onTabClick = (index: number, event: ReactMouseEvent) => {
+    const afterDrag = dragged.current && event.detail > 0;
+    dragged.current = false;
+
+    if (afterDrag) {
       return;
     }
 
@@ -151,7 +161,7 @@ export function WorkspaceTabs() {
                   data-reordering={reorder?.from === index || undefined}
                   title={chordOf(workspaceAction(index))}
                   onPointerDown={onTabPointerDown(index)}
-                  onClick={() => onTabClick(index)}
+                  onClick={(event) => onTabClick(index, event)}
                   className={cn(
                     'h-8 touch-none rounded-lg px-3.5 text-sm text-muted-foreground transition-[color,background-color,opacity] select-none hover:text-foreground',
                     index === active &&

@@ -88,6 +88,18 @@ describe('dragging a workspace tab', () => {
     expect(store.getState().desktop.active).toBe(0);
   });
 
+  test('never takes a keyboard activation for the click that ends a drag', async () => {
+    const { store } = await open();
+    const from = pointIn(tab('Two'));
+    await press(from, { x: from.x, y: from.y + 300 });
+    await expect.poll(() => tab('Two').dataset.reordering).toBe('true');
+    await expect.element(tab('Two')).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    await expect.poll(() => store.getState().desktop.active).toBe(1);
+    await release();
+    expect(workspaceNames(store)).toEqual(['One', 'Two', 'Three']);
+  });
+
   test('still shows the workspace when clicked without moving', async () => {
     const { store } = await open();
     await drag(pointIn(tab('Three')), pointIn(tab('Three'), 0.52));
