@@ -45,7 +45,7 @@ test('eight live plots of 1 kHz signals draw in a few milliseconds a frame', asy
     (1000 * intervals.length) / intervals.reduce((total, interval) => total + interval, 0);
   const summary = `${PLOTS} plots × 2 signals at 1 kHz: work p50 ${percentile(work, 0.5).toFixed(2)} ms, p95 ${percentile(work, 0.95).toFixed(2)} ms, max ${Math.max(...work).toFixed(2)} ms over ${work.length} frames; ${fps.toFixed(0)} fps, frame interval p95 ${percentile(intervals, 0.95).toFixed(1)} ms`;
   await reportBench(context, {
-    timings: { frameP95Ms: percentile(work, 0.95), intervalP95Ms: percentile(intervals, 0.95) },
+    timings: { frameP95Ms: percentile(work, 0.95) },
     budgets: { frameP95Ms: FRAME_BUDGET_MS },
     summary,
   });

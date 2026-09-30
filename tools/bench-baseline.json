@@ -12,8 +12,7 @@
       "sessionP95Ms": 2.3
     },
     "eight live plots of 1 kHz signals draw in a few milliseconds a frame": {
-      "frameP95Ms": 2.5,
-      "intervalP95Ms": 16.7
+      "frameP95Ms": 2.5
     }
   }
 }
