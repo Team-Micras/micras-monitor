@@ -23,6 +23,7 @@ import {
 import type { CommandOutcome } from '../../ports';
 import { useAnnounce } from '../../shell/announce';
 import { useStopAction } from '../../shell/stop-action';
+import { useCommandTracker } from '../shared/command-tracker';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
 import { commandIcon } from './command-icons';
@@ -44,9 +45,11 @@ const TONE_ICONS = { ok: CircleCheckIcon, refused: CircleAlertIcon, failed: Circ
  * keeps a STOP of its own in reach, such as the phone's, hides it with `showStop`.
  */
 export function CommandsWindow({
+  window,
   showStop = true,
 }: WindowViewProps & { readonly showStop?: boolean }) {
   const { commands } = useMonitor().ports;
+  const track = useCommandTracker();
   const pkg = useRobotPackage()?.package ?? null;
   const status = useConnectionStatus();
   const stateName = roleVariable(pkg, 'state');
@@ -88,6 +91,7 @@ export function CommandsWindow({
 
   const send = async (command: CommandSpec) => {
     setInFlight((current) => new Set(current).add(command.code));
+    track(window.id, 1);
     const outcome: CommandOutcome = await commands
       .send(command.code, command.argument?.default)
       .catch((error: unknown) => ({
@@ -99,6 +103,7 @@ export function CommandsWindow({
       next.delete(command.code);
       return next;
     });
+    track(window.id, -1);
     show(outcomeMessage(command, outcome, pkg, labels));
   };
 

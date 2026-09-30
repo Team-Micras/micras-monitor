@@ -84,12 +84,16 @@ export type LayoutsIntent =
 
 /**
  * A workspace about to be closed, waiting for the user to say what becomes of its windows: close
- * them too, or move them to another workspace. `windows` is the choice the dialog starts on.
+ * them too, or move them to another workspace. It names the workspace, whose place in the list
+ * can change while the question is open. `windows` is the choice the question starts on.
  */
 export interface WorkspaceClosing {
-  readonly index: number;
+  readonly name: string;
   readonly windows: 'close' | 'move';
 }
+
+/** What becomes of a closing workspace's windows: closed with it, or moved to a named workspace. */
+export type ClosingChoice = 'close' | { readonly moveTo: string };
 
 /** A preset the user deleted, kept for a moment so that the deletion can be undone. */
 export interface DeletedPreset {
@@ -138,6 +142,8 @@ export interface ShellState {
   readonly drag: DragState | null;
   /** The workspace whose closing waits for the user's choice, or null. */
   readonly closingWorkspace: WorkspaceClosing | null;
+  /** How many commands each window has sent that still wait for the robot's answer. */
+  readonly waitingCommands: ReadonlyMap<WindowId, number>;
   /** Whether a gap is being dragged, which turns off the windows' transitions. */
   readonly resizing: boolean;
   /** What the last STOP came to, shown under the button until it times out. */
@@ -177,8 +183,19 @@ export interface ShellState {
    * @param windows What the question starts on: closing the windows, or moving them.
    */
   readonly requestCloseWorkspace: (index: number, windows: WorkspaceClosing['windows']) => void;
-  /** Answers or dismisses the question {@link ShellState.requestCloseWorkspace} asked. */
-  readonly setClosingWorkspace: (closing: WorkspaceClosing | null) => void;
+  /**
+   * Answers the question {@link ShellState.requestCloseWorkspace} asked, finding both workspaces
+   * by name as they are now. Nothing is closed when either is gone or they are the same.
+   */
+  readonly confirmCloseWorkspace: (choice: ClosingChoice) => void;
+  /** Dismisses the question {@link ShellState.requestCloseWorkspace} asked. */
+  readonly cancelCloseWorkspace: () => void;
+  /**
+   * Counts a command of a window that is waiting for the robot's answer, or one that got it.
+   *
+   * @param change 1 when a command is sent, -1 when its answer comes.
+   */
+  readonly trackCommand: (id: WindowId, change: 1 | -1) => void;
   /** Sets a split's ratio from a gap being dragged. */
   readonly resizeSplit: (path: NodePath, ratio: number) => void;
   /** Moves the two splits that meet at a window's corner so that their gaps cross at a point. */
@@ -346,6 +363,7 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       bindings: resolveBindings(options.keyOverrides),
       drag: null,
       closingWorkspace: null,
+      waitingCommands: new Map(),
       resizing: false,
       stopNotice: null,
 
@@ -450,11 +468,48 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         if (workspace.root === null && workspace.floating.length === 0) {
           get().run({ type: 'removeWorkspace', index, policy: 'closeWindows' });
         } else {
-          set({ closingWorkspace: { index, windows } });
+          set({ closingWorkspace: { name: workspace.name, windows } });
         }
       },
 
-      setClosingWorkspace: (closingWorkspace) => set({ closingWorkspace }),
+      confirmCloseWorkspace: (choice) => {
+        const { closingWorkspace, desktop } = get();
+        set({ closingWorkspace: null });
+
+        if (closingWorkspace === null) {
+          return;
+        }
+
+        const indexOf = (name: string) =>
+          desktop.workspaces.findIndex((workspace) => workspace.name === name);
+        const index = indexOf(closingWorkspace.name);
+        const into = choice === 'close' ? null : indexOf(choice.moveTo);
+
+        if (index === -1 || into === -1 || into === index) {
+          return;
+        }
+
+        get().run({
+          type: 'removeWorkspace',
+          index,
+          policy: into === null ? 'closeWindows' : { mergeInto: into },
+        });
+      },
+
+      cancelCloseWorkspace: () => set({ closingWorkspace: null }),
+
+      trackCommand: (id, change) => {
+        const waiting = new Map(get().waitingCommands);
+        const count = (waiting.get(id) ?? 0) + change;
+
+        if (count > 0) {
+          waiting.set(id, count);
+        } else {
+          waiting.delete(id);
+        }
+
+        set({ waitingCommands: waiting });
+      },
 
       resizeSplit: (path, ratio) => update(resizeSplit(get().desktop, path, ratio, get().metrics)),
 
@@ -504,7 +559,14 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         set({ layoutsOpen, layoutsIntent: layoutsOpen ? intent : null }),
 
       loadLayout: (desktop, presets) =>
-        set({ desktop, presets, deletedPreset: null, removedVariable: null, paused: new Set() }),
+        set({
+          desktop,
+          presets,
+          deletedPreset: null,
+          removedVariable: null,
+          closingWorkspace: null,
+          paused: new Set(),
+        }),
 
       applyPreset: (preset) => {
         const { desktop } = get();

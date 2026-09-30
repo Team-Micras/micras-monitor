@@ -502,6 +502,29 @@ describe('A variable missing from the schema', () => {
 });
 
 describe('Commands', () => {
+  test('warns, when their workspace closes with them, of commands still waiting', async () => {
+    const answers: ((outcome: CommandOutcome) => void)[] = [];
+    const { screen, store } = await open({
+      windows: [win('commands', 'commands'), win('log', 'log')],
+      root: leaf('commands'),
+      hidden: leaf('log'),
+      send: () => new Promise((resolve) => answers.push(resolve)),
+    });
+    await screen.getByRole('button', { name: 'Explore' }).click();
+    await expect.poll(() => store.getState().waitingCommands.get('commands')).toBe(1);
+    store.getState().requestCloseWorkspace(0, 'close');
+    const dialog = screen.getByRole('dialog', { name: 'Close Test?' });
+    await expect
+      .element(dialog.getByRole('note'))
+      .toHaveTextContent('1 command is still waiting for the robot.');
+    await dialog.getByRole('radio', { name: 'Move them to Hidden' }).click();
+    await expect.element(dialog.getByRole('note')).not.toBeInTheDocument();
+    await dialog.getByRole('radio', { name: 'Close them with it' }).click();
+    answers[0]?.({ status: 'ok', reason: null });
+    await expect.poll(() => store.getState().waitingCommands.size).toBe(0);
+    await expect.element(dialog.getByRole('note')).not.toBeInTheDocument();
+  });
+
   test('asks before a dangerous command and shows the refusal with its reason', async () => {
     const { screen, sent, outcomes } = await open({
       windows: [win('commands', 'commands')],

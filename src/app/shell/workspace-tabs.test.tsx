@@ -200,6 +200,18 @@ describe('closing a workspace', () => {
     expect(store.getState().desktop.active).toBe(1);
   });
 
+  test('closes the workspace asked about though the keys move it while the question is open', async () => {
+    const { store, screen } = await open();
+    await userEvent.keyboard('{Alt>}{Shift>}w{/Shift}{/Alt}');
+    const dialog = screen.getByRole('dialog', { name: 'Close One?' });
+    await expect.element(dialog.getByRole('radio', { name: 'Move them to Two' })).toBeChecked();
+    await userEvent.keyboard('{Alt>}{Shift>}{PageDown}{/Shift}{/Alt}');
+    await expect.poll(() => workspaceNames(store)).toEqual(['Two', 'One', 'Three']);
+    await dialog.getByRole('button', { name: 'Close workspace' }).click();
+    await expect.poll(() => workspaceNames(store)).toEqual(['Two', 'Three']);
+    expect(tiledIds(store, 0)).toEqual(['c', 'a', 'b']);
+  });
+
   test('from the launcher, with or without its windows', async () => {
     const { store, screen } = await open();
     await launch(screen, 'close workspace one move its windows');

@@ -7,6 +7,7 @@ import {
   createWorkspace,
   focusedWindow,
   layoutWorkspace,
+  leaf,
   leafIds,
   type Rect,
   type WindowId,
@@ -480,5 +481,86 @@ describe('removing a variable from a window', () => {
     shell.getState().removeVariable(id, 'b');
     shell.getState().clearRemovedVariable(first);
     expect(shell.getState().removedVariable?.name).toBe('b');
+  });
+});
+
+function three(): ShellStore {
+  return createShellStore({
+    viewport: VIEWPORT,
+    desktop: createDesktop(
+      [
+        createWorkspace('A', leaf('a')),
+        createWorkspace('B', leaf('b')),
+        createWorkspace('C', leaf('c')),
+      ],
+      ['a', 'b', 'c'].map((id) => ({ id, kind: 'log', payload: { variables: [] } }))
+    ),
+  });
+}
+
+function names(shell: ShellStore): string[] {
+  return shell.getState().desktop.workspaces.map((workspace) => workspace.name);
+}
+
+describe('closing a workspace that holds windows', () => {
+  test('asks first, naming the workspace', () => {
+    const shell = three();
+    shell.getState().requestCloseWorkspace(1, 'move');
+    expect(shell.getState().closingWorkspace).toEqual({ name: 'B', windows: 'move' });
+    expect(names(shell)).toEqual(['A', 'B', 'C']);
+  });
+
+  test('closes the workspace asked about and moves to the one picked, though both moved since', () => {
+    const shell = three();
+    shell.getState().requestCloseWorkspace(1, 'move');
+    shell.getState().run({ type: 'moveWorkspace', from: 1, to: 0 });
+    shell.getState().run({ type: 'moveWorkspace', from: 2, to: 1 });
+    expect(names(shell)).toEqual(['B', 'C', 'A']);
+    shell.getState().confirmCloseWorkspace({ moveTo: 'A' });
+    expect(names(shell)).toEqual(['C', 'A']);
+    expect(leafIds(shell.getState().desktop.workspaces[1].root)).toEqual(['a', 'b']);
+    expect(shell.getState().closingWorkspace).toBeNull();
+  });
+
+  test('closes the windows of the workspace asked about, though it moved since', () => {
+    const shell = three();
+    shell.getState().requestCloseWorkspace(0, 'close');
+    shell.getState().run({ type: 'moveWorkspace', from: 0, to: 2 });
+    shell.getState().confirmCloseWorkspace('close');
+    expect(names(shell)).toEqual(['B', 'C']);
+    expect([...shell.getState().desktop.windows.keys()]).toEqual(['b', 'c']);
+  });
+
+  test('closes nothing once either workspace is gone', () => {
+    const shell = three();
+    shell.getState().requestCloseWorkspace(1, 'move');
+    shell.getState().run({ type: 'renameWorkspace', index: 2, name: 'D' });
+    shell.getState().confirmCloseWorkspace({ moveTo: 'C' });
+    expect(names(shell)).toEqual(['A', 'B', 'D']);
+    shell.getState().requestCloseWorkspace(1, 'close');
+    shell.getState().run({ type: 'removeWorkspace', index: 1, policy: 'mergeIntoNeighbor' });
+    shell.getState().confirmCloseWorkspace('close');
+    expect(names(shell)).toEqual(['A', 'D']);
+    expect(shell.getState().desktop.windows.size).toBe(3);
+  });
+
+  test('forgets the question when another layout is loaded', () => {
+    const shell = three();
+    shell.getState().requestCloseWorkspace(1, 'close');
+    const other = three().getState().desktop;
+    shell.getState().loadLayout(other, []);
+    expect(shell.getState().closingWorkspace).toBeNull();
+    shell.getState().confirmCloseWorkspace('close');
+    expect(shell.getState().desktop).toBe(other);
+  });
+
+  test('counts the commands each window still waits on', () => {
+    const shell = three();
+    shell.getState().trackCommand('a', 1);
+    shell.getState().trackCommand('a', 1);
+    shell.getState().trackCommand('a', -1);
+    expect(shell.getState().waitingCommands.get('a')).toBe(1);
+    shell.getState().trackCommand('a', -1);
+    expect(shell.getState().waitingCommands.has('a')).toBe(false);
   });
 });

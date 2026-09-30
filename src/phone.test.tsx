@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
 import { App } from '@/app/app';
@@ -90,7 +90,7 @@ describe('the phone view', () => {
     const { screen } = await open({ state: IDLE });
 
     await expect.element(screen.getByRole('region', { name: 'Status' })).toBeVisible();
-    await expect.element(screen.getByText('IDLE')).toBeVisible();
+    await expect.element(screen.getByText('IDLE', { exact: true })).toBeVisible();
     await expect.poll(() => document.querySelector('[data-battery]')?.textContent).toMatch(/^12\./);
     await expect
       .poll(() => document.querySelector('[data-maze]') !== null, { timeout: 10_000 })
@@ -175,6 +175,16 @@ describe('the phone view', () => {
 
     await expect.element(screen.getByRole('region', { name: 'Workspace Overview' })).toBeVisible();
     expect(document.querySelector('[data-phone]')).toBeNull();
+  });
+
+  test('asks what becomes of the windows when the workspace is closed from the keyboard', async () => {
+    const { screen } = await open();
+    await expect.element(screen.getByRole('region', { name: 'Status' })).toBeVisible();
+    await userEvent.keyboard('{Alt>}{Shift>}w{/Shift}{/Alt}');
+    const dialog = screen.getByRole('dialog', { name: /^Close .+\?$/ });
+    await expect.element(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect.element(dialog).not.toBeInTheDocument();
   });
 });
 

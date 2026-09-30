@@ -17,12 +17,9 @@ import {
 } from '../components/ui/context-menu';
 import { formatChord } from '../keymap/chords';
 import { workspaceAction, type KeyAction } from '../keymap/keymap';
-import { LazyPart } from '../lib/lazy-part';
-import { useEver } from '../lib/use-ever';
 import { cn } from '../lib/utils';
 import { useShell, useShellStore } from '../state/shell-store';
 import { startPointerDrag } from '../tiling/pointer-drag';
-import { LazyCloseWorkspaceDialog } from './lazy-shell';
 import { movedTo, slotAt } from './tab-reorder';
 
 /**
@@ -77,8 +74,6 @@ export function WorkspaceTabs() {
   const dropIndex = useShell((state) =>
     state.drag?.target?.kind === 'workspace' ? state.drag.target.index : null
   );
-  const closing = useShell((state) => state.closingWorkspace !== null);
-  const closingAsked = useEver(closing);
   const [reorder, setReorder] = useState<Reorder | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const dragged = useRef(false);
@@ -245,11 +240,6 @@ export function WorkspaceTabs() {
       >
         <PlusIcon />
       </Button>
-      {closingAsked ? (
-        <LazyPart fallback={null} resetKey={closing}>
-          <LazyCloseWorkspaceDialog />
-        </LazyPart>
-      ) : null}
     </nav>
   );
 }

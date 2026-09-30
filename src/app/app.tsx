@@ -28,7 +28,12 @@ import { SessionView } from './sessions/session-view';
 import { Announcer } from './shell/announcer';
 import { Announcements } from './shell/announcements';
 import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
-import { LazyLauncher, LazyUndoNotices, LazyVariableDrawer } from './shell/lazy-shell';
+import {
+  LazyCloseWorkspaceDialog,
+  LazyLauncher,
+  LazyUndoNotices,
+  LazyVariableDrawer,
+} from './shell/lazy-shell';
 import { useReloadBlocked } from './shell/reload-guard';
 import { StatusBar } from './shell/status-bar';
 import { StopActionContext } from './shell/stop-action';
@@ -46,6 +51,7 @@ import { initialKeyOverrides, saveKeyOverrides } from './state/key-overrides';
 import { applyTheme, initialTheme } from './state/theme';
 import { DragGhost } from './tiling/drag-ghost';
 import { TilingView } from './tiling/tiling-view';
+import { CommandTrackerContext } from './windows/shared/command-tracker';
 import type { WindowPayload } from './windows/types';
 
 /** What the composition root gives the app. */
@@ -136,6 +142,8 @@ function Shell({
     (state) => state.deletedPreset !== null || state.removedVariable !== null
   );
   const undoWanted = useEver(undoable);
+  const closing = useShell((state) => state.closingWorkspace !== null);
+  const closingAsked = useEver(closing);
   const presses = useRef(0);
   const phone = usePhone();
   const plan = phonePlan(useRobotPackage()?.package ?? null, useVariables());
@@ -231,38 +239,45 @@ function Shell({
   useLayouts(layouts);
 
   return (
-    <StopActionContext value={() => void stop()}>
-      {phone ? (
-        <PhoneView plan={plan} />
-      ) : (
-        <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
-          <TopBar onStop={() => void stop()} />
-          <SessionView>
-            <main className="relative min-h-0 flex-1">
-              <TilingView />
-              {drawerOpen ? (
-                <LazyPart fallback={<DrawerFailed />} resetKey={drawerOpen} retryOnMount>
-                  <LazyVariableDrawer />
-                </LazyPart>
-              ) : null}
-            </main>
-          </SessionView>
-          <StatusBar />
-          {launcherWanted ? (
-            <LazyPart fallback={null} resetKey={launcherOpen}>
-              <LazyLauncher onAction={onAction} />
-            </LazyPart>
-          ) : null}
-          <DragGhost />
-        </div>
-      )}
-      <Announcements />
-      {undoWanted ? (
-        <LazyPart fallback={null} resetKey={undoable}>
-          <LazyUndoNotices />
-        </LazyPart>
-      ) : null}
-      <UpdateNotice updates={updates} blockedBy={blockedBy} />
-    </StopActionContext>
+    <CommandTrackerContext value={(id, change) => store.getState().trackCommand(id, change)}>
+      <StopActionContext value={() => void stop()}>
+        {phone ? (
+          <PhoneView plan={plan} />
+        ) : (
+          <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
+            <TopBar onStop={() => void stop()} />
+            <SessionView>
+              <main className="relative min-h-0 flex-1">
+                <TilingView />
+                {drawerOpen ? (
+                  <LazyPart fallback={<DrawerFailed />} resetKey={drawerOpen} retryOnMount>
+                    <LazyVariableDrawer />
+                  </LazyPart>
+                ) : null}
+              </main>
+            </SessionView>
+            <StatusBar />
+            {launcherWanted ? (
+              <LazyPart fallback={null} resetKey={launcherOpen}>
+                <LazyLauncher onAction={onAction} />
+              </LazyPart>
+            ) : null}
+            <DragGhost />
+          </div>
+        )}
+        <Announcements />
+        {closingAsked ? (
+          <LazyPart fallback={null} resetKey={closing}>
+            <LazyCloseWorkspaceDialog />
+          </LazyPart>
+        ) : null}
+        {undoWanted ? (
+          <LazyPart fallback={null} resetKey={undoable}>
+            <LazyUndoNotices />
+          </LazyPart>
+        ) : null}
+        <UpdateNotice updates={updates} blockedBy={blockedBy} />
+      </StopActionContext>
+    </CommandTrackerContext>
   );
 }
