@@ -68,6 +68,16 @@ export {
   type RemovePolicy,
 } from './lifecycle';
 export { applyDrop, hitTest, type DropTarget } from './hit-test';
+export {
+  CORNERS,
+  cornerCrossing,
+  cornerHandles,
+  cornerSplits,
+  resizeCorner,
+  type Corner,
+  type CornerHandle,
+  type CornerSplits,
+} from './corners';
 export { execute, type Command } from './commands';
 export {
   LAYOUT_MIGRATIONS,

@@ -19,9 +19,11 @@ import {
   hitTest,
   layoutWorkspace,
   placeFloating,
+  resizeCorner,
   resizeSplit,
   usableBounds,
   type Command,
+  type CornerSplits,
   type Desktop,
   type DropTarget,
   type EdgePlacement,
@@ -135,6 +137,8 @@ export interface ShellState {
   readonly addWorkspace: () => void;
   /** Sets a split's ratio from a gap being dragged. */
   readonly resizeSplit: (path: NodePath, ratio: number) => void;
+  /** Moves the two splits that meet at a window's corner so that their gaps cross at a point. */
+  readonly resizeCorner: (splits: CornerSplits, point: Point) => void;
   readonly setResizing: (resizing: boolean) => void;
   /** Moves or resizes a floating window, in tiling pixels. */
   readonly placeFloating: (id: WindowId, rect: Rect) => void;
@@ -345,6 +349,9 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       },
 
       resizeSplit: (path, ratio) => update(resizeSplit(get().desktop, path, ratio, get().metrics)),
+
+      resizeCorner: (splits, point) =>
+        update(resizeCorner(get().desktop, splits, point, get().metrics)),
 
       setResizing: (resizing) => set({ resizing }),
 

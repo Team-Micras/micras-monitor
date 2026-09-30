@@ -1,12 +1,19 @@
 import { useLayoutEffect, useRef } from 'react';
 
-import { activeWorkspace, focusedWindow, layoutDesktop, layoutWorkspace } from '@/tiling';
+import {
+  activeWorkspace,
+  cornerHandles,
+  focusedWindow,
+  layoutDesktop,
+  layoutWorkspace,
+} from '@/tiling';
 
 import { Kbd } from '../components/ui/kbd';
 import { formatChord } from '../keymap/chords';
 import type { KeyAction } from '../keymap/keymap';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowTitle } from '../windows/registry';
+import { CORNER_INSET, CornerHandle } from './corner-handle';
 import { DropPreview } from './drop-preview';
 import { GutterHandle } from './gutter-handle';
 import { useScreenTabOrder } from './screen-tab-order';
@@ -21,7 +28,8 @@ function Keys({ action }: { readonly action: KeyAction }) {
 /**
  * The tiling of every workspace as one flat list of absolutely positioned windows, keyed by
  * id in the order they were opened, so a window keeps its view mounted whatever moves it.
- * Only the active workspace is visible; its gaps resize the splits. It is a stacking context of
+ * Only the active workspace is visible; its gaps resize the splits, and so do the corners where
+ * two gaps meet, both at once. It is a stacking context of
  * its own, so however many windows float, the drawer, the launcher and popovers stay above.
  */
 export function TilingView() {
@@ -104,6 +112,9 @@ export function TilingView() {
         });
         return <GutterHandle key={gutter.path} gutter={gutter} label={`Resize ${a} and ${b}`} />;
       })}
+      {cornerHandles(desktop, metrics, CORNER_INSET).map((handle) => (
+        <CornerHandle key={`${handle.id} ${handle.corner}`} handle={handle} />
+      ))}
       {empty ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
           <p>This workspace is empty.</p>
