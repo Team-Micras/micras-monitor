@@ -1,16 +1,16 @@
 {
-  "recorded": "2026-09-29",
+  "recorded": "2026-09-30",
   "machine": "reference notebook, headless Chromium",
   "tests": {
     "the session and the store keep up with every variable at the most the robot’s UART carries": {
-      "sessionP95Ms": 0.4
+      "sessionP95Ms": 0.6
     },
     "the session and the store keep up with every variable at the most a 50 KB/s socket carries": {
-      "sessionP95Ms": 1.1
+      "sessionP95Ms": 1.2
     },
     "eight live plots of 1 kHz signals draw in a few milliseconds a frame": {
       "frameP95Ms": 2.3,
-      "intervalP95Ms": 16.7
+      "intervalP95Ms": 16.8
     }
   }
 }
