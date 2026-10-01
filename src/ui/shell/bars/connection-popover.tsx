@@ -57,7 +57,19 @@ export function ConnectionPopover() {
   const [transport, setTransport] = useState<TargetKind>(
     status.kind === 'disconnected' ? 'websocket' : status.target.transport
   );
-  const [url, setUrl] = useState(() => globalThis.localStorage?.getItem(URL_KEY) ?? DEFAULT_URL);
+  const targetUrl =
+    status.kind !== 'disconnected' && status.target.transport === 'websocket'
+      ? status.target.url
+      : null;
+  const [url, setUrl] = useState(
+    () => targetUrl ?? globalThis.localStorage?.getItem(URL_KEY) ?? DEFAULT_URL
+  );
+  const [shownTargetUrl, setShownTargetUrl] = useState(targetUrl);
+
+  if (targetUrl !== null && targetUrl !== shownTargetUrl) {
+    setShownTargetUrl(targetUrl);
+    setUrl(targetUrl);
+  }
   const urlId = useId();
   const active = status.kind !== 'disconnected' && status.kind !== 'failed';
   const current = status.kind === 'disconnected' ? null : status.target.transport;
