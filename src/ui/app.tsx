@@ -9,7 +9,7 @@ import { actionFor, commandOf, type KeyAction } from './keyboard/keymap';
 import { tilingActionFor } from './keyboard/tiling-actions';
 import { useKeymap } from './keyboard/use-keymap';
 import type { LayoutStorage } from './layouts/saved-layouts';
-import { useLayouts } from './layouts/use-layouts';
+import { useLayoutSync } from './layouts/layout-sync';
 import { whenIdle } from './lazy/idle';
 import { prefetchAll } from './lazy/lazy-with-retry';
 import {
@@ -304,7 +304,7 @@ function Shell({
 
   useKeymap(bindings, onAction, onType, noCommandKey);
   useStreamDemand(phone ? planWindows(plan) : null);
-  useLayouts(layouts);
+  useLayoutSync(layouts);
 
   return (
     <CommandTrackerContext value={store.getState().trackCommand}>

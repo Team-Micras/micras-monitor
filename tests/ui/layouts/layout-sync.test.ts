@@ -11,7 +11,7 @@ import {
   RECORD_VERSION,
   STORAGE_PREFIX,
 } from '@/ui/layouts/saved-layouts';
-import { LayoutSession, SAVE_DELAY_MS, type LayoutSubject } from '@/ui/layouts/layout-session';
+import { LayoutSync, SAVE_DELAY_MS, type LayoutSubject } from '@/ui/layouts/layout-sync';
 import { MemoryStorage } from '@tests/support/ui/layouts/memory-storage';
 
 const STREAM = { stream: true, write: false, writeNeedsIdle: false, persists: false };
@@ -38,7 +38,7 @@ const PRESETS: LayoutPreset[] = [
 
 let storage: MemoryStorage;
 let store: ShellStore;
-let session: LayoutSession;
+let session: LayoutSync;
 
 function workspaceNames(shell: ShellStore): string[] {
   return shell.getState().desktop.workspaces.map((workspace) => workspace.name);
@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   storage = new MemoryStorage();
   store = createShellStore();
-  session = new LayoutSession(store, new SavedLayouts(storage));
+  session = new LayoutSync(store, new SavedLayouts(storage));
 });
 
 afterEach(() => {
@@ -125,9 +125,7 @@ describe('following robots', () => {
     session.stop();
 
     const reloaded = createShellStore();
-    new LayoutSession(reloaded, new SavedLayouts(storage)).follow(
-      subject('name:rover', ['pose/x'])
-    );
+    new LayoutSync(reloaded, new SavedLayouts(storage)).follow(subject('name:rover', ['pose/x']));
     expect(workspaceNames(reloaded)).toEqual(['Overview', 'Pose', 'Workspace 3']);
     expect(reloaded.getState().desktop.active).toBe(2);
   });
@@ -188,9 +186,9 @@ describe('following robots', () => {
   });
 });
 
-function reopened(): { shell: ShellStore; next: LayoutSession } {
+function reopened(): { shell: ShellStore; next: LayoutSync } {
   const shell = createShellStore();
-  const next = new LayoutSession(shell, new SavedLayouts(storage));
+  const next = new LayoutSync(shell, new SavedLayouts(storage));
   next.start();
   return { shell, next };
 }

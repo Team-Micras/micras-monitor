@@ -5,13 +5,16 @@
  * @module
  */
 
+import { useEffect, useEffectEvent, useState } from 'react';
+
 import type { LayoutPreset } from '@/core/robot';
 import type { Variable } from '@/core/variables';
 
-import type { ShellState, ShellStore } from '../state/shell-store';
+import { useLiveMonitor, useRobotPackage, useStatus, useVariables } from '../monitor-context';
+import { useShellStore, type ShellState, type ShellStore } from '../state/shell-store';
 import { autoLayout } from './auto-layout';
 import { presetDesktop } from './presets';
-import type { SavedLayouts } from './saved-layouts';
+import { layoutKey, SavedLayouts, type LayoutStorage } from './saved-layouts';
 
 /** How long after the last change a layout is saved. */
 export const SAVE_DELAY_MS = 500;
@@ -35,7 +38,7 @@ export interface LayoutSubject {
  * Disconnecting is not something it sees: the layout stays on screen, and stays saved under the
  * same key, until another robot is followed.
  */
-export class LayoutSession {
+export class LayoutSync {
   readonly #store: ShellStore;
   readonly #book: SavedLayouts;
   readonly #delayMs: number;
@@ -176,4 +179,58 @@ export class LayoutSession {
     clearTimeout(this.#timer);
     this.#timer = setTimeout(() => this.flush(), this.#delayMs);
   }
+}
+
+/**
+ * Keeps the desktop and the layouts saved per robot in step: when a link comes up past its
+ * schema, shows that robot's saved layout, or its initial one the first time; changes are saved
+ * as they happen, and the last is saved when the page is left.
+ *
+ * @param storage Where the layouts are kept; without one the desktop is left alone.
+ */
+export function useLayoutSync(storage: LayoutStorage | null): void {
+  const store = useShellStore();
+  const monitor = useLiveMonitor();
+  const status = useStatus(monitor);
+  const variables = useVariables(monitor);
+  const selection = useRobotPackage(monitor);
+  const [sync] = useState(() =>
+    storage === null ? null : new LayoutSync(store, new SavedLayouts(storage))
+  );
+  const key =
+    status.kind === 'linked' && variables.length > 0
+      ? layoutKey({
+          packageId: selection?.package.id ?? null,
+          name: status.identity.name,
+          variables: variables.map(({ name }) => name),
+        })
+      : null;
+
+  const follow = useEffectEvent((next: string) =>
+    sync?.follow({
+      key: next,
+      variables,
+      packagePresets: selection?.package.presets ?? [],
+    })
+  );
+
+  useEffect(() => {
+    if (sync === null) {
+      return undefined;
+    }
+
+    sync.start();
+    const flush = () => sync.flush();
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      sync.stop();
+    };
+  }, [sync]);
+
+  useEffect(() => {
+    if (key !== null) {
+      follow(key);
+    }
+  }, [key]);
 }
