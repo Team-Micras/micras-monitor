@@ -51,7 +51,6 @@ describe('fitGroups', () => {
 
     expect(result.groups).toEqual([{ variableIds: [0, 1, 2, 3, 4, 5, 6], periodTicks: 80 }]);
     expect(result.usedBytesPerSecond).toBeCloseTo(frame * 100);
-    expect(result.demandBytesPerSecond).toBe(result.usedBytesPerSecond);
     expect(result.overBudget).toBe(false);
   });
 
@@ -83,10 +82,10 @@ describe('fitGroups', () => {
     expect(rateOf(result, 'control/4')).toBeCloseTo(1);
   });
 
-  test('reports blobs, variables that cannot stream and unknown names as unstreamable', () => {
+  test('leaves out blobs, variables that cannot stream and unknown names', () => {
     const result = plan([at(10)('maze'), at(10)('secret'), at(10)('ghost'), at(10)('state')]);
 
-    expect(result.unstreamable).toEqual(['maze', 'secret', 'ghost']);
+    expect(result.rates.map((rate) => rate.variable)).toEqual(['state']);
     expect(result.groups).toEqual([{ variableIds: [7], periodTicks: 800 }]);
   });
 

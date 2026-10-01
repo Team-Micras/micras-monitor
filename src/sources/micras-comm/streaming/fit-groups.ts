@@ -48,14 +48,10 @@ export interface StreamPlan {
   readonly groups: readonly GroupRequest[];
   /** Every variable asked for that can stream, in the order first asked. */
   readonly rates: readonly PlannedRate[];
-  /** Variables asked for that cannot stream, such as blobs or names the schema lacks; READ them. */
-  readonly unstreamable: readonly string[];
   /** The budget the plan was made for. */
   readonly budgetBytesPerSecond: number;
   /** The bytes per second the groups take on the wire. */
   readonly usedBytesPerSecond: number;
-  /** The bytes per second the groups would take at the rates asked. */
-  readonly demandBytesPerSecond: number;
   /** Whether the rates asked do not fit the budget, so some were lowered or left out. */
   readonly overBudget: boolean;
 }
@@ -97,7 +93,7 @@ interface Group {
  */
 export function fitGroups(input: PlanInput): StreamPlan {
   const { schema, loopTimeUs, budgetBytesPerSecond } = input;
-  const { wanted, unstreamable } = gather(schema, input.requests);
+  const wanted = gather(schema, input.requests);
   const { groups, leftOut } = formGroups(wanted, loopTimeUs);
   const periods = fitPeriods(groups, loopTimeUs, budgetBytesPerSecond);
   const granted = new Map<Wanted, number>();
@@ -126,31 +122,20 @@ export function fitGroups(input: PlanInput): StreamPlan {
       grantedHz: granted.get(member) ?? 0,
       pinned: member.pinned,
     })),
-    unstreamable,
     budgetBytesPerSecond,
     usedBytesPerSecond: used,
-    demandBytesPerSecond: demand,
     overBudget: leftOut || demand > budgetBytesPerSecond,
   };
 }
 
-function gather(
-  schema: readonly SchemaEntry[],
-  requests: readonly RateRequest[]
-): { wanted: Wanted[]; unstreamable: string[] } {
+function gather(schema: readonly SchemaEntry[], requests: readonly RateRequest[]): Wanted[] {
   const byName = new Map(schema.map((entry) => [entry.name, entry]));
   const wanted = new Map<string, Wanted>();
-  const unstreamable = new Set<string>();
 
   for (const request of requests) {
     const entry = byName.get(request.variable);
 
-    if (!entry || !entry.access.stream || entry.type === TypeCode.BLOB) {
-      unstreamable.add(request.variable);
-      continue;
-    }
-
-    if (!(request.rateHz > 0)) {
+    if (!entry || !entry.access.stream || entry.type === TypeCode.BLOB || !(request.rateHz > 0)) {
       continue;
     }
 
@@ -169,7 +154,7 @@ function gather(
     }
   }
 
-  return { wanted: [...wanted.values()], unstreamable: [...unstreamable] };
+  return [...wanted.values()];
 }
 
 function periodFor(rateHz: number, loopTimeUs: number): number {

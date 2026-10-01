@@ -144,22 +144,21 @@ class FakeDevice implements BluetoothDeviceLike, GattServerLike, GattServiceLike
   }
 }
 
-function fakeBluetooth(device: FakeDevice, withGetDevices: boolean) {
+function fakeBluetooth(device: FakeDevice) {
   const requested: unknown[] = [];
   const bluetooth: BluetoothLike = {
     requestDevice: (options) => {
       requested.push(options);
       return Promise.resolve(device);
     },
-    ...(withGetDevices ? { getDevices: () => Promise.resolve([device]) } : {}),
   };
 
   return { bluetooth, requested };
 }
 
-async function openTransport(withGetDevices = true) {
+async function openTransport() {
   const device = new FakeDevice();
-  const { bluetooth, requested } = fakeBluetooth(device, withGetDevices);
+  const { bluetooth, requested } = fakeBluetooth(device);
   const transport = await BluetoothTransport.request({ bluetooth });
   const states: TransportState[] = [];
   const received: number[][] = [];
@@ -194,7 +193,6 @@ describe('BluetoothTransport', () => {
 
     expect(requested).toEqual([{ filters: [{ services: [HM19_UART.service] }] }]);
     expect(transport.state).toEqual({ kind: 'open' });
-    expect(transport.deviceName).toBe('MICRAS');
     expect(device.characteristic.notifying).toBe(true);
     expect(device.characteristic.listenerCount).toBe(1);
     expect(device.listenerCount).toBe(1);
@@ -234,7 +232,7 @@ describe('BluetoothTransport', () => {
     expect(received).toEqual([[8, 9, 10, 11, 12]]);
   });
 
-  test('cleans up after a drop and reconnects through getDevices', async () => {
+  test('cleans up after a drop and reconnects to the same device', async () => {
     const { device, transport, states } = await openTransport();
     const lost = device.characteristic;
 
@@ -255,21 +253,11 @@ describe('BluetoothTransport', () => {
     expect(device.characteristic.writes).toEqual([]);
   });
 
-  test('without getDevices, a drop still reconnects to the same device', async () => {
-    const { device, transport } = await openTransport(false);
-
-    device.goOutOfRange();
-    await vi.advanceTimersByTimeAsync(250);
-
-    expect(transport.state).toEqual({ kind: 'open' });
-    expect(device.connects).toBe(2);
-  });
-
   test('a connection attempt that hangs times out and is tried again', async () => {
     const device = new FakeDevice();
     device.hangConnects = 1;
     const transport = new BluetoothTransport(device, {
-      bluetooth: fakeBluetooth(device, true).bluetooth,
+      bluetooth: fakeBluetooth(device).bluetooth,
     });
 
     transport.open();
@@ -288,7 +276,7 @@ describe('BluetoothTransport', () => {
     const device = new FakeDevice();
     device.hangNotifications = true;
     const transport = new BluetoothTransport(device, {
-      bluetooth: fakeBluetooth(device, true).bluetooth,
+      bluetooth: fakeBluetooth(device).bluetooth,
       connectTimeoutMs: 500,
     });
 
@@ -304,7 +292,7 @@ describe('BluetoothTransport', () => {
     const device = new FakeDevice();
     device.hangNotifications = true;
     const transport = new BluetoothTransport(device, {
-      bluetooth: fakeBluetooth(device, true).bluetooth,
+      bluetooth: fakeBluetooth(device).bluetooth,
     });
 
     transport.open();
@@ -326,20 +314,6 @@ describe('BluetoothTransport', () => {
 
     await vi.advanceTimersByTimeAsync(1 + WRITE_TIME_MS);
     expect(joined(device.characteristic.writes)).toEqual([...ramp(30)]);
-  });
-
-  test('restore finds a device this origin was already given', async () => {
-    const device = new FakeDevice('robot-9');
-    const { bluetooth } = fakeBluetooth(device, true);
-
-    expect(await BluetoothTransport.restore({ bluetooth }, 'robot-9')).not.toBeNull();
-    expect(await BluetoothTransport.restore({ bluetooth }, 'other')).toBeNull();
-    expect(
-      await BluetoothTransport.restore(
-        { bluetooth: fakeBluetooth(device, false).bluetooth },
-        'robot-9'
-      )
-    ).toBeNull();
   });
 
   test('close stops notifications, disconnects and does not come back', async () => {

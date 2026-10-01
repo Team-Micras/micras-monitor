@@ -49,8 +49,6 @@ export interface BudgetEstimate {
   readonly capacityBytesPerSecond: number;
   /** Bytes per second that arrived, smoothed. */
   readonly bytesInPerSecond: number;
-  /** Bytes per second of frames the credit does not meter, such as VALUE, ACKs and PONG. */
-  readonly unmeteredBytesPerSecond: number;
   /** Whether samples dropped for want of room on the link since the last update. */
   readonly saturated: boolean;
   /** Grows every time the ceiling moves, so a planner knows to plan again. */
@@ -155,24 +153,6 @@ export class BandwidthEstimator {
     return this.current;
   }
 
-  /** Forget what was measured, as when the link goes to another robot. */
-  reset(): void {
-    this.last = undefined;
-    this.bytesIn = 0;
-    this.arrivedMax = 0;
-    this.unmetered = 0;
-    this.ceiling = Number.POSITIVE_INFINITY;
-    this.ceilingAt = Number.NEGATIVE_INFINITY;
-    this.safe = undefined;
-    this.probeFrom = undefined;
-    this.probing = true;
-    this.failedProbes = 0;
-    this.wasSaturated = false;
-    this.episodeCapped = false;
-    this.revision++;
-    this.current = this.estimate(null, 0, false);
-  }
-
   private saturatedSince(
     previous: Sample,
     stats: LinkCounters,
@@ -259,7 +239,6 @@ export class BandwidthEstimator {
       bytesPerSecond: Math.max(floorBytesPerSecond, capacity * headroom - this.unmetered),
       capacityBytesPerSecond: capacity,
       bytesInPerSecond: this.bytesIn,
-      unmeteredBytesPerSecond: this.unmetered,
       saturated,
       revision: this.revision,
     };

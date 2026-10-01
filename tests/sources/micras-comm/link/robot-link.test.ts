@@ -66,6 +66,11 @@ class ScriptedTransport extends BaseTransport {
     this.setState({ kind: 'closed', reason: 'closed-by-user' });
   }
 
+  /** Open again without the link seeing the transport close, which redoes the handshake. */
+  reopen(): void {
+    this.setState({ kind: 'open' });
+  }
+
   drop(): void {
     this.setState({ kind: 'closed', reason: 'lost', retryInMs: 250 });
   }
@@ -252,9 +257,6 @@ describe('handshake', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(transport.sentOf(MessageType.HELLO)).toHaveLength(3 + Math.floor(9700 / 400) + 1);
     expect(session.state).toMatchObject({ kind: 'handshaking', reason: 'connected' });
-
-    session.restart();
-    expect(session.state).toMatchObject({ kind: 'handshaking', reason: 'restart', attempt: 1 });
   });
 
   test('refuses a robot that speaks protocol version 1, saying what to update', async () => {
@@ -295,7 +297,7 @@ describe('handshake', () => {
   test('a different schema announced later forgets the old one before any read or write', async () => {
     const { transport, session } = await streaming();
 
-    session.restart();
+    transport.reopen();
     transport.robotSends(MessageType.HELLO_ACK, helloAck({ hash: 0xdeadbeef, count: 5 }));
 
     expect(session.state).toMatchObject({ kind: 'loadingSchema', total: 5 });
@@ -576,7 +578,7 @@ describe('groups', () => {
     const { transport, session } = await streaming();
     const epochs = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
 
-    session.restart();
+    transport.reopen();
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
     transport.robotSends(MessageType.HELLO_ACK, helloAck());
     await vi.advanceTimersByTimeAsync(0);
@@ -694,7 +696,7 @@ describe('requests', () => {
     void session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]).catch(() => undefined);
     const outcome = session.read(2).catch((error: unknown) => error);
 
-    session.restart();
+    transport.reopen();
     transport.robotSends(MessageType.HELLO_ACK, helloAck({ hash: 0xdeadbeef, count: 5 }));
     await vi.advanceTimersByTimeAsync(5000);
 
@@ -784,7 +786,7 @@ describe('boots and timelines', () => {
     session.on('epochEnd', (event) => ended.push(event));
 
     transport.robotSends(MessageType.SAMPLE, sample(0, 0, 900_000_000, 1, 1));
-    session.restart();
+    transport.reopen();
     transport.robotSends(MessageType.HELLO_ACK, helloAck({ bootId: 0xb007 }));
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
@@ -806,7 +808,7 @@ describe('boots and timelines', () => {
     const timelines: TimelineEvent[] = [];
     session.on('timeline', (event) => timelines.push(event));
 
-    session.restart();
+    transport.reopen();
     transport.robotSends(MessageType.HELLO_ACK, helloAck());
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
@@ -973,28 +975,6 @@ describe('epochs', () => {
     transport.robotSends(MessageType.SAMPLE, sample(0, 3, 3000, 0, 0));
 
     expect(samples.map((event) => event.missingBefore)).toEqual([0, 2]);
-  });
-
-  test('ids come from the source given', async () => {
-    let next = 100;
-    const transport = new ScriptedTransport();
-    const cache = new MemorySchemaCache();
-    cache.store(HASH, SCHEMA);
-    const session = new RobotLink(transport, {
-      schemaCache: cache,
-      timing: TIMING,
-      epochIds: () => next++,
-    });
-
-    session.open();
-    transport.robotSends(MessageType.HELLO_ACK, helloAck());
-    await vi.advanceTimersByTimeAsync(0);
-    const epochs = session.setGroups([{ variableIds: [0], periodTicks: 8 }]);
-    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 4));
-    await vi.advanceTimersByTimeAsync(0);
-    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 4));
-
-    expect(applied(await epochs).map((epoch) => epoch.id)).toEqual([100]);
   });
 
   test('stats and open epochs are the same object until one of them changes', async () => {

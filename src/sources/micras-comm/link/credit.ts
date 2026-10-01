@@ -28,51 +28,6 @@ export interface CreditGrant {
   readonly bytes: number;
 }
 
-/**
- * Decides when to give credit back and what the CREDIT says. The robot may only send metered
- * bytes it has credit for, because the radio module has no flow control and drops silently when
- * its buffer fills.
- */
-export interface CreditPolicy {
-  /**
-   * Count a metered frame that arrived intact.
-   *
-   * @param bytes Its size on the wire.
-   * @param now The current time, in milliseconds.
-   */
-  received(bytes: number, now: number): void;
-
-  /**
-   * Take the robot's own count of the metered bytes it sent before a PONG as everything consumed,
-   * since whatever of it has not arrived intact by the PONG never will, and say the total again.
-   *
-   * @param sentTotal The robot's cumulative total, wrapping at 2³².
-   * @param now The current time, in milliseconds.
-   * @returns The bytes lost on the way that it gives back, or null when the total is not one the
-   * robot could have sent since the handshake, which only a robot that started over sends.
-   */
-  resync(sentTotal: number, now: number): number | null;
-
-  /**
-   * Take the credit due now, if any.
-   *
-   * @param now The current time, in milliseconds.
-   * @returns What to send, or null when nothing is due.
-   */
-  take(now: number): CreditGrant | null;
-
-  /** When credit will be due without anything else arriving, or null when nothing is owed. */
-  dueAt(): number | null;
-
-  /**
-   * Start over from zero, because a HELLO reset the robot's window.
-   *
-   * @param window The window the robot announced in its HELLO_ACK, when known; the one before
-   * otherwise.
-   */
-  reset(window?: number): void;
-}
-
 /** When `CreditLedger` gives credit back. */
 export interface CreditLedgerOptions {
   /** Give back as soon as this many bytes are owed. */
@@ -99,7 +54,7 @@ const U32_RANGE = 2 ** 32;
  * The total is sent again after every PONG, lost bytes or not, because a CREDIT lost when nothing
  * else is owed would otherwise leave a robot whose window is full waiting for one forever.
  */
-export class CreditLedger implements CreditPolicy {
+export class CreditLedger {
   private consumed = 0;
   private told = 0;
   private owedSince: number | null = null;
@@ -115,11 +70,26 @@ export class CreditLedger implements CreditPolicy {
     private window: number = CREDIT_WINDOW
   ) {}
 
+  /**
+   * Count a metered frame that arrived intact.
+   *
+   * @param bytes Its size on the wire.
+   * @param now The current time, in milliseconds.
+   */
   received(bytes: number, now: number): void {
     this.consumed = (this.consumed + bytes) % U32_RANGE;
     this.owedSince ??= now;
   }
 
+  /**
+   * Take the robot's own count of the metered bytes it sent before a PONG as everything consumed,
+   * since whatever of it has not arrived intact by the PONG never will, and say the total again.
+   *
+   * @param sentTotal The robot's cumulative total, wrapping at 2³².
+   * @param now The current time, in milliseconds.
+   * @returns The bytes lost on the way that it gives back, or null when the total is not one the
+   * robot could have sent since the handshake, which only a robot that started over sends.
+   */
   resync(sentTotal: number, now: number): number | null {
     const lost = distance(this.consumed, sentTotal);
 
@@ -133,6 +103,12 @@ export class CreditLedger implements CreditPolicy {
     return lost;
   }
 
+  /**
+   * Take the credit due now, if any.
+   *
+   * @param now The current time, in milliseconds.
+   * @returns What to send, or null when nothing is due.
+   */
   take(now: number): CreditGrant | null {
     const owed = distance(this.told, this.consumed);
 
@@ -150,10 +126,17 @@ export class CreditLedger implements CreditPolicy {
     return { payload: creditPayload(this.consumed), bytes: owed };
   }
 
+  /** When credit will be due without anything else arriving, or null when nothing is owed. */
   dueAt(): number | null {
     return this.owedSince === null ? null : this.owedSince + this.options.maxDelayMs;
   }
 
+  /**
+   * Start over from zero, because a HELLO reset the robot's window.
+   *
+   * @param window The window the robot announced in its HELLO_ACK, when known; the one before
+   * otherwise.
+   */
   reset(window = this.window): void {
     this.window = window;
     this.consumed = 0;

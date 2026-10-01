@@ -41,8 +41,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
  * A transport over a BLE UART module such as the robot's HM-19.
  *
  * The first connection needs a user gesture, because only one can open the device chooser; that
- * is `BluetoothTransport.request`, or `BluetoothTransport.restore` for a device the origin was
- * given before. After a drop, the transport reconnects to the same device on its own, with
+ * is `BluetoothTransport.request`. After a drop, the transport reconnects to the same device on its own, with
  * backoff. Only when the browser refuses to connect without a gesture does it stop in the
  * `needs-user-gesture` state, and then `reconnect()` has to be called from a click.
  */
@@ -72,22 +71,6 @@ export class BluetoothTransport extends BaseTransport {
   }
 
   /**
-   * Find a device this origin was already given, such as the one used before a reload, without
-   * asking the user.
-   *
-   * @param options How to talk to the module.
-   * @param deviceId The `id` of the device.
-   * @returns A transport for it, or null when the browser cannot look it up.
-   */
-  static async restore(
-    options: BluetoothTransportOptions,
-    deviceId: string
-  ): Promise<BluetoothTransport | null> {
-    const device = await findPermittedDevice(options.bluetooth, deviceId);
-    return device ? new BluetoothTransport(device, options) : null;
-  }
-
-  /**
    * @param device The device to connect to.
    * @param options How to talk to the module.
    */
@@ -105,16 +88,6 @@ export class BluetoothTransport extends BaseTransport {
       (error) => this.reportError(asError(error)),
       options.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS
     );
-  }
-
-  /** The name the device advertises. */
-  get deviceName(): string | undefined {
-    return this.device.name;
-  }
-
-  /** The id the browser gave the device, which `restore` takes. */
-  get deviceId(): string {
-    return this.device.id;
   }
 
   open(): void {
@@ -281,18 +254,6 @@ export class BluetoothTransport extends BaseTransport {
     clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
   }
-}
-
-async function findPermittedDevice(
-  bluetooth: BluetoothLike,
-  deviceId: string
-): Promise<BluetoothDeviceLike | null> {
-  if (!bluetooth.getDevices) {
-    return null;
-  }
-
-  const devices = await bluetooth.getDevices();
-  return devices.find((device) => device.id === deviceId) ?? null;
 }
 
 /**

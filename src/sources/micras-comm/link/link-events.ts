@@ -6,8 +6,6 @@ import type { SchemaEntry } from './schema';
 export type HandshakeReason =
   /** The transport just opened. */
   | 'connected'
-  /** `restart()` was called. */
-  | 'restart'
   /** Groups were enabled but no sample arrived for too long, such as after credit was lost. */
   | 'stall'
   /** The robot went silent, not even answering PING. */

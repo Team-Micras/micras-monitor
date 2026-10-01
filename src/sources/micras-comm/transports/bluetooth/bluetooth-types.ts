@@ -13,9 +13,6 @@ export interface BluetoothLike {
     filters: { services: string[] }[];
     optionalServices?: string[];
   }): Promise<BluetoothDeviceLike>;
-
-  /** The devices this origin was already given, where the browser implements it. */
-  getDevices?(): Promise<BluetoothDeviceLike[]>;
 }
 
 /** A `BluetoothDevice`. */

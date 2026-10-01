@@ -16,13 +16,11 @@ import {
 import { AsyncMutex } from './async-mutex';
 import { Backoff } from './backoff';
 import { TimestampUnwrapper } from './clock';
-import { CreditLedger, isMetered, wireSize, type CreditPolicy } from './credit';
+import { CreditLedger, isMetered, wireSize } from './credit';
 import {
   EpochRegistry,
-  sharedEpochIds,
   type Epoch,
   type EpochEndReason,
-  type EpochIdSource,
   type GroupRequest,
   type OpenEpoch,
 } from './epochs';
@@ -68,14 +66,8 @@ export interface RobotLinkOptions {
   /** Where schemas are kept between connections; in memory by default. */
   schemaCache?: SchemaCache;
 
-  /** When to give credit back; protocol version 2's coalesced total by default. */
-  creditPolicy?: CreditPolicy;
-
   /** Timeouts and periods, over the defaults for a radio link. */
   timing?: Partial<LinkTiming>;
-
-  /** Where epoch ids come from; a counter shared by every link on the page by default. */
-  epochIds?: EpochIdSource;
 }
 
 type Timer = ReturnType<typeof setTimeout>;
@@ -99,7 +91,7 @@ export class RobotLink {
   private readonly clock = new TimestampUnwrapper();
   private readonly counters = new LinkTally();
   private readonly sizeRefusals = new AsyncMutex();
-  private readonly credit: CreditPolicy;
+  private readonly credit = new CreditLedger();
   private readonly timing: LinkTiming;
   private readonly helloBackoff: Backoff;
   private readonly schemaLoader: SchemaLoader;
@@ -132,7 +124,6 @@ export class RobotLink {
     private readonly transport: Transport,
     options: RobotLinkOptions = {}
   ) {
-    this.credit = options.creditPolicy ?? new CreditLedger();
     this.timing = { ...DEFAULT_TIMING, ...options.timing };
     this.helloBackoff = new Backoff({
       initialMs: this.timing.helloTimeoutMs,
@@ -143,13 +134,10 @@ export class RobotLink {
       send: (frame) => this.send(frame),
       report: (message) => this.reportProtocolError(message),
     });
-    this.epochs = new EpochRegistry(
-      {
-        opened: (epoch) => this.onEpochOpened(epoch),
-        ended: (epoch, reason) => this.onEpochEnded(epoch, reason),
-      },
-      options.epochIds ?? sharedEpochIds
-    );
+    this.epochs = new EpochRegistry({
+      opened: (epoch) => this.onEpochOpened(epoch),
+      ended: (epoch, reason) => this.onEpochEnded(epoch, reason),
+    });
     this.groups = this.createGroupConfigurator();
     this.watchdog = this.createWatchdog();
     this.writes = new WriteQueue({
@@ -203,19 +191,6 @@ export class RobotLink {
   /** Open the transport, which starts the handshake. */
   open(): void {
     if (this.current.kind !== 'closed') {
-      this.transport.open();
-    }
-  }
-
-  /** Redo the handshake, such as after an error. */
-  restart(): void {
-    if (this.current.kind === 'closed') {
-      return;
-    }
-
-    if (this.transport.state.kind === 'open') {
-      this.startHandshake('restart');
-    } else {
       this.transport.open();
     }
   }

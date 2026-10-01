@@ -69,7 +69,6 @@ export {
   wireSize,
   type CreditGrant,
   type CreditLedgerOptions,
-  type CreditPolicy,
 } from './credit';
 export {
   EpochRegistry,

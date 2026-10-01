@@ -83,7 +83,6 @@ describe('BandwidthEstimator', () => {
     feed.second({ rttMs: 50 });
     const estimate = feed.second({ bytesIn: 1200, creditReturned: 1000, rttMs: 50 });
 
-    expect(estimate.unmeteredBytesPerSecond).toBeCloseTo(200);
     expect(estimate.bytesPerSecond).toBeCloseTo(5120 * HEADROOM - 200);
   });
 
@@ -195,15 +194,5 @@ describe('BandwidthEstimator', () => {
 
     expect(gaps.saturated).toBe(false);
     expect(counted.saturated).toBe(true);
-  });
-
-  test('forgets what it measured on reset', () => {
-    const feed = new Feed();
-    feed.second({ rttMs: 5 });
-    feed.second({ bytesIn: 3000, creditReturned: 3000, droppedSamples: 40 });
-    feed.budget.reset();
-
-    expect(feed.budget.value.saturated).toBe(false);
-    expect(feed.budget.value.capacityBytesPerSecond).toBe(UART_BYTES_PER_SECOND);
   });
 });
