@@ -24,6 +24,7 @@ import {
   type EpochEndReason,
   type EpochIdSource,
   type GroupRequest,
+  type OpenEpoch,
 } from './groups';
 import { LinkCounters } from './link-counters';
 import { LinkWatchdog } from './link-watchdog';
@@ -649,21 +650,26 @@ export class Session {
     }
 
     const values = open.decode(sample.values);
+    const spacingUs = open.epoch.periodTicks * (this.info?.loopTimeUs ?? 0);
 
     if (!values) {
       this.outOfStep(
-        sample.group,
+        open,
+        sample,
+        spacingUs,
         `A sample of group ${sample.group} has ${sample.values.length} bytes; ${open.epoch.sampleSize} were acknowledged`
       );
       return;
     }
 
     const expected = open.nextSeq;
-    const missing = open.accept(sample.seq);
+    const missing = open.accept(sample.seq, sample.timestampUs, spacingUs);
 
     if (missing === null) {
       this.outOfStep(
-        sample.group,
+        open,
+        sample,
+        spacingUs,
         `A sample of group ${sample.group} came with sequence ${sample.seq}; ${expected} was expected`
       );
       return;
@@ -689,9 +695,26 @@ export class Session {
     });
   }
 
-  private outOfStep(group: number, message: string): void {
+  /**
+   * Give up on an epoch that a sample showed out of step with what the robot streams: count as
+   * dropped the samples the robot took for it since the last one accepted, by the time, report
+   * why, and have the group defined again, which ends the epoch.
+   *
+   * @param open The epoch the sample was for.
+   * @param sample The sample it cannot have sent.
+   * @param spacingUs How far apart in time the robot takes the samples of the group.
+   * @param message Why the sample does not belong to the epoch.
+   */
+  private outOfStep(open: OpenEpoch, sample: Sample, spacingUs: number, message: string): void {
+    const lost = open.active ? open.takenSince(sample.timestampUs, spacingUs) : 0;
+
+    if (lost > 0) {
+      this.counters.add('droppedSamples', lost);
+      this.events.emit('dropped', { epoch: open.epoch.id, count: lost });
+    }
+
     this.reportProtocolError(message);
-    this.groups.noteOutOfStep(group);
+    this.groups.noteOutOfStep(sample.group);
   }
 
   /**

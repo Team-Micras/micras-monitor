@@ -7,6 +7,7 @@ import {
   sameLayout,
   type Epoch,
   type EpochEndReason,
+  type OpenEpoch,
 } from '@/link/groups';
 import type { SchemaEntry } from '@/link/schema';
 
@@ -98,12 +99,12 @@ describe('epochs', () => {
     const before = define(registry, 1);
 
     registry.activate(0);
-    before.accept(0);
+    acceptAt(before, 0);
     registry.moveToTimeline(2);
 
     const after = registry.current(0);
     expect(after?.epoch).toMatchObject({ id: 102, timeline: 2, variableIds: [0, 2, 3] });
-    expect(after?.accept(1)).toBe(0);
+    expect(after && acceptAt(after, 1)).toBe(0);
     expect(events).toEqual(['opened 101', 'ended 101 clock-reset', 'opened 102']);
   });
 
@@ -124,53 +125,66 @@ describe('epochs', () => {
   test('a sequence gap inside an epoch counts the samples dropped', () => {
     const open = define(recordingRegistry().registry);
 
-    expect(open.accept(0)).toBe(0);
-    expect(open.accept(1)).toBe(0);
-    expect(open.accept(5)).toBe(3);
-    expect(open.accept(6)).toBe(0);
+    expect(acceptAt(open, 0)).toBe(0);
+    expect(acceptAt(open, 1)).toBe(0);
+    expect(acceptAt(open, 5)).toBe(3);
+    expect(acceptAt(open, 6)).toBe(0);
   });
 
   test('samples dropped before the first one arrived are counted too', () => {
     const open = define(recordingRegistry().registry);
 
-    expect(open.accept(2)).toBe(2);
+    expect(acceptAt(open, 2)).toBe(2);
   });
 
   test('the u16 sequence wraps without a gap', () => {
     const open = define(recordingRegistry().registry);
 
-    open.accept(0);
-    open.accept(0x7ffe);
-    open.accept(0xfffe);
+    acceptAt(open, 0);
+    acceptAt(open, 0x7ffe);
+    acceptAt(open, 0xfffe);
 
-    expect(open.accept(0xffff)).toBe(0);
-    expect(open.accept(0)).toBe(0);
+    expect(acceptAt(open, 0xffff)).toBe(0);
+    expect(acceptAt(open, 0, 0x10000)).toBe(0);
   });
 
   test('a sequence behind the expected one is no gap and moves nothing', () => {
     const open = define(recordingRegistry().registry);
 
-    open.accept(0);
-    open.accept(40);
+    acceptAt(open, 0);
+    acceptAt(open, 40);
 
-    expect(open.accept(0)).toBeNull();
-    expect(open.accept(40)).toBeNull();
+    expect(acceptAt(open, 0, 41)).toBeNull();
+    expect(acceptAt(open, 40, 42)).toBeNull();
     expect(open.nextSeq).toBe(41);
-    expect(open.accept(41)).toBe(0);
+    expect(acceptAt(open, 41, 43)).toBe(0);
   });
 
-  test('a sequence half the range ahead or more is taken as behind, not as a gap of that size', () => {
+  test('the time settles a sequence half the range ahead or more: a gap that long, or behind', () => {
     const open = define(recordingRegistry().registry);
 
-    expect(open.accept(0x8000)).toBeNull();
-    expect(open.accept(0x7fff)).toBe(0x7fff);
+    acceptAt(open, 0);
+
+    expect(acceptAt(open, 0x8001, 1)).toBeNull();
+    expect(acceptAt(open, 0x8001)).toBe(0x8000);
+  });
+
+  test('counts by the time the samples taken since the last one accepted', () => {
+    const open = define(recordingRegistry().registry);
+
+    expect(open.takenSince(5 * SPACING_US, SPACING_US)).toBe(0);
+
+    acceptAt(open, 0);
+
+    expect(open.takenSince(5 * SPACING_US, SPACING_US)).toBe(5);
+    expect(open.takenSince(5 * SPACING_US, 0)).toBe(0);
   });
 
   test('a new epoch starts its sequence from zero', () => {
     const { registry } = recordingRegistry();
-    define(registry).accept(40);
+    acceptAt(define(registry), 40);
 
-    expect(define(registry).accept(0)).toBe(0);
+    expect(acceptAt(define(registry), 0)).toBe(0);
   });
 
   test('decodes values by type and refuses the wrong size', () => {
@@ -185,3 +199,10 @@ describe('epochs', () => {
     expect(open.decode(bytes.subarray(1))).toBeNull();
   });
 });
+
+const SPACING_US = 10_000;
+
+/** Accept a sample the robot took at its turn: the sample of that index in the epoch. */
+function acceptAt(open: OpenEpoch, seq: number, index = seq): number | null {
+  return open.accept(seq, (index * SPACING_US) >>> 0, SPACING_US);
+}

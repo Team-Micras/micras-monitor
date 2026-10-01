@@ -31,7 +31,7 @@ function redefineBehindTheSession(
 }
 
 describe('a session whose group the robot streams out of step', { timeout: 10_000 }, () => {
-  test('defines a group again when its samples have another layout, counting none as dropped', async () => {
+  test('defines a group again when its samples have another layout, counting only what the time says was lost', async () => {
     harness = await connect();
     const { session, recording, id } = harness;
     const layout = [id('imu/accel_z'), id('loop/worst_time_us')];
@@ -61,7 +61,8 @@ describe('a session whose group the robot streams out of step', { timeout: 10_00
       sampleSize: 8,
     });
     expect(recording.samples.every((sample) => sample.values.length === 2)).toBe(true);
-    expect(recording.totalDropped).toBe(0);
+    expect(recording.dropped.get(first.id) ?? 0).toBeLessThanOrEqual(2);
+    expect(recording.dropped.get(again?.id ?? -1)).toBeUndefined();
     expect(recording.timelines.map((timeline) => timeline.reason)).toEqual(['connected']);
     expect(recording.protocolErrors.map((error) => error.message)).toContain(
       'A sample of group 0 has 12 bytes; 8 were acknowledged'
@@ -89,7 +90,7 @@ describe('a session whose group the robot streams out of step', { timeout: 10_00
 
     const sequences = recording.samplesOf(first.id).map((sample) => sample.seq);
     expect(sequences).toEqual(sequences.map((_, index) => index));
-    expect(recording.totalDropped).toBe(0);
+    expect(recording.totalDropped).toBeLessThanOrEqual(2);
     expect(recording.timelines.map((timeline) => timeline.reason)).toEqual(['connected']);
     expect(recording.protocolErrors.map((error) => error.message)).toContainEqual(
       expect.stringMatching(/^A sample of group 0 came with sequence 0; \d+ was expected$/)

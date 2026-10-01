@@ -12,6 +12,8 @@ import type { SchemaEntry } from './schema';
 export const SAMPLE_HEADER_SIZE = 7;
 
 const SEQUENCE_HALF_RANGE = 0x8000;
+const U32_HALF_RANGE = 2 ** 31;
+const GAP_TOLERANCE = 0.05;
 
 /** A set of variables to stream together, sampled in the same loop iteration. */
 export interface GroupRequest {
@@ -164,6 +166,7 @@ export function sameLayout(layout: GroupLayout, epoch: Epoch): boolean {
  */
 export class OpenEpoch {
   private expectedSeq = 0;
+  private lastTimestampUs: number | undefined;
   private announced = false;
 
   constructor(
@@ -191,6 +194,7 @@ export class OpenEpoch {
   continueAs(epoch: Epoch): OpenEpoch {
     const next = new OpenEpoch(epoch, this.types);
     next.expectedSeq = this.expectedSeq;
+    next.lastTimestampUs = this.lastTimestampUs;
     return next;
   }
 
@@ -201,21 +205,58 @@ export class OpenEpoch {
 
   /**
    * Account for the sequence number of a sample. A number up to half the u16 range ahead of the
-   * expected one follows samples that went missing; one behind it is a sample this epoch already
-   * had or never sent, and moves nothing.
+   * expected one follows samples that went missing. One further ahead is either a longer gap or a
+   * sample behind the expected one, which this epoch already had or never sent; the time since
+   * the last sample settles which, and a sample behind moves nothing.
    *
    * @param seq The u16 sequence number the sample carries.
+   * @param timestampUs The u32 timestamp the robot gave it.
+   * @param spacingUs How far apart in time the robot takes the samples of the group; 0 if unknown.
    * @returns How many samples went missing just before it, or null when it is behind.
    */
-  accept(seq: number): number | null {
+  accept(seq: number, timestampUs: number, spacingUs: number): number | null {
     const missing = (seq - this.expectedSeq) & 0xffff;
 
-    if (missing >= SEQUENCE_HALF_RANGE) {
+    if (missing >= SEQUENCE_HALF_RANGE && !this.timeSpans(missing, timestampUs, spacingUs)) {
       return null;
     }
 
     this.expectedSeq = (seq + 1) & 0xffff;
+    this.lastTimestampUs = timestampUs;
     return missing;
+  }
+
+  /**
+   * How many samples the robot took, by the time, between the last sample accepted and a moment;
+   * the ones lost when the epoch ends out of step there.
+   *
+   * @param timestampUs The u32 timestamp of the moment.
+   * @param spacingUs How far apart in time the robot takes the samples of the group; 0 if unknown.
+   * @returns The samples, 0 when the time says nothing.
+   */
+  takenSince(timestampUs: number, spacingUs: number): number {
+    const elapsed = this.elapsedUs(timestampUs);
+    return elapsed === null || spacingUs <= 0 ? 0 : Math.floor(elapsed / spacingUs);
+  }
+
+  private timeSpans(missing: number, timestampUs: number, spacingUs: number): boolean {
+    const elapsed = this.elapsedUs(timestampUs);
+
+    if (elapsed === null || spacingUs <= 0) {
+      return false;
+    }
+
+    const skipped = Math.round(elapsed / spacingUs) - 1;
+    return Math.abs(skipped - missing) <= missing * GAP_TOLERANCE;
+  }
+
+  private elapsedUs(timestampUs: number): number | null {
+    if (this.lastTimestampUs === undefined) {
+      return null;
+    }
+
+    const elapsed = (timestampUs - this.lastTimestampUs) >>> 0;
+    return elapsed < U32_HALF_RANGE ? elapsed : null;
   }
 
   /**
