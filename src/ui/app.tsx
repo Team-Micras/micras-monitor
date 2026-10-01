@@ -29,9 +29,8 @@ import {
   type AppMonitor,
   type MonitorScope,
 } from './monitor-context';
-import { phonePlan, planWindows } from './phone/phone-plan';
+import { phonePlan, planWindows, usePhone } from './phone/phone-plan';
 import { PhoneView } from './phone/phone-view';
-import { usePhone } from './phone/use-phone';
 import { TooltipProvider } from './primitives/tooltip';
 import type { AppUpdates } from './pwa/app-updates';
 import { RecordingsContext } from './recordings/recordings-context';

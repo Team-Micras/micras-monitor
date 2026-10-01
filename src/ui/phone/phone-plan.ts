@@ -1,5 +1,5 @@
 /**
- * What the phone shows, chosen from the connected robot's package and schema by role and by
+ * When the app is a phone, and what the phone shows then, chosen from the connected robot's package and schema by role and by
  * kind, so that any robot gets a sensible view: the map when the package names one, two values
  * and a small plot from the plots its presets open, its commands, and the settings it labels and
  * lets the user write.
@@ -7,10 +7,32 @@
  * @module
  */
 
+import { useSyncExternalStore } from 'react';
+
 import { roleVariable, type LayoutPreset, type PresetNode, type RobotPackage } from '@/core/robot';
 import type { Variable } from '@/core/variables';
 
 import type { ShellWindow } from '../windows/types';
+
+/** The width below which the app draws the phone view instead of the tiling, in CSS pixels. */
+export const PHONE_MAX_WIDTH_PX = 640;
+
+const PHONE_QUERY = `(max-width: ${PHONE_MAX_WIDTH_PX - 1}px)`;
+
+function subscribeToWidth(listener: () => void): () => void {
+  const query = globalThis.matchMedia?.(PHONE_QUERY);
+  query?.addEventListener('change', listener);
+  return () => query?.removeEventListener('change', listener);
+}
+
+/** Whether the window is narrow enough for the phone view, following resizes and rotation. */
+export function usePhone(): boolean {
+  return useSyncExternalStore(
+    subscribeToWidth,
+    () => globalThis.matchMedia?.(PHONE_QUERY).matches ?? false,
+    () => false
+  );
+}
 
 /** How many values the phone shows next to each other. */
 export const PHONE_VALUE_COUNT = 2;
