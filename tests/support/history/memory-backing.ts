@@ -2,7 +2,7 @@ import type { BlockBacking, BlockRef, BlockData } from '@/history/block-backing'
 import { decodeBlock, encodeBlock } from '@/recording/recording';
 
 function keyOf(ref: BlockRef): string {
-  return `${ref.epochId}:${ref.index}`;
+  return `${ref.runId}:${ref.index}`;
 }
 
 /**
@@ -41,7 +41,7 @@ export class MemoryBlockBacking implements BlockBacking {
     const bytes = this.blocks.get(keyOf(ref));
 
     if (!bytes) {
-      return Promise.reject(new Error(`No block ${ref.index} of epoch ${ref.epochId}`));
+      return Promise.reject(new Error(`No block ${ref.index} of epoch ${ref.runId}`));
     }
 
     this.reads++;

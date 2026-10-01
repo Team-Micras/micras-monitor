@@ -8,9 +8,9 @@ describe('TransitionTracker', () => {
   test('finds each change once, across scans and epochs', () => {
     const store = new HistoryStore({ scheduler: new ManualScheduler() });
     store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
-    store.openEpoch({
-      epochId: 1,
-      groupId: 0,
+    store.openRun({
+      runId: 1,
+      slot: 0,
       variables: [{ id: 0, type: 'u8' }],
     });
     [0, 0, 1, 1].forEach((value, index) => store.append(1, index * 1000, [value]));
@@ -23,10 +23,10 @@ describe('TransitionTracker', () => {
     ]);
     expect(tracker.update()).toBe(first);
 
-    store.closeEpoch(1);
-    store.openEpoch({
-      epochId: 2,
-      groupId: 0,
+    store.closeRun(1);
+    store.openRun({
+      runId: 2,
+      slot: 0,
       variables: [{ id: 0, type: 'u8' }],
     });
     [1, 3].forEach((value, index) => store.append(2, 10_000 + index * 1000, [value]));
@@ -37,9 +37,9 @@ describe('TransitionTracker', () => {
   test('starts over when the store is reset and the timeline restarts', () => {
     const store = new HistoryStore({ scheduler: new ManualScheduler() });
     store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
-    store.openEpoch({
-      epochId: 1,
-      groupId: 0,
+    store.openRun({
+      runId: 1,
+      slot: 0,
       variables: [{ id: 0, type: 'u8' }],
     });
     [1, 2].forEach((value, index) => store.append(1, 50_000 + index * 1000, [value]));
@@ -49,9 +49,9 @@ describe('TransitionTracker', () => {
     store.reset();
     expect(tracker.update()).toEqual([]);
     store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
-    store.openEpoch({
-      epochId: 2,
-      groupId: 0,
+    store.openRun({
+      runId: 2,
+      slot: 0,
       variables: [{ id: 0, type: 'u8' }],
     });
     [2, 2, 3].forEach((value, index) => store.append(2, index * 1000, [value]));
@@ -64,9 +64,9 @@ describe('TransitionTracker', () => {
   test('starts over when the store is reset and appended to before the next scan', () => {
     const store = new HistoryStore({ scheduler: new ManualScheduler() });
     store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
-    store.openEpoch({
-      epochId: 1,
-      groupId: 0,
+    store.openRun({
+      runId: 1,
+      slot: 0,
       variables: [{ id: 0, type: 'u8' }],
     });
     [1, 2].forEach((value, index) => store.append(1, index * 1000, [value]));

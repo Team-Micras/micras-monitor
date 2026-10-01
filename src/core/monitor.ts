@@ -39,18 +39,18 @@ export interface HistoryWriter {
   /** Takes the robot's variables, which map its ids to names. */
   setSchema(variables: readonly Variable[]): void;
   /**
-   * Starts a run of a stream, which the history calls an epoch. Returns the ids of the runs it
-   * had to close because the new one replaces them.
+   * Starts a run of a stream. Returns the ids of the runs it had to close because the new one
+   * replaces them.
    */
-  openEpoch(spec: {
-    readonly epochId: number;
-    readonly groupId: number;
+  openRun(spec: {
+    readonly runId: number;
+    readonly slot: number;
     readonly variables: readonly { readonly id: number; readonly type: ValueType }[];
   }): readonly number[];
   /** Ends a run of a stream. */
-  closeEpoch(epochId: number): void;
+  closeRun(runId: number): void;
   /** Adds a sample of an open run, after the samples lost just before it. */
-  append(epochId: number, timeUs: number, values: readonly Value[], missedBefore: number): void;
+  append(runId: number, timeUs: number, values: readonly Value[], missedBefore: number): void;
   /** Records a value that did not come in a sample. */
   setLatestValue(variableId: number, value: Value): void;
   /** Marks a moment no line is drawn across, closing every open run. */
@@ -96,7 +96,7 @@ export interface MonitorOptions<H extends HistoryWriter> {
 }
 
 interface OpenStream {
-  readonly epochId: number;
+  readonly runId: number;
   readonly clock: number;
 }
 
@@ -132,7 +132,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
   #demands: readonly VariableDemand[] = [];
   #connection: SourceConnection | null = null;
   #generation = 0;
-  #nextEpoch = 1;
+  #nextRun = 1;
 
   /**
    * @param options Where the data comes from and goes to.
@@ -280,7 +280,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
 
         if (open !== undefined) {
           const placed = this.#timeline.place(open.clock, timeUs);
-          this.history.append(open.epochId, placed, values, missedBefore);
+          this.history.append(open.runId, placed, values, missedBefore);
         }
       }),
       value: live((variableId, value) => this.history.setLatestValue(variableId, value)),
@@ -327,16 +327,16 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     }
 
     this.#closeStream(id);
-    const epochId = this.#nextEpoch++;
-    const replaced = this.history.openEpoch({ epochId, groupId: slot, variables });
+    const runId = this.#nextRun++;
+    const replaced = this.history.openRun({ runId, slot, variables });
 
     for (const [streamId, open] of this.#streams) {
-      if (replaced.includes(open.epochId)) {
+      if (replaced.includes(open.runId)) {
         this.#streams.delete(streamId);
       }
     }
 
-    this.#streams.set(id, { epochId, clock });
+    this.#streams.set(id, { runId, clock });
   }
 
   #closeStream(id: number): void {
@@ -344,7 +344,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
 
     if (open !== undefined) {
       this.#streams.delete(id);
-      this.history.closeEpoch(open.epochId);
+      this.history.closeRun(open.runId);
     }
   }
 

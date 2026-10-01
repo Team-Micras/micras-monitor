@@ -21,9 +21,9 @@ function store(): HistoryStore {
     { id: 0, name: SPEED, type: 'f32' },
     { id: 1, name: REFERENCE, type: 'f32' },
   ]);
-  telemetry.openEpoch({
-    epochId: 1,
-    groupId: 0,
+  telemetry.openRun({
+    runId: 1,
+    slot: 0,
     variables: [
       { id: 0, type: 'f32' },
       { id: 1, type: 'f32' },

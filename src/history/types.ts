@@ -18,7 +18,7 @@ export type HistoryVariable = Pick<Variable, 'id' | 'name' | 'type'>;
 export type VariableRef = string | number | { readonly name: string; readonly type: ValueType };
 
 /**
- * One variable of a stream group, in the order its values arrive in each sample.
+ * One variable of a stream, in the order its values arrive in each sample.
  */
 export interface VariableSpec {
   /** The variable's id in the schema. */
@@ -35,12 +35,12 @@ export interface VariableSpec {
  * A stream the source opened: a layout of variables sampled together, from the moment the robot
  * starts sending it until it stops.
  */
-export interface EpochSpec {
+export interface StreamRunSpec {
   /** Unique for the whole session; the session picks it. */
-  readonly epochId: number;
+  readonly runId: number;
 
-  /** The robot's group slot. */
-  readonly groupId: number;
+  /** Where the robot keeps the stream; a new stream in a slot replaces the one there. */
+  readonly slot: number;
 
   /** The variables in each sample, in wire order. */
   readonly variables: readonly VariableSpec[];
@@ -66,8 +66,8 @@ export interface Boundary {
 /**
  * Why a stretch of a variable's history has no samples.
  *
- * - `not-streamed`: the variable was in no group at the time.
- * - `dropped`: it was in a group, and the source lost samples it knows the robot took.
+ * - `not-streamed`: the variable was in no stream at the time.
+ * - `dropped`: it was in a stream, and the source lost samples it knows the robot took.
  * - `not-stored`: they arrived, but the memory cap kept the store from keeping them, or made it
  *   let go of them later.
  */
@@ -129,8 +129,8 @@ export interface SampleValue {
  * The arrays are not copies: read them before the next append and do not write to them.
  */
 export interface SampleRun {
-  /** The epoch the samples belong to. */
-  readonly epochId: number;
+  /** The run the samples belong to. */
+  readonly runId: number;
 
   /** The sample times, on the session timeline. */
   readonly time: Float64Array;
@@ -158,30 +158,30 @@ export interface HistoryMark {
 }
 
 /**
- * An epoch as a recording remembers it, with the names its variables had.
+ * A run as a recording remembers it, with the names its variables had.
  */
-export interface RecordedEpoch {
-  /** The session's id for the epoch. */
-  readonly epochId: number;
+export interface RecordedRun {
+  /** The session's id for the run. */
+  readonly runId: number;
 
-  /** The robot's group slot. */
-  readonly groupId: number;
+  /** Where the robot keeps the stream; a new stream in a slot replaces the one there. */
+  readonly slot: number;
 
   /** The variables of each sample, in wire order. */
   readonly variables: readonly HistoryVariable[];
 }
 
 /**
- * Samples missing inside an epoch, as a recording remembers them.
+ * Samples missing inside a run, as a recording remembers them.
  */
 export interface RecordedGap {
-  /** The epoch. */
-  readonly epochId: number;
+  /** The run. */
+  readonly runId: number;
 
   /** Whether the samples never arrived or were not kept. */
   readonly kind: 'dropped' | 'not-stored';
 
-  /** The epoch sample index of the first stored sample after the gap. */
+  /** The run sample index of the first stored sample after the gap. */
   readonly index: number;
 
   /** How many samples are missing. */
@@ -219,8 +219,8 @@ export interface RecordedValue {
  * What a recorder needs to know besides the blocks, each told once it is final.
  */
 export type IngestionEvent =
-  | { readonly type: 'epoch-opened'; readonly epoch: RecordedEpoch }
-  | { readonly type: 'epoch-closed'; readonly epochId: number }
+  | { readonly type: 'run-opened'; readonly run: RecordedRun }
+  | { readonly type: 'run-closed'; readonly runId: number }
   | { readonly type: 'gap'; readonly gap: RecordedGap }
   | { readonly type: 'boundary'; readonly boundary: Boundary }
   | { readonly type: 'value'; readonly value: RecordedValue };
@@ -243,7 +243,7 @@ export type StoreWarning =
   | { readonly type: 'persistence-recovered' }
   | {
       readonly type: 'time-backwards';
-      readonly epochId: number;
+      readonly runId: number;
       readonly timeUs: number;
       readonly lastUs: number;
     };

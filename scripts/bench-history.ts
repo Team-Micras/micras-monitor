@@ -28,7 +28,7 @@ function variables(first: number, count: number): VariableSpec[] {
 
 function fill(
   store: HistoryStore,
-  epochId: number,
+  runId: number,
   count: number,
   rateHz: number,
   signals: number,
@@ -46,7 +46,7 @@ function fill(
       row[signal] = Math.sin(phase) + 0.25 * Math.sin(11 * phase) + 0.02 * ((index * 7919) % 13);
     }
 
-    store.append(epochId, index * periodUs, row);
+    store.append(runId, index * periodUs, row);
   }
 }
 
@@ -88,7 +88,7 @@ function syntheticHour(): HourResult {
   const count = rateHz * 3600;
   const heapBefore = process.memoryUsage();
   const store = new HistoryStore({ scheduler: new ManualScheduler() });
-  store.openEpoch({ epochId: 1, groupId: 0, variables: variables(0, signals) });
+  store.openRun({ runId: 1, slot: 0, variables: variables(0, signals) });
   const start = performance.now();
   fill(store, 1, count, rateHz, signals, 1);
   const elapsed = performance.now() - start;
@@ -151,8 +151,8 @@ function longHistory(): number {
   const rateHz = 1000;
   const count = 600_000;
   const store = new HistoryStore({ scheduler: new ManualScheduler() });
-  store.openEpoch({ epochId: 1, groupId: 0, variables: variables(0, 16) });
-  store.openEpoch({ epochId: 2, groupId: 1, variables: variables(16, 16) });
+  store.openRun({ runId: 1, slot: 0, variables: variables(0, 16) });
+  store.openRun({ runId: 2, slot: 1, variables: variables(16, 16) });
   const start = performance.now();
   fill(store, 1, count, rateHz, 16, 2);
   fill(store, 2, count, rateHz, 16, 3);

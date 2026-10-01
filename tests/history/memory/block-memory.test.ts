@@ -31,7 +31,7 @@ function cappedStore(blocks: number, options: Partial<HistoryStoreOptions> = {})
   });
   const events: StoreWarning[] = [];
   store.onEvent((event) => events.push(event));
-  store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+  store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
   return { scheduler, store, events };
 }
 
@@ -339,7 +339,7 @@ describe('writing while recording', () => {
     await store.stopRecording();
 
     expect(persistence.writes).toBe(2);
-    expect(persistence.has({ epochId: 1, index: 1 })).toBe(true);
+    expect(persistence.has({ runId: 1, index: 1 })).toBe(true);
     expect(
       [...store.samples(1, 0, Number.POSITIVE_INFINITY)].map((run) => run.time.length)
     ).toEqual([101, 200]);
@@ -352,7 +352,7 @@ describe('writing while recording', () => {
     store.startRecording(persistence);
     await settle();
     const back = await Promise.all(
-      [0, 1, 2, 3].map((index) => persistence.read({ epochId: 1, index }))
+      [0, 1, 2, 3].map((index) => persistence.read({ runId: 1, index }))
     );
 
     expect(persistence.size).toBe(4);
@@ -490,9 +490,9 @@ describe('writing while recording', () => {
     };
     store.startRecording(flaky);
     await streamBlocks(store, 0, 4);
-    store.openEpoch({
-      epochId: 2,
-      groupId: 1,
+    store.openRun({
+      runId: 2,
+      slot: 1,
       variables: [
         { id: 3, type: 'f32' },
         { id: 4, type: 'f64' },
@@ -530,7 +530,7 @@ describe('writing while recording', () => {
     );
   });
 
-  test('shows the samples an empty epoch could not keep as a gap', async () => {
+  test('shows the samples an empty run could not keep as a gap', async () => {
     const failing: BlockBacking = {
       write: () => Promise.reject(new Error('disk full')),
       read: () => Promise.reject(new Error('never written')),
@@ -538,7 +538,7 @@ describe('writing while recording', () => {
     const { store } = cappedStore(2);
     store.startRecording(failing);
     await streamBlocks(store, 0, 3);
-    store.openEpoch({ epochId: 2, groupId: 1, variables: [{ id: 3, type: 'f32' }] });
+    store.openRun({ runId: 2, slot: 1, variables: [{ id: 3, type: 'f32' }] });
 
     for (let index = 0; index < 5; index++) {
       store.append(2, 10_000_000 + index, [1]);
@@ -550,14 +550,14 @@ describe('writing while recording', () => {
   });
 });
 
-describe('short epochs', () => {
-  test('take little memory, because an epoch starts with a small block', () => {
+describe('short runs', () => {
+  test('take little memory, because a run starts with a small block', () => {
     const store = new HistoryStore({ scheduler: new ManualScheduler() });
     const variables = Array.from({ length: 16 }, (_, id): VariableSpec => ({ id, type: 'f32' }));
     const row = Array.from({ length: 16 }, () => 1);
 
     for (let epoch = 0; epoch < 50; epoch++) {
-      store.openEpoch({ epochId: epoch, groupId: 0, variables });
+      store.openRun({ runId: epoch, slot: 0, variables });
 
       for (let index = 0; index < 100; index++) {
         store.append(epoch, (epoch * 100 + index) * 1000, row);

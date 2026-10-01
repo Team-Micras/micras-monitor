@@ -57,9 +57,9 @@ function rig(
   const scheduler = new ManualScheduler();
   const store = new HistoryStore({ scheduler, now: () => clock.ms });
   store.setSchema(VARIABLES);
-  store.openEpoch({
-    epochId: 1,
-    groupId: 0,
+  store.openRun({
+    runId: 1,
+    slot: 0,
     variables: [{ id: 0, type: 'f32' }],
   });
   const manager = new RecordingManager({
@@ -558,7 +558,7 @@ test('tells about the memory cap nearing, dropping the oldest history, and pausi
   const scheduler = new ManualScheduler();
   const store = new HistoryStore({ scheduler, blockSize: 1024, memoryCapBytes: 200_000 });
   store.setSchema(VARIABLES);
-  store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: 'f32' }] });
+  store.openRun({ runId: 1, slot: 0, variables: [{ id: 0, type: 'f32' }] });
   const manager = new RecordingManager({
     store,
     library: new MemoryRecordingLibrary(),

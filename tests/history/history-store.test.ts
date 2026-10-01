@@ -19,20 +19,20 @@ function mode(type: ValueType): HistoryVariable[] {
   return [{ id: 0, name: 'mode', type }];
 }
 
-function single(store: HistoryStore, epochId: number, id = 1, groupId = 0): void {
-  store.openEpoch({ epochId, groupId, variables: [{ id, type: 'f32' }] });
+function single(store: HistoryStore, runId: number, id = 1, slot = 0): void {
+  store.openRun({ runId, slot, variables: [{ id, type: 'f32' }] });
 }
 
 function streamSingle(
   store: HistoryStore,
-  epochId: number,
+  runId: number,
   from: number,
   count: number,
   timeOf: (index: number) => number,
   valueOf: (index: number) => number = (index) => index
 ): void {
   for (let index = from; index < from + count; index++) {
-    store.append(epochId, timeOf(index), [valueOf(index)]);
+    store.append(runId, timeOf(index), [valueOf(index)]);
   }
 }
 
@@ -63,8 +63,8 @@ function breaksOf(store: HistoryStore, id: number, endUs: number, pixels: number
   );
 }
 
-describe('epochs and gaps', () => {
-  test('tells time outside any epoch from samples dropped inside one', () => {
+describe('runs and gaps', () => {
+  test('tells time outside any run from samples dropped inside one', () => {
     const store = threeEpochs();
 
     expect(store.gaps(7, 0, 5 * SECOND)).toEqual([
@@ -73,10 +73,10 @@ describe('epochs and gaps', () => {
       { kind: 'not-streamed', startUs: 2 * SECOND + 999 * MS, endUs: 4 * SECOND },
     ]);
     expect(store.boundaries()).toEqual([{ kind: 'reconnect', timeUs: 3.5 * SECOND }]);
-    expect(store.variable(7)).toMatchObject({ storedSamples: 2490, droppedSamples: 10, epochs: 3 });
+    expect(store.variable(7)).toMatchObject({ storedSamples: 2490, droppedSamples: 10, runs: 3 });
   });
 
-  test('counts the samples the source lost before one, even the first of an epoch', () => {
+  test('counts the samples the source lost before one, even the first of a run', () => {
     const store = makeStore();
     single(store, 1, 1);
     store.append(1, 0, [1]);
@@ -103,7 +103,7 @@ describe('epochs and gaps', () => {
 
     expect(store.variable(1)).toMatchObject({ storedSamples: 3, droppedSamples: 0 });
     expect(store.latest(1)?.value).toBe(5);
-    expect(events).toEqual([{ type: 'time-backwards', epochId: 1, timeUs: 0.5 * MS, lastUs: MS }]);
+    expect(events).toEqual([{ type: 'time-backwards', runId: 1, timeUs: 0.5 * MS, lastUs: MS }]);
   });
 
   test('leaves out the loss a stale sample reports', () => {
@@ -127,7 +127,7 @@ describe('epochs and gaps', () => {
     expect(store.status().usedBytes - before).toBe(2 * GAP_BYTES);
   });
 
-  test('breaks the line between epochs, at drops and at boundaries, and nowhere else', () => {
+  test('breaks the line between runs, at drops and at boundaries, and nowhere else', () => {
     const store = threeEpochs();
     const pixels = 500;
     const decimation = store.decimate(7, 0, 5 * SECOND, pixels);
@@ -162,16 +162,16 @@ describe('epochs and gaps', () => {
   });
 });
 
-describe('epoch lifecycle', () => {
-  test('closes an open epoch sharing a variable with a new one, whatever the ack order', () => {
+describe('run lifecycle', () => {
+  test('closes an open run sharing a variable with a new one, whatever the ack order', () => {
     const store = makeStore();
     const scheduler = new ManualScheduler();
     const watched = new HistoryStore({ scheduler, blockSize: 256 });
 
     for (const target of [store, watched]) {
-      target.openEpoch({
-        epochId: 1,
-        groupId: 0,
+      target.openRun({
+        runId: 1,
+        slot: 0,
         variables: [
           { id: 1, type: 'f32' },
           { id: 2, type: 'f32' },
@@ -188,21 +188,21 @@ describe('epoch lifecycle', () => {
     expect(watched.version(2)).toBeGreaterThan(versionBefore);
   });
 
-  test('closes an epoch when its group is disabled, once', () => {
+  test('closes a run when its slot is disabled, once', () => {
     const store = makeStore();
     const events: IngestionEvent[] = [];
     store.onIngestion((event) => events.push(event));
     single(store, 1);
     store.append(1, 0, [1]);
-    store.closeEpoch(1);
-    store.closeEpoch(1);
+    store.closeRun(1);
+    store.closeRun(1);
 
     expect(() => store.append(1, MS, [1])).toThrow('closed');
-    expect(() => store.closeEpoch(9)).toThrow('No epoch 9');
-    expect(events.map(({ type }) => type)).toEqual(['epoch-opened', 'epoch-closed']);
+    expect(() => store.closeRun(9)).toThrow('No run 9');
+    expect(events.map(({ type }) => type)).toEqual(['run-opened', 'run-closed']);
   });
 
-  test('closes the open epoch of a group when the group is defined again', () => {
+  test('closes the open run of a slot when the slot is defined again', () => {
     const store = makeStore();
     single(store, 1, 1, 2);
     single(store, 2, 2, 3);
@@ -210,7 +210,7 @@ describe('epoch lifecycle', () => {
 
     expect(() => store.append(1, 0, [1])).toThrow('closed');
     expect(() => store.append(2, 0, [1])).not.toThrow();
-    expect(() => store.append(9, 0, [1])).toThrow('No epoch 9');
+    expect(() => store.append(9, 0, [1])).toThrow('No run 9');
     expect(() => store.append(3, 0, [1, 2])).toThrow(RangeError);
     expect(() => single(store, 3, 5, 1)).toThrow('already');
   });
@@ -244,7 +244,7 @@ describe('schema', () => {
       () => 7.25
     );
 
-    expect(store.variable('battery')).toMatchObject({ storedSamples: 20, epochs: 2 });
+    expect(store.variable('battery')).toMatchObject({ storedSamples: 20, runs: 2 });
     expect(store.variable(9)).toBe(store.variable('battery'));
     expect(store.variable(4)).toBeUndefined();
     expect([...store.samples('battery', 0, SECOND)].map((run) => run.values[0])).toEqual([
@@ -258,7 +258,7 @@ describe('schema', () => {
     single(store, 1, 0);
     streamSingle(store, 1, 0, 10, (index) => index * MS);
     store.setSchema([{ id: 0, name: 'mode', type: 'u16' }]);
-    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: 'u16' }] });
+    store.openRun({ runId: 2, slot: 0, variables: [{ id: 0, type: 'u16' }] });
     store.append(2, 50 * MS, [3]);
 
     expect(store.variable('mode')).toMatchObject({ type: 'u16', storedSamples: 1 });
@@ -269,7 +269,7 @@ describe('schema', () => {
     expect(store.timeRange()?.startUs).toBe(0);
   });
 
-  test('starts a new history when an epoch names a known variable with another type', () => {
+  test('starts a new history when a run names a known variable with another type', () => {
     const scheduler = new ManualScheduler();
     const store = new HistoryStore({ scheduler, blockSize: 256 });
     const callback = vi.fn<() => void>();
@@ -278,7 +278,7 @@ describe('schema', () => {
     single(store, 1, 0);
     streamSingle(store, 1, 0, 10, (index) => index * MS);
     const before = store.historyMark('mode');
-    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: 'i32' }] });
+    store.openRun({ runId: 2, slot: 0, variables: [{ id: 0, type: 'i32' }] });
     store.append(2, 50 * MS, [-3]);
     scheduler.flush();
 
@@ -294,7 +294,7 @@ describe('schema', () => {
     single(store, 1, 0);
     streamSingle(store, 1, 0, 10, (index) => index * MS);
     store.setSchema(mode('u8'));
-    store.openEpoch({ epochId: 2, groupId: 0, variables: mode('u8') });
+    store.openRun({ runId: 2, slot: 0, variables: mode('u8') });
     store.append(2, 20 * MS, [7]);
     store.setSchema(mode('f32'));
     single(store, 3, 0);
@@ -303,7 +303,7 @@ describe('schema', () => {
     expect(store.variable('mode')).toMatchObject({
       type: 'f32',
       storedSamples: 11,
-      epochs: 2,
+      runs: 2,
     });
     expect(store.variable({ name: 'mode', type: 'u8' })).toMatchObject({
       type: 'u8',
@@ -341,7 +341,7 @@ describe('numeric types', () => {
 
   test('keeps narrow types in 32 bit floats and the rest in 64 bit floats', () => {
     const store = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables });
+    store.openRun({ runId: 1, slot: 0, variables });
     store.append(1, 0, [
       true,
       65_535,
@@ -382,7 +382,7 @@ describe('numeric types', () => {
     const store = makeStore();
     const events: StoreWarning[] = [];
     store.onEvent((event) => events.push(event));
-    store.openEpoch({ epochId: 1, groupId: 0, variables: variables.slice(6, 8) });
+    store.openRun({ runId: 1, slot: 0, variables: variables.slice(6, 8) });
     store.append(1, 0, [2n ** 53n + 1n, -(2n ** 60n) - 3n]);
     store.append(1, MS, [2n ** 64n - 1n, 0n]);
 
@@ -398,7 +398,7 @@ describe('numeric types', () => {
 
   test('keeps blobs and read values as latest values, with a short history for blobs', () => {
     const store = makeStore({ historyLength: 3 });
-    store.openEpoch({ epochId: 1, groupId: 0, variables: variables.slice(7) });
+    store.openRun({ runId: 1, slot: 0, variables: variables.slice(7) });
 
     for (let index = 0; index < 5; index++) {
       store.append(1, index * MS, [BigInt(index), new Uint8Array([index])]);
@@ -425,9 +425,9 @@ describe('blocks', () => {
   test('are never reallocated or copied as the history grows', () => {
     const blockSize = 1024;
     const store = makeStore({ blockSize });
-    store.openEpoch({
-      epochId: 1,
-      groupId: 0,
+    store.openRun({
+      runId: 1,
+      slot: 0,
       variables: [
         { id: 1, type: 'f32' },
         { id: 2, type: 'u32' },
@@ -473,14 +473,14 @@ describe('blocks', () => {
 
   test('hand out runs as views, split at block edges, for the asked range only', () => {
     const store = makeStore({ blockSize: 256 });
-    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: 'f64' }] });
+    store.openRun({ runId: 1, slot: 0, variables: [{ id: 1, type: 'f64' }] });
     streamSingle(store, 1, 0, 1000, (index) => index * MS);
     const runs = [...store.samples(1, 100 * MS, 700 * MS)];
 
     expect(runs.map((run) => run.time.length)).toEqual([156, 256, 188]);
     expect(runs[0].time[0]).toBe(100 * MS);
     expect(runs[2].values.at(-1)).toBe(699);
-    expect(runs.every((run) => run.epochId === 1)).toBe(true);
+    expect(runs.every((run) => run.runId === 1)).toBe(true);
   });
 });
 
@@ -567,13 +567,13 @@ describe('queries', () => {
     expect(store.changedSince(1, mark, { startUs: 0, endUs: 50 * MS })).toBe(true);
   });
 
-  test('forget the history on reset, and carry on with the open epochs', () => {
+  test('forget the history on reset, and carry on with the open runs', () => {
     const store = makeStore();
     single(store, 1, 1, 0);
     streamSingle(store, 1, 0, 600, (index) => index * MS);
     single(store, 2, 2, 1);
     store.append(2, 0, [1]);
-    store.closeEpoch(2);
+    store.closeRun(2);
     store.markBoundary('reconnect', SECOND);
     single(store, 3, 1, 0);
     streamSingle(store, 3, 0, 10, (index) => 2 * SECOND + index * MS);
@@ -581,7 +581,7 @@ describe('queries', () => {
     store.reset();
 
     expect(store.generation).toBe(1);
-    expect(store.variable(1)).toMatchObject({ storedSamples: 0, epochs: 1 });
+    expect(store.variable(1)).toMatchObject({ storedSamples: 0, runs: 1 });
     expect(store.boundaries()).toEqual([]);
     expect(store.status().usedBytes).toBe(0);
     expect(store.latest(1)?.value).toBe(9);
@@ -594,7 +594,7 @@ describe('queries', () => {
 });
 
 describe('ingestion events', () => {
-  test('tell a recorder about epochs, final gaps, boundaries and values', () => {
+  test('tell a recorder about runs, final gaps, boundaries and values', () => {
     const store = makeStore();
     const events: IngestionEvent[] = [];
     store.onIngestion((event) => events.push(event));
@@ -615,17 +615,17 @@ describe('ingestion events', () => {
 
     expect(events).toEqual([
       {
-        type: 'epoch-opened',
-        epoch: {
-          epochId: 1,
-          groupId: 0,
+        type: 'run-opened',
+        run: {
+          runId: 1,
+          slot: 0,
           variables: [{ id: 0, name: 'speed', type: 'f32' }],
         },
       },
       {
         type: 'gap',
         gap: {
-          epochId: 1,
+          runId: 1,
           kind: 'dropped',
           index: 1,
           count: 4,
@@ -637,7 +637,7 @@ describe('ingestion events', () => {
       {
         type: 'gap',
         gap: {
-          epochId: 1,
+          runId: 1,
           kind: 'dropped',
           index: 3,
           count: 2,
@@ -651,17 +651,17 @@ describe('ingestion events', () => {
         value: { variableId: 1, name: 'maze', timeUs: 3 * MS, value: new Uint8Array([7]) },
       },
       { type: 'boundary', boundary: { kind: 'reboot', timeUs: 4 * MS } },
-      { type: 'epoch-closed', epochId: 1 },
+      { type: 'run-closed', runId: 1 },
     ]);
 
     const replayed: IngestionEvent[] = [];
     store.replayIngestion((event) => replayed.push(event));
 
     expect(replayed.map(({ type }) => type)).toEqual([
-      'epoch-opened',
+      'run-opened',
       'gap',
       'gap',
-      'epoch-closed',
+      'run-closed',
       'boundary',
       'value',
     ]);

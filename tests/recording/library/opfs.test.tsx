@@ -35,9 +35,9 @@ function tab(clock: { ms: number }) {
   const scheduler = new ManualScheduler();
   const store = new HistoryStore({ scheduler, now: () => clock.ms });
   store.setSchema(VARIABLES);
-  store.openEpoch({
-    epochId: 1,
-    groupId: 0,
+  store.openRun({
+    runId: 1,
+    slot: 0,
     variables: [{ id: 0, type: 'f32' }],
   });
   const manager = new RecordingManager({

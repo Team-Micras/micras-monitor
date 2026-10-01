@@ -29,7 +29,7 @@ interface Fixture {
 
 function newStore(blockSize: number): HistoryStore {
   const store = new HistoryStore({ scheduler: new ManualScheduler(), blockSize });
-  store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: 'f32' }] });
+  store.openRun({ runId: 1, slot: 0, variables: [{ id: 1, type: 'f32' }] });
   return store;
 }
 

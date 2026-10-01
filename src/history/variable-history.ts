@@ -5,13 +5,13 @@ import type { ChangeSignal } from './tick-notifier';
 import type { HistoryMark, LatestValue } from './types';
 
 /**
- * A stretch of a variable's history: an epoch it was part of, and its column there.
+ * A stretch of a variable's history: a run it was part of, and its column there.
  */
 export interface Segment {
-  /** The epoch. */
-  readonly epoch: StreamRun;
+  /** The run. */
+  readonly run: StreamRun;
 
-  /** The variable's numeric column in the epoch, or -1 for a blob. */
+  /** The variable's numeric column in the run, or -1 for a blob. */
   readonly column: number;
 }
 
@@ -28,7 +28,7 @@ export class VariableHistory {
   /** Tells this history apart from any other, for its marks. */
   readonly serial = ++VariableHistory.made;
 
-  /** The epochs it was part of, in the order they opened. */
+  /** The runs it was part of, in the order they opened. */
   readonly segments: Segment[] = [];
 
   /** Whether a 64 bit integer it held did not fit a float exactly. */
@@ -58,7 +58,7 @@ export class VariableHistory {
     private readonly historyLength: number
   ) {}
 
-  /** Whether it is stored numerically in its latest epoch. */
+  /** Whether it is stored numerically in its latest run. */
   get numeric(): boolean {
     const last = this.segments.at(-1);
     return last !== undefined && last.column >= 0;

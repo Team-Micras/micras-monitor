@@ -4,11 +4,11 @@ import type { Block, BlockLayout } from './block';
 import type { BlockData } from './block-backing';
 import { type ColumnKind, columnKindOf, kindOfColumn, toNumber } from './columns';
 import { LEAF_SIZE } from './min-max-pyramid';
-import type { RecordedEpoch, RecordedGap, HistoryVariable } from './types';
+import type { RecordedRun, RecordedGap, HistoryVariable } from './types';
 
 /**
- * How many samples the first block of an epoch holds. Each block that fills makes the next one
- * twice as large, up to the store's block size, so that short epochs take little memory; a block
+ * How many samples the first block of a run holds. Each block that fills makes the next one
+ * twice as large, up to the store's block size, so that short runs take little memory; a block
  * sealed before it filled leaves the size as it is.
  */
 export const FIRST_BLOCK_SIZE = 1024;
@@ -23,13 +23,13 @@ export const RECEIVED_BACKWARDS = -2;
 export const RECEIVED_DUPLICATE = -1;
 
 /**
- * Samples missing inside an epoch, before the sample stored at {@link EpochGap.index}.
+ * Samples missing inside a run, before the sample stored at {@link RunGap.index}.
  */
-export interface EpochGap {
+export interface RunGap {
   /** Whether they never arrived or were not kept. */
   readonly kind: 'dropped' | 'not-stored';
 
-  /** The epoch sample index of the first stored sample after the gap. */
+  /** The run sample index of the first stored sample after the gap. */
   index: number;
 
   /** How many samples are missing. */
@@ -46,7 +46,7 @@ export interface EpochGap {
 }
 
 /**
- * What an epoch needs from the store around it.
+ * What a run needs from the store around it.
  */
 export interface StreamRunHost {
   /** A new block, or undefined if the memory cap does not allow one. */
@@ -56,25 +56,25 @@ export interface StreamRunHost {
   seal(block: Block): void;
 
   /** A gap will not change any more. */
-  gapFinal(epoch: StreamRun, gap: EpochGap): void;
+  gapFinal(run: StreamRun, gap: RunGap): void;
 
   /** Memory outside the blocks was taken, or given back when negative. */
   account(bytes: number): void;
 }
 
 /**
- * The samples of one definition of a stream group.
+ * The samples of one run of a stream, from when it opened to when it ended.
  *
  * The source tells how many samples it lost before each one that arrives, which makes a gap of
- * dropped samples, different from the time outside any epoch, when the variable was not streamed
- * at all. Time never goes back inside an epoch, so a sample is a duplicate when its time repeats.
+ * dropped samples, different from the time outside any run, when the variable was not streamed
+ * at all. Time never goes back inside a run, so a sample is a duplicate when its time repeats.
  */
 export class StreamRun {
-  /** The session's id for the epoch. */
+  /** The session's id for the run. */
   readonly id: number;
 
-  /** The robot's group slot. */
-  readonly groupId: number;
+  /** Where the robot keeps the stream; a new stream in a slot replaces the one there. */
+  readonly slot: number;
 
   /** The variables of each sample, in wire order, with their names. */
   readonly variables: readonly HistoryVariable[];
@@ -89,7 +89,7 @@ export class StreamRun {
   readonly blocks: Block[] = [];
 
   /** Dropped and unstored samples, in sample order. */
-  readonly gaps: EpochGap[] = [];
+  readonly gaps: RunGap[] = [];
 
   /** The time of the first sample ever stored, or NaN. */
   firstStoredUs = Number.NaN;
@@ -109,7 +109,7 @@ export class StreamRun {
   private readonly numericIds: readonly number[];
   private readonly kinds: readonly ColumnKind[];
   private readonly row: Float64Array;
-  private readonly pending: EpochGap[] = [];
+  private readonly pending: RunGap[] = [];
   private capacity: number;
   private nextBlockIndex = 0;
   private pendingUnstored = 0;
@@ -118,17 +118,17 @@ export class StreamRun {
   private isClosed = false;
 
   /**
-   * @param spec The group layout, with names.
+   * @param spec The stream's layout, with names.
    * @param blockSize How many samples a block holds at most.
    * @param host Where blocks come from and where changes go.
    */
   constructor(
-    spec: RecordedEpoch,
+    spec: RecordedRun,
     private readonly blockSize: number,
     private readonly host: StreamRunHost
   ) {
-    this.id = spec.epochId;
-    this.groupId = spec.groupId;
+    this.id = spec.runId;
+    this.slot = spec.slot;
     this.variables = [...spec.variables];
     this.capacity = Math.min(blockSize, FIRST_BLOCK_SIZE);
 
@@ -153,7 +153,7 @@ export class StreamRun {
     this.row = new Float64Array(numericIds.length);
   }
 
-  /** Whether the epoch takes no more samples. */
+  /** Whether the run takes no more samples. */
   get closed(): boolean {
     return this.isClosed;
   }
@@ -178,9 +178,9 @@ export class StreamRun {
     return this.unstoredFromUs;
   }
 
-  /** The epoch as a recording remembers it. */
-  get recorded(): RecordedEpoch {
-    return { epochId: this.id, groupId: this.groupId, variables: this.variables };
+  /** The run as a recording remembers it. */
+  get recorded(): RecordedRun {
+    return { runId: this.id, slot: this.slot, variables: this.variables };
   }
 
   /**
@@ -306,7 +306,7 @@ export class StreamRun {
     const next = this.blocks[position];
     const previous = this.gaps.find((gap) => gap.kind === 'not-stored' && gap.index === start);
 
-    const gap: EpochGap = previous ?? {
+    const gap: RunGap = previous ?? {
       kind: 'not-stored',
       index: end,
       count: 0,
@@ -330,7 +330,7 @@ export class StreamRun {
   }
 
   /**
-   * Forget every sample and gap, so that an open epoch carries on from nothing.
+   * Forget every sample and gap, so that an open run carries on from nothing.
    */
   clearHistory(): void {
     this.host.account(-GAP_BYTES * this.gaps.length);
@@ -348,16 +348,16 @@ export class StreamRun {
   }
 
   /** A gap as a recording remembers it. */
-  recordedGap(gap: EpochGap): RecordedGap {
-    return { epochId: this.id, ...gap };
+  recordedGap(gap: RunGap): RecordedGap {
+    return { runId: this.id, ...gap };
   }
 
   /**
    * Take back a sealed block of a recording, after the ones taken back before it: the reader
-   * gives an epoch's blocks in index order, whatever order the file has them in.
+   * gives a run's blocks in index order, whatever order the file has them in.
    *
    * @returns The block, or undefined if the memory cap left no room for it.
-   * @throws If the block's columns are not the epoch's, or its index is not past the last one.
+   * @throws If the block's columns are not the run's, or its index is not past the last one.
    */
   restoreBlock(persisted: BlockData): Block | undefined {
     const length = persisted.time.length;
@@ -371,14 +371,14 @@ export class StreamRun {
       );
 
     if (!matches) {
-      throw new Error(`Block ${persisted.ref.index} does not fit the columns of epoch ${this.id}`);
+      throw new Error(`Block ${persisted.ref.index} does not fit the columns of run ${this.id}`);
     }
 
     const last = this.blocks.at(-1);
 
     if (last !== undefined && last.ref.index >= persisted.ref.index) {
       throw new Error(
-        `Block ${persisted.ref.index} of epoch ${this.id} comes after block ${last.ref.index}`
+        `Block ${persisted.ref.index} of run ${this.id} comes after block ${last.ref.index}`
       );
     }
 
@@ -414,7 +414,7 @@ export class StreamRun {
    * a recorder writes a gap again when it grows.
    */
   restoreGap(recorded: RecordedGap): void {
-    const gap: EpochGap = {
+    const gap: RunGap = {
       kind: recorded.kind,
       index: recorded.index,
       count: recorded.count,
@@ -438,7 +438,7 @@ export class StreamRun {
   }
 
   /**
-   * End a restore: the epoch takes no more samples, and its counts follow from the blocks and
+   * End a restore: the run takes no more samples, and its counts follow from the blocks and
    * gaps taken back.
    */
   finishRestore(): void {
@@ -478,7 +478,7 @@ export class StreamRun {
     }
 
     const block = this.host.allocate({
-      ref: { epochId: this.id, index: this.nextBlockIndex },
+      ref: { runId: this.id, index: this.nextBlockIndex },
       startSample: this.storedCount,
       capacity: this.capacity,
       variableIds: this.numericIds,
@@ -517,12 +517,7 @@ export class StreamRun {
     this.pending.length = 0;
   }
 
-  private addGap(
-    kind: EpochGap['kind'],
-    count: number,
-    startUs: number,
-    pending: boolean
-  ): EpochGap {
+  private addGap(kind: RunGap['kind'], count: number, startUs: number, pending: boolean): RunGap {
     const last = this.gaps.at(-1);
 
     if (
@@ -535,7 +530,7 @@ export class StreamRun {
       return last;
     }
 
-    const gap: EpochGap = {
+    const gap: RunGap = {
       kind,
       index: this.storedCount,
       count,

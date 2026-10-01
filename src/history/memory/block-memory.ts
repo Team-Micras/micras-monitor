@@ -35,7 +35,7 @@ export interface BlockMemoryOptions {
   /** Something in {@link BlockMemory.status} changed. */
   readonly statusChanged: () => void;
 
-  /** Seal the block every open epoch is filling. */
+  /** Seal the block every open run is filling. */
   readonly sealOpenBlocks: () => void;
 
   /** An evicted block is back in memory. */

@@ -45,10 +45,10 @@ const HEADER: RecordingHeader = {
 
 const RECORDS: readonly RecordingRecord[] = [
   {
-    kind: 'epoch',
-    epoch: {
-      epochId: 1,
-      groupId: 0,
+    kind: 'run',
+    run: {
+      runId: 1,
+      slot: 0,
       variables: [
         { id: 0, name: 'odometry/velocity', type: 'f32' },
         { id: 1, name: 'localizer/accepted', type: 'u32' },
@@ -58,7 +58,7 @@ const RECORDS: readonly RecordingRecord[] = [
   {
     kind: 'block',
     block: {
-      ref: { epochId: 1, index: 0 },
+      ref: { runId: 1, index: 0 },
       startSample: 0,
       time: new Float64Array([0, 125, 250.5, 2 ** 40]),
       columns: [
@@ -73,7 +73,7 @@ const RECORDS: readonly RecordingRecord[] = [
   {
     kind: 'gap',
     gap: {
-      epochId: 1,
+      runId: 1,
       kind: 'dropped',
       index: 4,
       count: 12,
@@ -84,12 +84,12 @@ const RECORDS: readonly RecordingRecord[] = [
   },
   { kind: 'boundary', boundary: { kind: 'reboot', timeUs: 2 ** 40 + 1 } },
   { kind: 'boundary', boundary: { kind: 'schema', timeUs: 2 ** 40 + 2 } },
-  { kind: 'epoch-closed', epochId: 1 },
-  { kind: 'epoch', epoch: { epochId: 2, groupId: 3, variables: [] } },
+  { kind: 'run-closed', runId: 1 },
+  { kind: 'run', run: { runId: 2, slot: 3, variables: [] } },
   {
     kind: 'gap',
     gap: {
-      epochId: 2,
+      runId: 2,
       kind: 'not-stored',
       index: 0,
       count: 1,
@@ -299,7 +299,7 @@ describe('recording format v2', () => {
       offset: header.byteLength + records[0].byteLength,
     });
     expect(peekBlock(scan.records[1].payload)).toEqual({
-      ref: { epochId: 1, index: 0 },
+      ref: { runId: 1, index: 0 },
       length: 4,
     });
     expect({ kind: 'block', block: decodeBlock(scan.records[1].payload) }).toEqual(RECORDS[1]);
@@ -320,7 +320,7 @@ describe('recording format v2', () => {
   test('refuses values that do not fit the layout', () => {
     expect(() =>
       encodeBlock({
-        ref: { epochId: -1, index: 0 },
+        ref: { runId: -1, index: 0 },
         startSample: 0,
         time: new Float64Array(0),
         columns: [],
@@ -333,9 +333,9 @@ describe('recording format v2', () => {
   });
 
   test('turns ingestion events into the records a recorder writes', () => {
-    expect(recordOf({ type: 'epoch-closed', epochId: 4 })).toEqual({
-      kind: 'epoch-closed',
-      epochId: 4,
+    expect(recordOf({ type: 'run-closed', runId: 4 })).toEqual({
+      kind: 'run-closed',
+      runId: 4,
     });
     expect(
       recordOf({ type: 'boundary', boundary: { kind: 'reboot', timeUs: 2 ** 40 + 1 } })
@@ -356,6 +356,6 @@ describe('recording format v2', () => {
     expect(back).toEqual(block.block);
     expect(back.time).not.toBe(block.block.time);
     expect(decodeBlock(encodeBlock(back))).toEqual(back);
-    await expect(persistence.read({ epochId: 9, index: 0 })).rejects.toThrow('No block');
+    await expect(persistence.read({ runId: 9, index: 0 })).rejects.toThrow('No block');
   });
 });

@@ -74,9 +74,9 @@ function valueAt(index: number): number {
   return Math.fround(Math.sin(index / 37) * 3);
 }
 
-function appendRange(store: HistoryStore, epochId: number, from: number, to: number): void {
+function appendRange(store: HistoryStore, runId: number, from: number, to: number): void {
   for (let index = from; index < to; index++) {
-    store.append(epochId, index * SAMPLE_US, [valueAt(index), index]);
+    store.append(runId, index * SAMPLE_US, [valueAt(index), index]);
   }
 }
 
@@ -115,7 +115,7 @@ class FlakyFile extends MemoryRecordingFile {
 
 function orderedBlock(index: number) {
   return {
-    ref: { epochId: 1, index },
+    ref: { runId: 1, index },
     startSample: index * 2,
     time: new Float64Array([index * 2 * SAMPLE_US, (index * 2 + 1) * SAMPLE_US]),
     columns: [
@@ -128,9 +128,9 @@ function orderedBlock(index: number) {
 function orderedSession(indices: readonly number[]) {
   return {
     schema: SCHEMA,
-    epochs: [
+    runs: [
       {
-        epoch: { epochId: 1, groupId: 0, variables: SCHEMA.slice(0, 2) },
+        run: { runId: 1, slot: 0, variables: SCHEMA.slice(0, 2) },
         gaps: [],
         blocks: indices.map(orderedBlock),
       },
@@ -143,7 +143,7 @@ function orderedSession(indices: readonly number[]) {
 describe('recording a session', () => {
   test('writes the header, the session so far and what comes after, and reads back the same', async () => {
     const { store, advance } = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     appendRange(store, 1, 0, 1500);
     const file = new MemoryRecordingFile();
     const recorder = await RecordingWriter.start(file, HEADER, store);
@@ -179,7 +179,7 @@ describe('recording a session', () => {
 
   test('seals and writes the open block every flush interval, so a killed tab loses at most that', async () => {
     const { store, advance } = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
     const recorder = await RecordingWriter.start(file, HEADER, store);
 
@@ -203,7 +203,7 @@ describe('recording a session', () => {
 
   test('keeps the whole records of a file cut in the middle of a write and reports the tail', async () => {
     const { store, advance } = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
     const recorder = await RecordingWriter.start(file, HEADER, store);
     appendRange(store, 1, 0, 500);
@@ -225,7 +225,7 @@ describe('recording a session', () => {
 
   test('skips and reports a damaged record in the middle, and keeps the records after it', async () => {
     const { store, advance } = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
     const recorder = await RecordingWriter.start(file, HEADER, store);
     const marks: number[] = [];
@@ -254,7 +254,7 @@ describe('recording a session', () => {
   test('writes back blocks that left memory from the file they left for, in their place', async () => {
     const blockBytes = Block.byteLengthFor({ capacity: BLOCK_SIZE, kinds: ['f32', 'f64'] });
     const { store } = makeStore({ memoryCapBytes: 3 * blockBytes });
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     const first = new MemoryRecordingFile();
     const recorder = await RecordingWriter.start(first, HEADER, store);
 
@@ -283,7 +283,7 @@ describe('recording a session', () => {
 
   test('gives a later gap record with the start of an earlier one precedence over it', async () => {
     const gap = {
-      epochId: 1,
+      runId: 1,
       kind: 'not-stored' as const,
       index: 1024,
       count: 512,
@@ -294,12 +294,12 @@ describe('recording a session', () => {
     const bytes = serializeRecording({
       header: HEADER,
       records: [
-        { kind: 'epoch', epoch: { epochId: 1, groupId: 0, variables: SCHEMA.slice(0, 2) } },
+        { kind: 'run', run: { runId: 1, slot: 0, variables: SCHEMA.slice(0, 2) } },
         { kind: 'gap', gap },
         {
           kind: 'block',
           block: {
-            ref: { epochId: 1, index: 2 },
+            ref: { runId: 1, index: 2 },
             startSample: 1024,
             time: new Float64Array([1024 * SAMPLE_US, 1025 * SAMPLE_US]),
             columns: [
@@ -309,7 +309,7 @@ describe('recording a session', () => {
           },
         },
         { kind: 'gap', gap: { ...gap, count: 1024, untilUs: 1024 * SAMPLE_US } },
-        { kind: 'epoch-closed', epochId: 1 },
+        { kind: 'run-closed', runId: 1 },
       ],
     });
 
@@ -323,7 +323,7 @@ describe('recording a session', () => {
 
   test('reports a failed write, writes its events again and lets the store retry its blocks', async () => {
     const { store, advance } = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     const file = new FlakyFile();
     const errors: unknown[] = [];
     const recorder = await RecordingWriter.start(file, HEADER, store, (error) =>
@@ -356,7 +356,7 @@ describe('recording a session', () => {
 describe('a saved session under the memory cap', () => {
   test('leaves memory as it loads and comes back from the file when a query needs it', async () => {
     const { store, advance } = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
     const recorder = await RecordingWriter.start(file, HEADER, store);
 
@@ -395,18 +395,18 @@ describe('a saved session under the memory cap', () => {
     expect([...reopened.samples('pose/x', early.startUs, early.endUs)][0].time.length).toBe(300);
   });
 
-  test('takes the blocks of an epoch in index order only, appending each one', async () => {
+  test('takes the blocks of a run in index order only, appending each one', async () => {
     const source = new MemoryRecordingFile();
 
     expect(makeStore().store.load(orderedSession([0, 1, 2]), new RecordingBlocks(source))).toBe(0);
     expect(() =>
       makeStore().store.load(orderedSession([0, 2, 1]), new RecordingBlocks(source))
-    ).toThrow(/Block 1 of epoch 1 comes after block 2/);
+    ).toThrow(/Block 1 of run 1 comes after block 2/);
   });
 
   test('refuses to load into a store that already holds a session', async () => {
     const { store } = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
+    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
     const recorder = await RecordingWriter.start(file, HEADER, store);
     await recorder.stop(store);

@@ -6,15 +6,15 @@ import { ManualScheduler } from '@/history';
 function twoVariables() {
   const scheduler = new ManualScheduler();
   const store = new HistoryStore({ scheduler, blockSize: 256 });
-  store.openEpoch({
-    epochId: 1,
-    groupId: 0,
+  store.openRun({
+    runId: 1,
+    slot: 0,
     variables: [
       { id: 1, type: 'f32' },
       { id: 2, type: 'f32' },
     ],
   });
-  store.openEpoch({ epochId: 2, groupId: 1, variables: [{ id: 3, type: 'f32' }] });
+  store.openRun({ runId: 2, slot: 1, variables: [{ id: 3, type: 'f32' }] });
   scheduler.flush();
   return { scheduler, store };
 }
@@ -131,7 +131,7 @@ describe('subscriptions', () => {
     store.setSchema([{ id: 3, name: 'battery', type: 'f32' }]);
     store.subscribe(['battery'], callback);
     store.setSchema([{ id: 8, name: 'battery', type: 'f32' }]);
-    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 8, type: 'f32' }] });
+    store.openRun({ runId: 1, slot: 0, variables: [{ id: 8, type: 'f32' }] });
     scheduler.flush();
     callback.mockClear();
     store.append(1, 0, [7.4]);
@@ -141,13 +141,13 @@ describe('subscriptions', () => {
     expect(store.version('battery')).toBe(store.version(8));
   });
 
-  test('hear about boundaries and epochs through the status', () => {
+  test('hear about boundaries and runs through the status', () => {
     const { scheduler, store } = twoVariables();
     const callback = vi.fn<() => void>();
     const status = store.status();
     store.subscribeStatus(callback);
     store.markBoundary('reboot', 5);
-    store.openEpoch({ epochId: 3, groupId: 0, variables: [{ id: 1, type: 'f32' }] });
+    store.openRun({ runId: 3, slot: 0, variables: [{ id: 1, type: 'f32' }] });
     scheduler.flush();
 
     expect(callback).toHaveBeenCalledTimes(1);

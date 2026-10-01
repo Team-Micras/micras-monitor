@@ -1,20 +1,20 @@
 import type {
   Boundary,
   NumericColumn,
-  RecordedEpoch,
+  RecordedRun,
   RecordedGap,
   RecordedValue,
   HistoryVariable,
 } from './types';
 
 /**
- * Which block a persisted block is: its epoch, and its position in the epoch.
+ * Which block a persisted block is: its run, and its position in the run.
  */
 export interface BlockRef {
-  /** The epoch the block belongs to. */
-  readonly epochId: number;
+  /** The run the block belongs to. */
+  readonly runId: number;
 
-  /** The block's position among the epoch's blocks, from 0. */
+  /** The block's position among the run's blocks, from 0. */
   readonly index: number;
 }
 
@@ -38,13 +38,13 @@ export interface BlockData {
   /** Which block this is. */
   readonly ref: BlockRef;
 
-  /** The epoch sample index of the block's first sample. */
+  /** The run sample index of the block's first sample. */
   readonly startSample: number;
 
   /** The sample times; its length is the number of samples. */
   readonly time: Float64Array;
 
-  /** One column per numeric variable of the epoch. */
+  /** One column per numeric variable of the run. */
   readonly columns: readonly ColumnData[];
 }
 
@@ -71,11 +71,11 @@ export interface BlockBacking {
 }
 
 /**
- * An epoch of a saved session, as `HistoryStore.load` takes it.
+ * A run of a saved session, as `HistoryStore.load` takes it.
  */
-export interface StoredEpoch {
-  /** The epoch, with the names its variables had. */
-  readonly epoch: RecordedEpoch;
+export interface StoredRun {
+  /** The run, with the names its variables had. */
+  readonly run: RecordedRun;
 
   /** Its gaps, in the order they were written; a later one with the same start replaces one before. */
   readonly gaps: readonly RecordedGap[];
@@ -91,8 +91,8 @@ export interface StoredRecording {
   /** The robot's schema when the session was recorded. */
   readonly schema: readonly HistoryVariable[];
 
-  /** Every epoch, in the order they opened. */
-  readonly epochs: readonly StoredEpoch[];
+  /** Every run, in the order they opened. */
+  readonly runs: readonly StoredRun[];
 
   /** Every boundary. */
   readonly boundaries: readonly Boundary[];

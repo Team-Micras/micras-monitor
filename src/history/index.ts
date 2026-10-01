@@ -20,7 +20,7 @@ export type {
   BlockRef,
   BlockData,
   ColumnData,
-  StoredEpoch,
+  StoredRun,
   StoredRecording,
 } from './block-backing';
 export { ManualScheduler, type Scheduler } from './scheduler';
@@ -44,14 +44,14 @@ export {
 export type {
   Boundary,
   BoundaryKind,
-  EpochSpec,
+  StreamRunSpec,
   Gap,
   GapKind,
   HistoryMark,
   IngestionEvent,
   LatestValue,
   NumericColumn,
-  RecordedEpoch,
+  RecordedRun,
   RecordedGap,
   RecordedValue,
   SampleRun,

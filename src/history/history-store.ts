@@ -20,12 +20,12 @@ import { TickNotifier, ChangeSignal } from './tick-notifier';
 import type {
   Boundary,
   BoundaryKind,
-  EpochSpec,
+  StreamRunSpec,
   Gap,
   HistoryMark,
   IngestionEvent,
   LatestValue,
-  RecordedEpoch,
+  RecordedRun,
   SampleRun,
   SampleValue,
   HistoryVariable,
@@ -55,8 +55,8 @@ export interface HistoryStoreOptions {
   readonly scheduler: Scheduler;
 
   /**
-   * How many samples a block holds at most: a power of two, at least 16. An epoch's first blocks
-   * are smaller, from 1,024 samples up, so that short epochs take little memory.
+   * How many samples a block holds at most: a power of two, at least 16. A run's first blocks
+   * are smaller, from 1,024 samples up, so that short runs take little memory.
    */
   readonly blockSize?: number;
 
@@ -101,8 +101,8 @@ export interface VariableInfo {
   /** How many of its samples the source lost. */
   readonly droppedSamples: number;
 
-  /** How many epochs it was part of. */
-  readonly epochs: number;
+  /** How many runs it was part of. */
+  readonly runs: number;
 }
 
 /**
@@ -119,8 +119,8 @@ export interface DecimateOptions {
   readonly stats?: DecimationStats;
 }
 
-interface OpenEpoch {
-  readonly epoch: StreamRun;
+interface OpenRun {
+  readonly run: StreamRun;
   readonly records: readonly VariableHistory[];
 }
 
@@ -158,12 +158,11 @@ function overlaps(startUs: number, endUs: number, fromUs: number, toUs: number):
 /**
  * Every sample of the session, and what the interface needs to show it.
  *
- * The session feeds it: {@link setSchema} after each handshake, {@link openEpoch} when a
- * GROUP_ACK arrives, {@link closeEpoch} when a group is disabled or redefined, {@link append} for
- * every sample, {@link markBoundary} when the link loses the robot, and {@link setLatestValue} for
- * READ answers. It knows nothing about the link. Times are on the session timeline, in
- * microseconds: the session unwraps the robot's 32 bit clock and keeps time moving forward across
- * reboots.
+ * The monitor feeds it from the source: {@link setSchema} when the variables change,
+ * {@link openRun} when a stream opens, {@link closeRun} when it ends or is replaced,
+ * {@link append} for every sample, {@link markBoundary} when the source loses the robot, and
+ * {@link setLatestValue} for read answers. It knows nothing about any link. Times are on the
+ * session timeline, in microseconds, kept moving forward across reboots by the source.
  *
  * History is kept per variable name and type, so that it survives a schema change; queries take
  * a name, or an id of the current schema. Readers subscribe and hear about changes at most once
@@ -174,8 +173,8 @@ function overlaps(startUs: number, endUs: number, fromUs: number, toUs: number):
 export class HistoryStore {
   private readonly blockSize: number;
   private readonly registry: VariableRegistry;
-  private readonly epochs = new Map<number, OpenEpoch>();
-  private readonly openByGroup = new Map<number, StreamRun>();
+  private readonly runs = new Map<number, OpenRun>();
+  private readonly openBySlot = new Map<number, StreamRun>();
   private boundaryList: readonly Boundary[] = [];
   private readonly listeners = new Set<(event: StoreWarning) => void>();
   private readonly ingestionListeners = new Set<(event: IngestionEvent) => void>();
@@ -209,19 +208,19 @@ export class HistoryStore {
       emit: (event) => this.emit(event),
       statusChanged: () => this.refreshStatus(),
       sealOpenBlocks: () => {
-        for (const epoch of this.openByGroup.values()) {
-          epoch.sealOpenBlock();
+        for (const run of this.openBySlot.values()) {
+          run.sealOpenBlock();
         }
       },
-      reloaded: (block) => this.rewriteEpoch(block.ref.epochId),
-      evicted: (block) => this.rewriteEpoch(block.ref.epochId),
+      reloaded: (block) => this.rewriteRun(block.ref.runId),
+      evicted: (block) => this.rewriteRun(block.ref.runId),
       dropped: (block) => this.dropBlock(block),
     });
     this.host = {
       allocate: (layout) => this.memory.allocate(layout),
       seal: (block) => this.memory.seal(block),
       account: (bytes) => this.memory.account(bytes),
-      gapFinal: (epoch, gap) => this.ingest({ type: 'gap', gap: epoch.recordedGap(gap) }),
+      gapFinal: (run, gap) => this.ingest({ type: 'gap', gap: run.recordedGap(gap) }),
     };
     this.statusSnapshot = this.memory.status();
   }
@@ -242,20 +241,19 @@ export class HistoryStore {
   }
 
   /**
-   * Start an epoch: a group layout the robot acknowledged. Any open epoch it conflicts with, of
-   * the same group or sharing a variable, closes first, so the order acknowledgements arrive in
-   * does not matter.
+   * Start a run: a stream the source opened. Any open run it conflicts with, in the same slot or
+   * sharing a variable, closes first, so the order the streams open in does not matter.
    *
-   * @returns The ids of the epochs it closed that way.
-   * @throws If the epoch id was used before or a variable appears twice.
+   * @returns The ids of the runs it closed that way.
+   * @throws If the run id was used before or a variable appears twice.
    */
-  openEpoch(spec: EpochSpec): readonly number[] {
-    if (this.epochs.has(spec.epochId)) {
-      throw new Error(`Epoch ${spec.epochId} was already opened`);
+  openRun(spec: StreamRunSpec): readonly number[] {
+    if (this.runs.has(spec.runId)) {
+      throw new Error(`Run ${spec.runId} was already opened`);
     }
 
     if (new Set(spec.variables.map((variable) => variable.id)).size !== spec.variables.length) {
-      throw new Error(`Epoch ${spec.epochId} names a variable twice`);
+      throw new Error(`Run ${spec.runId} names a variable twice`);
     }
 
     const variables = spec.variables.map((variable) => ({
@@ -278,56 +276,55 @@ export class HistoryStore {
 
     const closed: number[] = [];
 
-    for (const open of this.epochs.values()) {
+    for (const open of this.runs.values()) {
       const conflicts =
-        open.epoch.groupId === spec.groupId ||
-        open.records.some((record) => records.includes(record));
+        open.run.slot === spec.slot || open.records.some((record) => records.includes(record));
 
-      if (!open.epoch.closed && conflicts) {
-        this.closeEpoch(open.epoch.id);
-        closed.push(open.epoch.id);
+      if (!open.run.closed && conflicts) {
+        this.closeRun(open.run.id);
+        closed.push(open.run.id);
       }
     }
 
-    const epoch = new StreamRun(
-      { epochId: spec.epochId, groupId: spec.groupId, variables },
+    const run = new StreamRun(
+      { runId: spec.runId, slot: spec.slot, variables },
       this.blockSize,
       this.host
     );
 
     records.forEach((record, index) => {
-      record.segments.push({ epoch, column: epoch.columnOf[index] });
+      record.segments.push({ run, column: run.columnOf[index] });
       record.appended();
       this.notifier.touch(record.channel);
     });
 
-    this.epochs.set(spec.epochId, { epoch, records });
-    this.openByGroup.set(spec.groupId, epoch);
-    this.ingest({ type: 'epoch-opened', epoch: epoch.recorded });
+    this.runs.set(spec.runId, { run, records });
+    this.openBySlot.set(spec.slot, run);
+    this.ingest({ type: 'run-opened', run: run.recorded });
     this.notifier.touch(this.statusChannel);
     return closed;
   }
 
   /**
-   * Close an epoch: its group was disabled or redefined. Closing a closed epoch does nothing.
+   * Close a run: its stream ended or was replaced. Closing a closed run does nothing.
    *
-   * @throws If no epoch has that id.
+   * @throws If no run has that id.
    */
-  closeEpoch(epochId: number): void {
-    const open = this.epochs.get(epochId);
+  closeRun(runId: number): void {
+    const open = this.runs.get(runId);
 
     if (!open) {
-      throw new Error(`No epoch ${epochId}`);
+      throw new Error(`No run ${runId}`);
     }
 
-    if (open.epoch.closed) {
+    if (open.run.closed) {
       return;
     }
 
-    open.epoch.close();
+    open.run.close();
 
-    if (this.openByGroup.get(open.epoch.groupId) === open.epoch) {
-      this.openByGroup.delete(open.epoch.groupId);
+    if (this.openBySlot.get(open.run.slot) === open.run) {
+      this.openBySlot.delete(open.run.slot);
     }
 
     for (const record of open.records) {
@@ -335,37 +332,37 @@ export class HistoryStore {
       this.notifier.touch(record.channel);
     }
 
-    this.ingest({ type: 'epoch-closed', epochId });
+    this.ingest({ type: 'run-closed', runId });
     this.notifier.touch(this.statusChannel);
   }
 
   /**
-   * Add a sample of an open epoch. The latest values always take it; the history leaves out a
+   * Add a sample of an open run. The latest values always take it; the history leaves out a
    * sample whose time repeats the previous one's, a duplicate, and one whose time goes back,
    * which also raises a `time-backwards` event.
    *
-   * @param epochId The epoch.
+   * @param runId The run.
    * @param timeUs When the robot took it, on the session timeline.
-   * @param values One value per variable, in the epoch's order.
-   * @param missedBefore How many samples of the epoch the source lost just before this one,
+   * @param values One value per variable, in the run's order.
+   * @param missedBefore How many samples of the run the source lost just before this one,
    *   which the history keeps as a gap of dropped samples.
-   * @throws If the epoch is not open or the number of values is wrong.
+   * @throws If the run is not open or the number of values is wrong.
    */
-  append(epochId: number, timeUs: number, values: ArrayLike<Value>, missedBefore = 0): void {
-    const { epoch, records } = this.openEpochOf(epochId);
+  append(runId: number, timeUs: number, values: ArrayLike<Value>, missedBefore = 0): void {
+    const { run, records } = this.openRunOf(runId);
 
     if (values.length !== records.length) {
-      throw new RangeError(`Epoch ${epochId} takes ${records.length} values, got ${values.length}`);
+      throw new RangeError(`Run ${runId} takes ${records.length} values, got ${values.length}`);
     }
 
-    const received = epoch.receive(timeUs, missedBefore);
+    const received = run.receive(timeUs, missedBefore);
 
     if (received === RECEIVED_BACKWARDS) {
-      this.emit({ type: 'time-backwards', epochId, timeUs, lastUs: epoch.lastTimeUs });
+      this.emit({ type: 'time-backwards', runId, timeUs, lastUs: run.lastTimeUs });
     }
 
     const kept = received >= 0;
-    const stored = kept && epoch.store(timeUs, values);
+    const stored = kept && run.store(timeUs, values);
 
     if (kept) {
       this.clockUs = Math.max(this.clockUs, timeUs);
@@ -377,11 +374,11 @@ export class HistoryStore {
       const value = values[index];
       record.setLatest(value, timeUs);
 
-      if (epoch.columnOf[index] < 0) {
+      if (run.columnOf[index] < 0) {
         record.remember(value, timeUs);
-        this.ingestValue(record, epoch.variables[index].id, value, timeUs);
+        this.ingestValue(record, run.variables[index].id, value, timeUs);
       } else if (kept) {
-        this.checkPrecision(record, epoch.wide[index], value);
+        this.checkPrecision(record, run.wide[index], value);
 
         if (stored) {
           record.tailUs = timeUs;
@@ -396,14 +393,14 @@ export class HistoryStore {
   }
 
   /**
-   * Note that the link lost track of the robot. Every open epoch closes, and no line is drawn
+   * Note that the link lost track of the robot. Every open run closes, and no line is drawn
    * across the moment.
    */
   markBoundary(kind: BoundaryKind, timeUs: number): void {
     this.addBoundary(kind, timeUs);
 
-    for (const epoch of this.openByGroup.values()) {
-      this.closeEpoch(epoch.id);
+    for (const run of this.openBySlot.values()) {
+      this.closeRun(run.id);
     }
   }
 
@@ -432,25 +429,25 @@ export class HistoryStore {
 
   /**
    * Forget the history and stop recording, keeping the schema, the latest values and the open
-   * epochs, which carry on from nothing. A persistence layer written before is no longer read.
+   * runs, which carry on from nothing. A persistence layer written before is no longer read.
    */
   reset(): void {
-    for (const { epoch } of this.epochs.values()) {
-      if (!epoch.closed) {
-        epoch.clearHistory();
+    for (const { run } of this.runs.values()) {
+      if (!run.closed) {
+        run.clearHistory();
       }
     }
 
     this.memory.reset();
 
-    for (const [epochId, { epoch }] of this.epochs) {
-      if (epoch.closed) {
-        this.epochs.delete(epochId);
+    for (const [runId, { run }] of this.runs) {
+      if (run.closed) {
+        this.runs.delete(runId);
       }
     }
 
     for (const record of this.registry.all()) {
-      const open = record.segments.filter((segment) => !segment.epoch.closed);
+      const open = record.segments.filter((segment) => !segment.run.closed);
       record.segments.length = 0;
       record.segments.push(...open);
       record.tailUs = Number.NEGATIVE_INFINITY;
@@ -465,8 +462,8 @@ export class HistoryStore {
   }
 
   /**
-   * Fill an empty store with a saved session, to read it: its schema, epochs, blocks, gaps,
-   * boundaries and values. Every epoch ends closed. Each block counts as having a copy in
+   * Fill an empty store with a saved session, to read it: its schema, runs, blocks, gaps,
+   * boundaries and values. Every run ends closed. Each block counts as having a copy in
    * `source`, so under the memory cap it leaves memory, oldest first, and comes back from there
    * when a query needs its raw samples; its pyramid stays. The latest value of a numeric
    * variable is its last stored sample.
@@ -474,10 +471,10 @@ export class HistoryStore {
    * @param session What to load; its blocks are decoded one at a time.
    * @param source Where the blocks can be read back from.
    * @returns How many blocks did not fit under the cap and were left out.
-   * @throws If the store already holds epochs, or a block does not fit its epoch.
+   * @throws If the store already holds runs, or a block does not fit its run.
    */
   load(session: StoredRecording, source: BlockBacking): number {
-    if (this.epochs.size > 0) {
+    if (this.runs.size > 0) {
       throw new Error('Only an empty store can load a saved session');
     }
 
@@ -485,11 +482,11 @@ export class HistoryStore {
     const lastSamples = new Map<VariableHistory, SampleValue>();
     let skipped = 0;
 
-    for (const stored of session.epochs) {
-      const { epoch, records } = this.restoreEpoch(stored.epoch);
+    for (const stored of session.runs) {
+      const { run, records } = this.restoreRun(stored.run);
 
       for (const persisted of stored.blocks) {
-        const block = epoch.restoreBlock(persisted);
+        const block = run.restoreBlock(persisted);
 
         if (!block) {
           skipped++;
@@ -497,14 +494,14 @@ export class HistoryStore {
         }
 
         this.memory.adopt(block, source);
-        this.noteLastSamples(epoch, records, persisted, lastSamples);
+        this.noteLastSamples(run, records, persisted, lastSamples);
       }
 
       for (const gap of stored.gaps) {
-        epoch.restoreGap(gap);
+        run.restoreGap(gap);
       }
 
-      epoch.finishRestore();
+      run.finishRestore();
     }
 
     this.boundaryList = session.boundaries.toSorted((left, right) => left.timeUs - right.timeUs);
@@ -564,9 +561,9 @@ export class HistoryStore {
     let storedSamples = 0;
     let droppedSamples = 0;
 
-    for (const { epoch } of record.segments) {
-      storedSamples += epoch.keptCount;
-      droppedSamples += epoch.droppedCount;
+    for (const { run } of record.segments) {
+      storedSamples += run.keptCount;
+      droppedSamples += run.droppedCount;
     }
 
     const cached = this.infoCache.get(record)?.value;
@@ -577,7 +574,7 @@ export class HistoryStore {
       cached.precisionLost === record.precisionLost &&
       cached.storedSamples === storedSamples &&
       cached.droppedSamples === droppedSamples &&
-      cached.epochs === record.segments.length
+      cached.runs === record.segments.length
     ) {
       return cached;
     }
@@ -589,7 +586,7 @@ export class HistoryStore {
       precisionLost: record.precisionLost,
       storedSamples,
       droppedSamples,
-      epochs: record.segments.length,
+      runs: record.segments.length,
     };
     this.infoCache.set(record, { version: record.mark.version, value });
     return value;
@@ -602,8 +599,8 @@ export class HistoryStore {
   timeRange(variable?: VariableRef): TimeRange | undefined {
     if (variable === undefined) {
       if (this.sessionRange?.version !== this.historyVersion) {
-        const epochs = [...this.epochs.values()].map(({ epoch }) => epoch);
-        this.sessionRange = { version: this.historyVersion, value: this.rangeOf(epochs) };
+        const runs = [...this.runs.values()].map(({ run }) => run);
+        this.sessionRange = { version: this.historyVersion, value: this.rangeOf(runs) };
       }
 
       return this.sessionRange.value;
@@ -621,8 +618,8 @@ export class HistoryStore {
       return cached.value;
     }
 
-    const epochs = record.segments.filter((segment) => segment.column >= 0).map((s) => s.epoch);
-    const value = this.rangeOf(epochs);
+    const runs = record.segments.filter((segment) => segment.column >= 0).map((s) => s.run);
+    const value = this.rangeOf(runs);
     this.rangeCache.set(record, { version: record.mark.version, value });
     return value;
   }
@@ -669,12 +666,12 @@ export class HistoryStore {
 
     this.memory.beginQuery();
 
-    for (const { epoch, column } of record.segments) {
+    for (const { run, column } of record.segments) {
       if (column < 0) {
         continue;
       }
 
-      const blocks = epoch.blocks;
+      const blocks = run.blocks;
 
       for (let at = firstBlockFrom(blocks, startUs); at < blocks.length; at++) {
         const block = blocks[at];
@@ -687,10 +684,10 @@ export class HistoryStore {
           break;
         }
 
-        const run = this.runOf(block, column, startUs, endUs);
+        const samples = this.runOf(block, column, startUs, endUs);
 
-        if (run) {
-          yield { epochId: epoch.id, ...run };
+        if (samples) {
+          yield { runId: run.id, ...samples };
         }
       }
     }
@@ -705,8 +702,8 @@ export class HistoryStore {
     this.memory.beginQuery();
 
     for (let index = segments.length - 1; index >= 0; index--) {
-      const { epoch, column } = segments[index];
-      const block = blockAt(epoch.blocks, timeUs);
+      const { run, column } = segments[index];
+      const block = blockAt(run.blocks, timeUs);
 
       if (column < 0 || !block) {
         continue;
@@ -730,7 +727,7 @@ export class HistoryStore {
 
   /**
    * The minimum and maximum of a variable per pixel column of `[startUs, endUs)`, with where its
-   * line breaks: between epochs, at dropped samples, at boundaries and after NaN. Lay the result
+   * line breaks: between runs, at dropped samples, at boundaries and after NaN. Lay the result
    * out for uPlot with `toLineSeries` or `toBandSeries`.
    *
    * The cost follows the number of pixels and pyramid levels, not the number of samples; asked
@@ -783,32 +780,32 @@ export class HistoryStore {
   }
 
   /**
-   * Why a variable has no samples in parts of `[startUs, endUs)`: time between its epochs,
+   * Why a variable has no samples in parts of `[startUs, endUs)`: time between its runs,
    * dropped samples and samples not kept, ordered by start.
    */
   gaps(variable: VariableRef, startUs: number, endUs: number): Gap[] {
     const found: Gap[] = [];
     let coveredUntil = Number.NaN;
 
-    for (const { epoch, column } of this.registry.resolve(variable)?.segments ?? []) {
+    for (const { run, column } of this.registry.resolve(variable)?.segments ?? []) {
       if (column < 0) {
         continue;
       }
 
-      if (epoch.storedCount > 0) {
+      if (run.storedCount > 0) {
         if (
-          epoch.firstStoredUs > coveredUntil &&
-          overlaps(coveredUntil, epoch.firstStoredUs, startUs, endUs)
+          run.firstStoredUs > coveredUntil &&
+          overlaps(coveredUntil, run.firstStoredUs, startUs, endUs)
         ) {
-          found.push({ kind: 'not-streamed', startUs: coveredUntil, endUs: epoch.firstStoredUs });
+          found.push({ kind: 'not-streamed', startUs: coveredUntil, endUs: run.firstStoredUs });
         }
 
         coveredUntil = Number.isNaN(coveredUntil)
-          ? epoch.lastTimeUs
-          : Math.max(coveredUntil, epoch.lastTimeUs);
+          ? run.lastTimeUs
+          : Math.max(coveredUntil, run.lastTimeUs);
       }
 
-      for (const gap of epoch.gaps) {
+      for (const gap of run.gaps) {
         const gapStart = Number.isNaN(gap.startUs) ? gap.untilUs : gap.startUs;
 
         if (overlaps(gapStart, gap.untilUs, startUs, endUs)) {
@@ -816,12 +813,12 @@ export class HistoryStore {
         }
       }
 
-      if (epoch.unstoredRun > 0 && overlaps(epoch.unstoredFrom, Number.NaN, startUs, endUs)) {
+      if (run.unstoredRun > 0 && overlaps(run.unstoredFrom, Number.NaN, startUs, endUs)) {
         found.push({
           kind: 'not-stored',
-          startUs: epoch.unstoredFrom,
+          startUs: run.unstoredFrom,
           endUs: Number.NaN,
-          count: epoch.unstoredRun,
+          count: run.unstoredRun,
         });
       }
     }
@@ -854,7 +851,7 @@ export class HistoryStore {
   }
 
   /**
-   * Hear about changes to the status, the schema, the epochs and the boundaries, at most once
+   * Hear about changes to the status, the schema, the runs and the boundaries, at most once
    * per tick.
    *
    * @returns A function that ends the subscription.
@@ -879,7 +876,7 @@ export class HistoryStore {
   }
 
   /**
-   * Hear, as they happen, about what a recorder writes besides the blocks: epochs opening and
+   * Hear, as they happen, about what a recorder writes besides the blocks: runs opening and
    * closing, gaps once final, boundaries, and values outside the stored streams.
    *
    * @returns A function that stops listening.
@@ -891,21 +888,21 @@ export class HistoryStore {
 
   /**
    * Tell a listener, at once, what {@link onIngestion} would have told it about the session so
-   * far, for a recorder that starts late: every epoch and its final gaps, the boundaries, and the
+   * far, for a recorder that starts late: every run and its final gaps, the boundaries, and the
    * latest value of each variable not stored numerically.
    */
   replayIngestion(listener: (event: IngestionEvent) => void): void {
-    for (const { epoch } of this.epochs.values()) {
-      listener({ type: 'epoch-opened', epoch: epoch.recorded });
+    for (const { run } of this.runs.values()) {
+      listener({ type: 'run-opened', run: run.recorded });
 
-      for (const gap of epoch.gaps) {
-        if (epoch.closed || !Number.isNaN(gap.untilUs)) {
-          listener({ type: 'gap', gap: epoch.recordedGap(gap) });
+      for (const gap of run.gaps) {
+        if (run.closed || !Number.isNaN(gap.untilUs)) {
+          listener({ type: 'gap', gap: run.recordedGap(gap) });
         }
       }
 
-      if (epoch.closed) {
-        listener({ type: 'epoch-closed', epochId: epoch.id });
+      if (run.closed) {
+        listener({ type: 'run-closed', runId: run.id });
       }
     }
 
@@ -960,27 +957,27 @@ export class HistoryStore {
     return this.memory.stopRecording();
   }
 
-  private restoreEpoch(recorded: RecordedEpoch): OpenEpoch {
-    if (this.epochs.has(recorded.epochId)) {
-      throw new Error(`Epoch ${recorded.epochId} appears twice in the session`);
+  private restoreRun(recorded: RecordedRun): OpenRun {
+    if (this.runs.has(recorded.runId)) {
+      throw new Error(`Run ${recorded.runId} appears twice in the session`);
     }
 
-    const epoch = new StreamRun(recorded, this.blockSize, this.host);
+    const run = new StreamRun(recorded, this.blockSize, this.host);
     const records = recorded.variables.map(({ id, name, type }) => {
       const record = this.registry.recordFor(name, type);
       this.lastIds.set(record, id);
       return record;
     });
     records.forEach((record, index) => {
-      record.segments.push({ epoch, column: epoch.columnOf[index] });
+      record.segments.push({ run, column: run.columnOf[index] });
     });
-    const open = { epoch, records };
-    this.epochs.set(recorded.epochId, open);
+    const open = { run, records };
+    this.runs.set(recorded.runId, open);
     return open;
   }
 
   private noteLastSamples(
-    epoch: StreamRun,
+    run: StreamRun,
     records: readonly VariableHistory[],
     persisted: BlockData,
     lastSamples: Map<VariableHistory, SampleValue>
@@ -994,7 +991,7 @@ export class HistoryStore {
     const timeUs = persisted.time[last];
 
     records.forEach((record, index) => {
-      const column = epoch.columnOf[index];
+      const column = run.columnOf[index];
       const known = lastSamples.get(record);
 
       if (column >= 0 && (known === undefined || known.timeUs <= timeUs)) {
@@ -1003,15 +1000,15 @@ export class HistoryStore {
     });
   }
 
-  private openEpochOf(epochId: number): OpenEpoch {
-    const open = this.epochs.get(epochId);
+  private openRunOf(runId: number): OpenRun {
+    const open = this.runs.get(runId);
 
     if (!open) {
-      throw new Error(`No epoch ${epochId}`);
+      throw new Error(`No run ${runId}`);
     }
 
-    if (open.epoch.closed) {
-      throw new Error(`Epoch ${epochId} is closed`);
+    if (open.run.closed) {
+      throw new Error(`Run ${runId} is closed`);
     }
 
     return open;
@@ -1043,14 +1040,14 @@ export class HistoryStore {
     this.notifier.touch(this.statusChannel);
   }
 
-  private rangeOf(epochs: readonly StreamRun[]): TimeRange | undefined {
+  private rangeOf(runs: readonly StreamRun[]): TimeRange | undefined {
     let startUs = Number.POSITIVE_INFINITY;
     let lastUs = Number.NEGATIVE_INFINITY;
 
-    for (const epoch of epochs) {
-      if (epoch.keptCount > 0) {
-        startUs = Math.min(startUs, epoch.firstTimeUs);
-        lastUs = Math.max(lastUs, epoch.lastTimeUs);
+    for (const run of runs) {
+      if (run.keptCount > 0) {
+        startUs = Math.min(startUs, run.firstTimeUs);
+        lastUs = Math.max(lastUs, run.lastTimeUs);
       }
     }
 
@@ -1062,7 +1059,7 @@ export class HistoryStore {
     column: number,
     startUs: number,
     endUs: number
-  ): Omit<SampleRun, 'epochId'> | undefined {
+  ): Omit<SampleRun, 'runId'> | undefined {
     this.memory.markUsed(block);
     const time = block.time;
     const columns = block.columns;
@@ -1083,13 +1080,13 @@ export class HistoryStore {
   }
 
   private dropBlock(block: Block): void {
-    this.epochs.get(block.ref.epochId)?.epoch.dropBlock(block);
+    this.runs.get(block.ref.runId)?.run.dropBlock(block);
     this.historyVersion++;
-    this.rewriteEpoch(block.ref.epochId);
+    this.rewriteRun(block.ref.runId);
   }
 
-  private rewriteEpoch(epochId: number): void {
-    for (const record of this.epochs.get(epochId)?.records ?? []) {
+  private rewriteRun(runId: number): void {
+    for (const record of this.runs.get(runId)?.records ?? []) {
       record.rewritten();
       this.notifier.touch(record.channel);
     }

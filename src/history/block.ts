@@ -4,19 +4,19 @@ import { LEAF_SIZE, MinMaxPyramid } from './min-max-pyramid';
 import type { NumericColumn } from './types';
 
 /**
- * The shape of a block: its place in the epoch and what it stores.
+ * The shape of a block: its place in the run and what it stores.
  */
 export interface BlockLayout {
   /** Which block it is. */
   readonly ref: BlockRef;
 
-  /** The epoch sample index of its first sample. */
+  /** The run sample index of its first sample. */
   readonly startSample: number;
 
   /** How many samples it holds when full. */
   readonly capacity: number;
 
-  /** The ids of the epoch's numeric variables, one per column. */
+  /** The ids of the run's numeric variables, one per column. */
   readonly variableIds: readonly number[];
 
   /** How each column is stored. */
@@ -24,7 +24,7 @@ export interface BlockLayout {
 }
 
 /**
- * A fixed-size chunk of an epoch: a time column, one value column per numeric variable, and a
+ * A fixed-size chunk of a run: a time column, one value column per numeric variable, and a
  * min/max pyramid per column.
  *
  * Its arrays are allocated once, at full size, and never grow, so a view handed out stays valid.
@@ -38,13 +38,13 @@ export class Block {
   /** Which block it is. */
   readonly ref: BlockRef;
 
-  /** The epoch sample index of its first sample. */
+  /** The run sample index of its first sample. */
   readonly startSample: number;
 
   /** How many samples it holds when full. */
   readonly capacity: number;
 
-  /** The ids of the epoch's numeric variables, one per column. */
+  /** The ids of the run's numeric variables, one per column. */
   readonly variableIds: readonly number[];
 
   /** How each column is stored. */
@@ -195,7 +195,7 @@ export class Block {
     const columns = this.valueColumns;
 
     if (!time || !columns || this.isSealed || this.count === this.capacity) {
-      throw new Error(`Block ${this.ref.index} of epoch ${this.ref.epochId} takes no samples`);
+      throw new Error(`Block ${this.ref.index} of run ${this.ref.runId} takes no samples`);
     }
 
     const index = this.count++;
@@ -260,7 +260,7 @@ export class Block {
     const columns = this.valueColumns;
 
     if (!time || !columns) {
-      throw new Error(`Block ${this.ref.index} of epoch ${this.ref.epochId} is not in memory`);
+      throw new Error(`Block ${this.ref.index} of run ${this.ref.runId} is not in memory`);
     }
 
     return {
@@ -296,7 +296,7 @@ export class Block {
    */
   restore(persisted: BlockData): number {
     const matches =
-      persisted.ref.epochId === this.ref.epochId &&
+      persisted.ref.runId === this.ref.runId &&
       persisted.ref.index === this.ref.index &&
       persisted.startSample === this.startSample &&
       persisted.time.length === this.count &&
@@ -309,7 +309,7 @@ export class Block {
       );
 
     if (!matches) {
-      throw new Error(`Persisted block ${this.ref.index} of epoch ${this.ref.epochId} differs`);
+      throw new Error(`Persisted block ${this.ref.index} of run ${this.ref.runId} differs`);
     }
 
     this.timeColumn = persisted.time;

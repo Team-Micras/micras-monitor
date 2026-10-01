@@ -5,7 +5,7 @@ import type {
   Boundary,
   BoundaryKind,
   IngestionEvent,
-  RecordedEpoch,
+  RecordedRun,
   RecordedGap,
   RecordedValue,
 } from '@/history/types';
@@ -23,7 +23,7 @@ import { crc32 } from './crc32';
  * header size   u32
  * header        UTF-8 JSON, a RecordingHeader
  * records       repeated until the end:
- *   kind        u8        1 epoch, 2 block, 3 gap, 4 boundary, 5 value, 6 epoch closed;
+ *   kind        u8        1 run, 2 block, 3 gap, 4 boundary, 5 value, 6 run closed;
  *                         unknown kinds are skipped
  *   reserved    3 bytes
  *   size        u32       bytes of the payload
@@ -33,17 +33,17 @@ import { crc32 } from './crc32';
  *
  * Payloads:
  *
- * - epoch: `u32` epoch id, `u32` group id, `u32` count, then per variable `u32` id, the type by
+ * - run: `u32` run id, `u32` slot, `u32` count, then per variable `u32` id, the type by
  *   its name (`u8`, `f32`, `bytes`…) and the variable's name.
- * - block: `u32` epoch id, `u32` block index, `u32` start sample, `u32` length `n`, `u32` column
+ * - block: `u32` run id, `u32` block index, `u32` start sample, `u32` length `n`, `u32` column
  *   count, then per column `u32` variable id, `u8` kind (0 f32, 1 f64) and 3 reserved bytes; then
  *   `n` f64 times, then each column's `n` values.
- * - gap: `u32` epoch id, `u8` kind (0 dropped, 1 not stored), 3 reserved bytes, `u32` index, `u32`
+ * - gap: `u32` run id, `u8` kind (0 dropped, 1 not stored), 3 reserved bytes, `u32` index, `u32`
  *   count, `f64` start, `f64` time before, `f64` time after (NaN if unknown).
  * - boundary: `u8` kind (0 reconnect, 1 reboot, 2 schema), 7 reserved bytes, `f64` time.
  * - value: `u32` variable id, the name, `f64` time (NaN if unknown), `u8` tag, then by tag: 0 an
  *   `f64`, 1 a `u8` boolean, 2 a 64 bit integer as a decimal string, 3 `u32` count and bytes.
- * - epoch closed: `u32` epoch id.
+ * - run closed: `u32` run id.
  *
  * The check covers the record's own header, so a damaged size cannot send a reader astray. A
  * record that fails its check is skipped up to the next record that passes one, and reported; with
@@ -53,9 +53,9 @@ import { crc32 } from './crc32';
  * ones, and version 1 spelled types with the codes of the robot's protocol.
  *
  * Records need not come in time order. Blocks written back from an earlier recording come after
- * newer ones, so a reader places each block by its epoch and index. A gap may be written again
+ * newer ones, so a reader places each block by its run and index. A gap may be written again
  * as it grows, as when the memory cap lets go of more of the stretch before it: a later gap
- * record with the epoch and start of an earlier one replaces it. The header's optional `name` is
+ * record with the run and start of an earlier one replaces it. The header's optional `name` is
  * the name the session had when the file was written or exported.
  *
  * @module
@@ -72,12 +72,12 @@ const RECORD_HEADER_SIZE = 12;
 const RECORD_CHECKED_SIZE = 8;
 
 const RECORD_KIND = {
-  epoch: 1,
+  run: 1,
   block: 2,
   gap: 3,
   boundary: 4,
   value: 5,
-  'epoch-closed': 6,
+  'run-closed': 6,
 } as const;
 const COLUMN_KINDS: readonly ColumnKind[] = ['f32', 'f64'];
 const GAP_KINDS: readonly RecordedGap['kind'][] = ['dropped', 'not-stored'];
@@ -94,7 +94,7 @@ export interface RecordingHeader {
   /** Always {@link RECORDING_FORMAT_VERSION} for what this module writes. */
   readonly version: typeof RECORDING_FORMAT_VERSION;
 
-  /** When recording started, in milliseconds since the Unix epoch. */
+  /** When recording started, in milliseconds since the Unix run. */
   readonly startedAtMs: number;
 
   /** Whatever the link knows about the robot: its name, boot id, schema hash. */
@@ -111,8 +111,8 @@ export interface RecordingHeader {
  * One record of a recording.
  */
 export type RecordingRecord =
-  | { readonly kind: 'epoch'; readonly epoch: RecordedEpoch }
-  | { readonly kind: 'epoch-closed'; readonly epochId: number }
+  | { readonly kind: 'run'; readonly run: RecordedRun }
+  | { readonly kind: 'run-closed'; readonly runId: number }
   | { readonly kind: 'block'; readonly block: BlockData }
   | { readonly kind: 'gap'; readonly gap: RecordedGap }
   | { readonly kind: 'boundary'; readonly boundary: Boundary }
@@ -371,7 +371,7 @@ export function encodeBlock(block: BlockData): Uint8Array {
   }
 
   const writer = new ByteWriter(size)
-    .u32(block.ref.epochId, 'Epoch id')
+    .u32(block.ref.runId, 'Run id')
     .u32(block.ref.index, 'Block index')
     .u32(block.startSample, 'Start sample')
     .u32(length, 'Block length')
@@ -417,7 +417,7 @@ export function encodeBlock(block: BlockData): Uint8Array {
  */
 export function peekBlock(bytes: Uint8Array): { readonly ref: BlockRef; readonly length: number } {
   const reader = new ByteReader(bytes);
-  const ref = { epochId: reader.u32(), index: reader.u32() };
+  const ref = { runId: reader.u32(), index: reader.u32() };
   reader.u32();
   const length = reader.u32();
   checkLayout(reader, bytes.byteLength, length);
@@ -460,7 +460,7 @@ function checkLayout(
  */
 export function decodeBlock(bytes: Uint8Array): BlockData {
   const reader = new ByteReader(bytes);
-  const ref = { epochId: reader.u32(), index: reader.u32() };
+  const ref = { runId: reader.u32(), index: reader.u32() };
   const startSample = reader.u32();
   const length = reader.u32();
   const layout = checkLayout(reader, bytes.byteLength, length);
@@ -519,22 +519,22 @@ function payloadOf(record: RecordingRecord): Uint8Array {
 
   const writer = new ByteWriter();
 
-  if (record.kind === 'epoch') {
-    const { epoch } = record;
+  if (record.kind === 'run') {
+    const { run } = record;
     writer
-      .u32(epoch.epochId, 'Epoch id')
-      .u32(epoch.groupId, 'Group id')
-      .u32(epoch.variables.length, 'Variable count');
+      .u32(run.runId, 'Run id')
+      .u32(run.slot, 'Slot')
+      .u32(run.variables.length, 'Variable count');
 
-    for (const variable of epoch.variables) {
+    for (const variable of run.variables) {
       writer.u32(variable.id, 'Variable id').text(variable.type).text(variable.name);
     }
-  } else if (record.kind === 'epoch-closed') {
-    writer.u32(record.epochId, 'Epoch id');
+  } else if (record.kind === 'run-closed') {
+    writer.u32(record.runId, 'Run id');
   } else if (record.kind === 'gap') {
     const { gap } = record;
     writer
-      .u32(gap.epochId, 'Epoch id')
+      .u32(gap.runId, 'Run id')
       .u8(codeOf(GAP_KINDS, gap.kind, 'gap kind'))
       .skip(3)
       .u32(gap.index, 'Gap index')
@@ -565,13 +565,13 @@ function decodeRecord(kind: number, payload: Uint8Array): RecordingRecord | unde
   let record: RecordingRecord;
 
   switch (kind) {
-    case RECORD_KIND.epoch: {
-      const epochId = reader.u32();
-      const groupId = reader.u32();
+    case RECORD_KIND.run: {
+      const runId = reader.u32();
+      const slot = reader.u32();
       const count = reader.u32();
 
       if (12 * count > reader.remaining) {
-        throw new Error(`Epoch record cannot hold ${count} variables`);
+        throw new Error(`Run record cannot hold ${count} variables`);
       }
 
       const variables = Array.from({ length: count }, () => {
@@ -584,20 +584,20 @@ function decodeRecord(kind: number, payload: Uint8Array): RecordingRecord | unde
 
         return { id, type, name: reader.text() };
       });
-      record = { kind: 'epoch', epoch: { epochId, groupId, variables } };
+      record = { kind: 'run', run: { runId, slot, variables } };
       break;
     }
-    case RECORD_KIND['epoch-closed']:
-      record = { kind: 'epoch-closed', epochId: reader.u32() };
+    case RECORD_KIND['run-closed']:
+      record = { kind: 'run-closed', runId: reader.u32() };
       break;
     case RECORD_KIND.gap: {
-      const epochId = reader.u32();
+      const runId = reader.u32();
       const gapKind = kindAt(GAP_KINDS, reader.u8(), 'gap kind');
       reader.skip(3);
       record = {
         kind: 'gap',
         gap: {
-          epochId,
+          runId,
           kind: gapKind,
           index: reader.u32(),
           count: reader.u32(),
@@ -669,10 +669,10 @@ export function encodeRecordingRecord(record: RecordingRecord): Uint8Array {
  */
 export function recordOf(event: IngestionEvent): RecordingRecord {
   switch (event.type) {
-    case 'epoch-opened':
-      return { kind: 'epoch', epoch: event.epoch };
-    case 'epoch-closed':
-      return { kind: 'epoch-closed', epochId: event.epochId };
+    case 'run-opened':
+      return { kind: 'run', run: event.run };
+    case 'run-closed':
+      return { kind: 'run-closed', runId: event.runId };
     case 'gap':
       return { kind: 'gap', gap: event.gap };
     case 'boundary':
@@ -839,12 +839,12 @@ export interface RecordingScan {
 }
 
 const KIND_NAMES = new Map<number, RecordingRecord['kind']>([
-  [RECORD_KIND.epoch, 'epoch'],
+  [RECORD_KIND.run, 'run'],
   [RECORD_KIND.block, 'block'],
   [RECORD_KIND.gap, 'gap'],
   [RECORD_KIND.boundary, 'boundary'],
   [RECORD_KIND.value, 'value'],
-  [RECORD_KIND['epoch-closed'], 'epoch-closed'],
+  [RECORD_KIND['run-closed'], 'run-closed'],
 ]);
 
 /**

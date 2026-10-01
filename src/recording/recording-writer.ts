@@ -54,7 +54,7 @@ interface Pending {
  * The key of a block reference in a map.
  */
 export function blockKey(ref: BlockRef): string {
-  return `${ref.epochId}:${ref.index}`;
+  return `${ref.runId}:${ref.index}`;
 }
 
 /**
@@ -88,7 +88,7 @@ export class RecordingBlocks implements BlockBacking {
   /** {@inheritDoc BlockBacking.write} */
   write(block: BlockData): Promise<void> {
     return Promise.reject(
-      new Error(`Block ${block.ref.index} of epoch ${block.ref.epochId}: the file is read only`)
+      new Error(`Block ${block.ref.index} of run ${block.ref.runId}: the file is read only`)
     );
   }
 
@@ -97,7 +97,7 @@ export class RecordingBlocks implements BlockBacking {
     const location = this.locations.get(blockKey(ref));
 
     if (!location) {
-      throw new Error(`No block ${ref.index} of epoch ${ref.epochId} in the recording`);
+      throw new Error(`No block ${ref.index} of run ${ref.runId} in the recording`);
     }
 
     const block = decodeBlock(await this.file.read(location.offset, location.size));

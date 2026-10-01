@@ -1,13 +1,7 @@
 import type { Access, Variable } from '@/core/variables';
-import type { BlockData, StoredEpoch, StoredRecording } from '@/history/block-backing';
+import type { BlockData, StoredRun, StoredRecording } from '@/history/block-backing';
 import type { HistoryStore } from '@/history/history-store';
-import type {
-  Boundary,
-  RecordedEpoch,
-  RecordedGap,
-  RecordedValue,
-  TimeRange,
-} from '@/history/types';
+import type { Boundary, RecordedRun, RecordedGap, RecordedValue, TimeRange } from '@/history/types';
 import { nextUp } from '@/history/window';
 
 import {
@@ -48,21 +42,21 @@ export interface RecordingSummary {
   /** How many samples its blocks hold. */
   readonly samples: number;
 
-  /** Blocks whose epoch was never recorded, which cannot be placed. */
+  /** Blocks whose run was never recorded, which cannot be placed. */
   readonly unplaced: number;
 
   /** The span of its samples, if it holds any. */
   readonly range: TimeRange | undefined;
 
   /**
-   * Every variable it holds, by name: the header's schema, and the variables of epochs and values
+   * Every variable it holds, by name: the header's schema, and the variables of runs and values
    * it does not list, as when recording started before the schema was read, which grant no access.
    */
   readonly schema: readonly Variable[];
 }
 
-interface EpochParts {
-  readonly epoch: RecordedEpoch;
+interface RunParts {
+  readonly run: RecordedRun;
   readonly gaps: RecordedGap[];
   readonly blocks: Map<number, LocatedRecord>;
 }
@@ -93,7 +87,7 @@ export class RecordingReader {
     const size = await file.size();
     const bytes = await file.read(0, size);
     const scan = scanRecording(bytes);
-    const epochs = new Map<number, EpochParts>();
+    const runs = new Map<number, RunParts>();
     const boundaries: Boundary[] = [];
     const values: RecordedValue[] = [];
     const orphans: LocatedRecord[] = [];
@@ -101,7 +95,7 @@ export class RecordingReader {
     for (const located of scan.records) {
       if (located.kind === 'block') {
         const { ref } = peekBlock(located.payload);
-        const parts = epochs.get(ref.epochId);
+        const parts = runs.get(ref.runId);
 
         if (parts) {
           parts.blocks.set(ref.index, located);
@@ -114,10 +108,10 @@ export class RecordingReader {
 
       const record = decodeLocated(located);
 
-      if (record.kind === 'epoch') {
-        epochs.set(record.epoch.epochId, { epoch: record.epoch, gaps: [], blocks: new Map() });
+      if (record.kind === 'run') {
+        runs.set(record.run.runId, { run: record.run, gaps: [], blocks: new Map() });
       } else if (record.kind === 'gap') {
-        epochs.get(record.gap.epochId)?.gaps.push(record.gap);
+        runs.get(record.gap.runId)?.gaps.push(record.gap);
       } else if (record.kind === 'boundary') {
         boundaries.push(record.boundary);
       } else if (record.kind === 'value') {
@@ -127,7 +121,7 @@ export class RecordingReader {
 
     const unplaced = orphans.filter((located) => {
       const { ref } = peekBlock(located.payload);
-      const parts = epochs.get(ref.epochId);
+      const parts = runs.get(ref.runId);
       parts?.blocks.set(ref.index, located);
       return parts === undefined;
     }).length;
@@ -138,7 +132,7 @@ export class RecordingReader {
     let firstUs = Number.POSITIVE_INFINITY;
     let lastUs = Number.NEGATIVE_INFINITY;
 
-    for (const parts of epochs.values()) {
+    for (const parts of runs.values()) {
       for (const located of parts.blocks.values()) {
         const { ref, length } = peekBlock(located.payload);
         blocks.place(ref, {
@@ -166,11 +160,11 @@ export class RecordingReader {
       samples,
       unplaced,
       range: firstUs <= lastUs ? { startUs: firstUs, endUs: nextUp(lastUs) } : undefined,
-      schema: mergedSchema(scan.header.schema, epochs, values),
+      schema: mergedSchema(scan.header.schema, runs, values),
     };
     const session: StoredRecording = {
       schema: scan.header.schema.map(({ id, name, type }) => ({ id, name, type })),
-      epochs: [...epochs.values()].map((parts) => storedEpoch(parts)),
+      runs: [...runs.values()].map((parts) => storedRun(parts)),
       boundaries,
       values,
     };
@@ -200,13 +194,13 @@ const NO_ACCESS: Access = { stream: false, write: false, writeNeedsIdle: false, 
 
 function mergedSchema(
   header: readonly Variable[],
-  epochs: ReadonlyMap<number, EpochParts>,
+  runs: ReadonlyMap<number, RunParts>,
   values: readonly RecordedValue[]
 ): Variable[] {
   const byName = new Map(header.map((variable) => [variable.name, variable]));
 
-  for (const { epoch } of epochs.values()) {
-    for (const { id, name, type } of epoch.variables) {
+  for (const { run } of runs.values()) {
+    for (const { id, name, type } of run.variables) {
       if (!byName.has(name)) {
         byName.set(name, { id, name, type, access: NO_ACCESS });
       }
@@ -226,10 +220,10 @@ function mergedSchema(
   return [...byName.values()];
 }
 
-function storedEpoch(parts: EpochParts): StoredEpoch {
+function storedRun(parts: RunParts): StoredRun {
   const indices = [...parts.blocks.keys()].toSorted((left, right) => left - right);
   return {
-    epoch: parts.epoch,
+    run: parts.run,
     gaps: parts.gaps,
     blocks: decodeInOrder(parts.blocks, indices),
   };

@@ -1,6 +1,6 @@
 import type { Block } from './block';
 import { LEAF_SIZE, MinMaxAccumulator } from './min-max-pyramid';
-import type { EpochGap } from './stream-run';
+import type { RunGap } from './stream-run';
 import type { Boundary, HistoryMark } from './types';
 import type { Segment } from './variable-history';
 
@@ -10,7 +10,7 @@ export const COLUMN_HAS_DATA = 1;
 /** The column holds a NaN, so the line breaks after it. */
 export const COLUMN_HAS_NAN = 2;
 
-/** The line breaks after the column: an epoch ended, samples were dropped, or the link was lost. */
+/** The line breaks after the column: a run ended, samples were dropped, or the link was lost. */
 export const COLUMN_BREAKS = 4;
 
 /**
@@ -295,7 +295,7 @@ export function upperBound(values: Float64Array, value: number, low: number, hig
 }
 
 /**
- * The first block, of an epoch's blocks in time order, whose last sample is at or after a time,
+ * The first block, of a run's blocks in time order, whose last sample is at or after a time,
  * so that a query skips the blocks before its window in a search rather than one by one. The
  * block being filled comes last and counts as reaching any time while it is empty.
  */
@@ -316,7 +316,7 @@ export function firstBlockFrom(blocks: readonly Block[], timeUs: number): number
   return low;
 }
 
-function firstGapFrom(gaps: readonly EpochGap[], timeUs: number): number {
+function firstGapFrom(gaps: readonly RunGap[], timeUs: number): number {
   let first = 0;
   let last = gaps.length;
 
@@ -335,7 +335,7 @@ function firstGapFrom(gaps: readonly EpochGap[], timeUs: number): number {
 
 function lastGapInColumn(
   into: DecimationBuilder,
-  gaps: readonly EpochGap[],
+  gaps: readonly RunGap[],
   column: number,
   low: number
 ): number {
@@ -358,10 +358,10 @@ function lastGapInColumn(
 
 function nextStart(segments: readonly Segment[], from: number): number {
   for (let index = from; index < segments.length; index++) {
-    const { epoch, column } = segments[index];
+    const { run, column } = segments[index];
 
-    if (column >= 0 && epoch.keptCount > 0) {
-      return epoch.firstTimeUs;
+    if (column >= 0 && run.keptCount > 0) {
+      return run.firstTimeUs;
     }
   }
 
@@ -446,7 +446,7 @@ function decimateEvicted(
   }
 }
 
-function breakAtGaps(into: DecimationBuilder, gaps: readonly EpochGap[]): void {
+function breakAtGaps(into: DecimationBuilder, gaps: readonly RunGap[]): void {
   for (let gap = firstGapFrom(gaps, into.scanFromUs); gap < gaps.length;) {
     const afterUs = gaps[gap].afterUs;
 
@@ -471,7 +471,7 @@ function breakAtGaps(into: DecimationBuilder, gaps: readonly EpochGap[]): void {
  * cost one search per column that holds any.
  *
  * @param into The decimation, already reset to the window.
- * @param segments The variable's epochs, oldest first.
+ * @param segments The variable's runs, oldest first.
  * @param boundaries Where the link lost the robot.
  * @param access How to reach raw samples.
  * @param stats Where to add what the query read, if anywhere.
@@ -486,13 +486,13 @@ export function decimateSegments(
   const bounds = new MinMaxAccumulator();
 
   for (let index = 0; index < segments.length; index++) {
-    const { epoch, column } = segments[index];
+    const { run, column } = segments[index];
 
-    if (column < 0 || epoch.keptCount === 0 || epoch.lastTimeUs < into.scanFromUs) {
+    if (column < 0 || run.keptCount === 0 || run.lastTimeUs < into.scanFromUs) {
       continue;
     }
 
-    const blocks = epoch.blocks;
+    const blocks = run.blocks;
 
     for (let at = firstBlockFrom(blocks, into.scanFromUs); at < blocks.length; at++) {
       const block = blocks[at];
@@ -514,10 +514,10 @@ export function decimateSegments(
       }
     }
 
-    breakAtGaps(into, epoch.gaps);
+    breakAtGaps(into, run.gaps);
 
     if (index < segments.length - 1) {
-      into.breakBetween(epoch.lastTimeUs, nextStart(segments, index + 1));
+      into.breakBetween(run.lastTimeUs, nextStart(segments, index + 1));
     }
   }
 
