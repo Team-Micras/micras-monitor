@@ -131,6 +131,11 @@ export class StreamRun implements BlockOwner {
     return this.#gapLog.gaps;
   }
 
+  /** The gaps a line can break at, in time order; see {@link GapLog.breaks}. */
+  get breaks(): readonly RunGap[] {
+    return this.#gapLog.breaks;
+  }
+
   /** The time of the first sample still kept, or NaN. */
   get firstTimeUs(): number {
     return this.blocks.find((block) => block.length > 0)?.firstTimeUs ?? Number.NaN;

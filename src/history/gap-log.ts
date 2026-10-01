@@ -19,6 +19,7 @@ export class GapLog {
   readonly #memory: BlockMemory;
   readonly #gaps: RunGap[] = [];
   readonly #pending: RunGap[] = [];
+  #breaks: RunGap[] | undefined = [];
   #final: RunGap[] = [];
   #unstored = 0;
   #unstoredFromUs = Number.NaN;
@@ -33,6 +34,19 @@ export class GapLog {
   /** Every gap, in sample order. */
   get gaps(): readonly RunGap[] {
     return this.#gaps;
+  }
+
+  /**
+   * The gaps a line can break at: those with a sample before them, ordered by its time. A gap with
+   * no sample before it, as when the memory cap let go of the first blocks of the run, has no line
+   * to break and is left out. The gaps themselves are kept in sample order, which letting go of a
+   * block can leave out of time order, so this list is sorted again after a block is let go of.
+   */
+  get breaks(): readonly RunGap[] {
+    this.#breaks ??= this.#gaps
+      .filter((gap) => !Number.isNaN(gap.afterUs))
+      .toSorted((left, right) => left.afterUs - right.afterUs);
+    return this.#breaks;
   }
 
   /** How many samples arrived since the last stored one without being kept. */
@@ -137,6 +151,7 @@ export class GapLog {
   ): void {
     const start = block.startSample;
     const end = start + block.length;
+    this.#breaks = undefined;
     const inside = this.#gaps.filter((gap) => gap.index > start && gap.index < end);
 
     for (const gap of inside) {
@@ -172,6 +187,7 @@ export class GapLog {
   clear(): void {
     this.#memory.account(-GAP_BYTES * this.#gaps.length);
     this.#gaps.length = 0;
+    this.#breaks = [];
     this.#pending.length = 0;
     this.#final = [];
     this.#unstored = 0;
@@ -193,6 +209,7 @@ export class GapLog {
       byStart.set(gap.startUs, gap);
     }
 
+    this.#breaks = undefined;
     const latest = [...byStart.values()].toSorted((left, right) => left.index - right.index);
 
     for (const { kind, index, count, startUs, afterUs, untilUs } of latest) {
@@ -219,6 +236,10 @@ export class GapLog {
     const gap: RunGap = { kind, index, count, startUs, afterUs, untilUs: Number.NaN };
     this.#gaps.push(gap);
     this.#memory.account(GAP_BYTES);
+
+    if (!Number.isNaN(afterUs)) {
+      this.#breaks?.push(gap);
+    }
 
     if (pending) {
       this.#pending.push(gap);

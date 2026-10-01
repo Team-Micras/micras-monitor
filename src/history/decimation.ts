@@ -453,7 +453,7 @@ function breakAtGaps(into: DecimationBuilder, gaps: readonly RunGap[]): void {
       return;
     }
 
-    const last = lastGapInColumn(into, gaps, into.columnOf(afterUs), gap);
+    const last = Math.max(gap, lastGapInColumn(into, gaps, into.columnOf(afterUs), gap));
     into.breakBetween(gaps[last].afterUs, gaps[last].untilUs);
     gap = last + 1;
   }
@@ -513,7 +513,7 @@ export function decimateSegments(
       }
     }
 
-    breakAtGaps(into, run.gaps);
+    breakAtGaps(into, run.breaks);
 
     if (index < segments.length - 1) {
       into.breakBetween(run.lastTimeUs, nextStart(segments, index + 1));

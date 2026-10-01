@@ -325,3 +325,101 @@ describe('decimation cost', () => {
     expect(stats.rawSamples).toBe(2000);
   });
 });
+
+function capped(memoryCapBytes: number): HistoryStore {
+  const store = new HistoryStore({
+    scheduler: new ManualScheduler(),
+    blockSize: 16,
+    memoryCapBytes,
+  });
+  store.setSchema([{ id: 0, name: 'a', type: 'f32' }]);
+  store.openRun({ runId: 1, slot: 0, variables: [{ id: 0, type: 'f32' }] });
+  return store;
+}
+
+function stream(store: HistoryStore, from: number, count: number, missedBefore = 0): void {
+  for (let index = 0; index < count; index++) {
+    store.append(1, (from + index) * MS, [from + index], index === 0 ? missedBefore : 0);
+  }
+}
+
+function breakColumns(store: HistoryStore, endUs: number, pixels: number): number[] {
+  const decimation = store.decimate('a', 0, endUs, pixels);
+  return Array.from({ length: pixels }, (_, column) => column).filter(
+    (column) => (decimation.flags[column] & COLUMN_BREAKS) !== 0
+  );
+}
+
+function unbroken(store: HistoryStore, endUs: number, pixels: number) {
+  const decimation = store.decimate('a', 0, endUs, pixels);
+  return store
+    .gaps('a', 0, endUs)
+    .filter(
+      (gap) =>
+        gap.kind === 'dropped' &&
+        gap.startUs >= 0 &&
+        decimation.columnOf(gap.startUs) !== decimation.columnOf(gap.endUs) &&
+        (decimation.flags[decimation.columnOf(gap.startUs)] & COLUMN_BREAKS) === 0
+    );
+}
+
+describe('breaks at gaps under a tight memory cap', () => {
+  test(
+    'ends when the first blocks it let go of leave a gap with nothing before it',
+    { timeout: 2000 },
+    () => {
+      const store = capped(600);
+      stream(store, 0, 1, 3);
+      stream(store, 1, 15);
+      stream(store, 16, 1, 2);
+      stream(store, 17, 23);
+
+      expect(store.decimate('a', 0, 1e6, 64).pixels).toBe(64);
+      expect(unbroken(store, 1e6, 64)).toEqual([]);
+    }
+  );
+
+  test('breaks at samples dropped after the stretch it let go of', { timeout: 2000 }, () => {
+    const tight = capped(600);
+    const roomy = capped(1e9);
+
+    for (const store of [tight, roomy]) {
+      stream(store, 0, 16);
+      stream(store, 16, 1, 2);
+      stream(store, 17, 23);
+    }
+
+    expect(breakColumns(roomy, 100_000, 100)).toEqual([15]);
+    expect(breakColumns(tight, 100_000, 100)).toEqual([15]);
+  });
+
+  test(
+    'breaks at every dropped gap and always ends, whatever it let go of',
+    { timeout: 20_000 },
+    () => {
+      const missing: string[] = [];
+
+      for (let seed = 1; seed <= 300; seed++) {
+        const random = seededRandom(seed);
+        const store = capped(2500 + Math.floor(random() * 7500));
+        let time = 0;
+
+        for (let sample = 0; sample < 600; sample++) {
+          const missed = random() < 0.08 ? 1 + Math.floor(random() * 5) : 0;
+          time += 1 + missed;
+          store.append(1, time * MS, [Math.sin(sample)], missed);
+
+          for (const pixels of sample % 97 === 0 || sample === 599 ? [7, 64, 333] : []) {
+            missing.push(
+              ...unbroken(store, (time + 1) * MS, pixels).map(
+                (gap) => `seed ${seed}, sample ${sample}, ${pixels} px: ${gap.startUs}`
+              )
+            );
+          }
+        }
+      }
+
+      expect(missing).toEqual([]);
+    }
+  );
+});
