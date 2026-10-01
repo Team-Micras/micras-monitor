@@ -9,12 +9,12 @@ import {
 import { neighborWorkspace } from '@/tiling';
 
 import { formatChord } from '@/core/chords';
-import { useShell, useShellStore } from '../state/shell-store';
-import { startPointerDrag } from '../tiling/pointer-drag';
+import { useShell, useShellStore } from '../../state/shell-store';
+import { startPointerDrag } from '../../tiling/pointer-drag';
 import { movedTo, slotAt } from './tab-reorder';
 
-import { workspaceAction, type KeyAction } from '../keyboard/keymap';
-import { Button } from '../primitives/button';
+import { workspaceAction, type KeyAction } from '../../keyboard/keymap';
+import { Button } from '../../primitives/button';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -25,8 +25,8 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
   ContextMenuTrigger,
-} from '../primitives/context-menu';
-import { cn } from '../primitives/utils';
+} from '../../primitives/context-menu';
+import { cn } from '../../primitives/utils';
 
 /**
  * A tab being dragged to another place: where it was, the gap it would drop in, and where that

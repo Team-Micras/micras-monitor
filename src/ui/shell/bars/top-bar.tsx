@@ -1,9 +1,9 @@
-import { useLiveMonitor, useRobotPackage, useStatus } from '../monitor-context';
-import { RecordingControls } from '../recordings/recording-controls';
-import { ViewingIndicator } from '../recordings/viewing-indicator';
+import { useLiveMonitor, useRobotPackage, useStatus } from '../../monitor-context';
+import { RecordingControls } from '../../recordings/recording-controls';
+import { ViewingIndicator } from '../../recordings/viewing-indicator';
 import { ConnectionPopover } from './connection-popover';
 import { LayoutsMenu } from './layouts-menu';
-import { PinnedCommands } from './commands/pinned-commands';
+import { PinnedCommands } from '../commands/pinned-commands';
 import { SessionClock } from './session-clock';
 import { WorkspaceTabs } from './workspace-tabs';
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { movedTo, slotAt } from '@/ui/shell/tab-reorder';
+import { movedTo, slotAt } from '@/ui/shell/bars/tab-reorder';
 
 describe('the gap a dragged tab is over', () => {
   const middles = [50, 150, 250];

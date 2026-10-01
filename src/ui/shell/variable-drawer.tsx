@@ -37,7 +37,7 @@ import { cn } from '../primitives/utils';
 import { useShell, useShellStore } from '../state/shell-store';
 import { startPointerDrag, surroundingsAt } from '../tiling/pointer-drag';
 import { PLOT_KIND, windowKind } from '../windows/registry';
-import { trapTab } from './focus-trap';
+import { trapTab } from './a11y/focus-trap';
 
 type Filter = 'all' | 'plotted' | 'writable';
 

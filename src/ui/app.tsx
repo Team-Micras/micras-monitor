@@ -35,8 +35,8 @@ import { TooltipProvider } from './primitives/tooltip';
 import type { AppUpdates } from './pwa/app-updates';
 import { RecordingsContext } from './recordings/recordings-context';
 import { ShownMonitor } from './recordings/shown-monitor';
-import { Announcements } from './shell/announcements';
-import { Announcer } from './shell/announcer';
+import { Announcements } from './shell/a11y/announcements';
+import { Announcer } from './shell/a11y/announcer';
 import { DRAWER_SEARCH_SELECTOR } from './tiling/keyboard-order';
 import {
   LazyCloseWorkspaceDialog,
@@ -51,8 +51,8 @@ import {
   SendCommandContext,
   type SendCommand,
 } from './shell/shell-contexts';
-import { StatusBar } from './shell/status-bar';
-import { TopBar } from './shell/top-bar';
+import { StatusBar } from './shell/bars/status-bar';
+import { TopBar } from './shell/bars/top-bar';
 import { UpdateNotice } from './shell/notices/update-notice';
 import {
   createShellStore,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { tabbableIn, trapTab } from '@/ui/shell/focus-trap';
+import { tabbableIn, trapTab } from '@/ui/shell/a11y/focus-trap';
 
 function panel(html: string): HTMLElement {
   const root = document.createElement('div');

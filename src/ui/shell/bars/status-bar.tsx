@@ -3,12 +3,12 @@ import { LayoutGridIcon, ListTreeIcon, MoonIcon, SunIcon } from 'lucide-react';
 import { activeWorkspace, windowIds } from '@/tiling';
 
 import { formatChord } from '@/core/chords';
-import { useMonitorScope } from '../monitor-context';
-import { useShell, useShellStore } from '../state/shell-store';
+import { useMonitorScope } from '../../monitor-context';
+import { useShell, useShellStore } from '../../state/shell-store';
 
-import { Button } from '../primitives/button';
-import { Kbd } from '../primitives/kbd';
-import { Separator } from '../primitives/separator';
+import { Button } from '../../primitives/button';
+import { Kbd } from '../../primitives/kbd';
+import { Separator } from '../../primitives/separator';
 
 /** The bar below the tiling: the variables drawer, the tiling's size and the theme. */
 export function StatusBar() {

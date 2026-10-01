@@ -10,7 +10,7 @@ import { useEffect, useEffectEvent, type RefObject } from 'react';
 
 import type { DesktopWindow, WindowId } from '@/tiling';
 
-import { tabbableIn } from '../shell/focus-trap';
+import { tabbableIn } from '../shell/a11y/focus-trap';
 
 /** Finds the drawer's search field, which the shell sends typed characters to. */
 export const DRAWER_SEARCH_SELECTOR = '[data-drawer-search]';

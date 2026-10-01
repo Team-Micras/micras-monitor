@@ -11,11 +11,11 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import type { LayoutPreset } from '@/core/robot';
 import { activeWorkspace } from '@/tiling';
 
-import { useLiveMonitor, useRobotPackage } from '../monitor-context';
-import { Button } from '../primitives/button';
-import { Input } from '../primitives/input';
-import { Popover, PopoverContent, PopoverTrigger } from '../primitives/popover';
-import { useShell, useShellStore } from '../state/shell-store';
+import { useLiveMonitor, useRobotPackage } from '../../monitor-context';
+import { Button } from '../../primitives/button';
+import { Input } from '../../primitives/input';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
+import { useShell, useShellStore } from '../../state/shell-store';
 
 /**
  * The layouts menu of the top bar: the presets of the robot's package, which are read only, and

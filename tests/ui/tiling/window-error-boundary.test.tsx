@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { seriousViolations } from '@tests/support/axe-check';
-import { Announcer } from '@/ui/shell/announcer';
+import { Announcer } from '@/ui/shell/a11y/announcer';
 import { WindowErrorBoundary } from '@/ui/tiling/window-error-boundary';
 
 const load = { broken: true };

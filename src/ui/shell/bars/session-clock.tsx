@@ -1,8 +1,8 @@
 import { ClockIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { formatClock } from '../lib/format';
-import { useLiveMonitor, useStatus } from '../monitor-context';
+import { formatClock } from '../../lib/format';
+import { useLiveMonitor, useStatus } from '../../monitor-context';
 
 /** How long the link has been up, ticking every tenth of a second. */
 export function SessionClock() {

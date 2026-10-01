@@ -3,12 +3,12 @@ import { useId, useState, type FormEvent } from 'react';
 
 import type { SourceStatus, Target, TargetKind } from '@/core/source';
 
-import { useLiveMonitor, useRobotPackage, useStatus, useVariables } from '../monitor-context';
-import { Button } from '../primitives/button';
-import { Input } from '../primitives/input';
-import { Popover, PopoverContent, PopoverTrigger } from '../primitives/popover';
-import { cn } from '../primitives/utils';
-import { useShell, useShellStore } from '../state/shell-store';
+import { useLiveMonitor, useRobotPackage, useStatus, useVariables } from '../../monitor-context';
+import { Button } from '../../primitives/button';
+import { Input } from '../../primitives/input';
+import { Popover, PopoverContent, PopoverTrigger } from '../../primitives/popover';
+import { cn } from '../../primitives/utils';
+import { useShell, useShellStore } from '../../state/shell-store';
 
 const URL_KEY = 'micras-monitor/websocket-url';
 const DEFAULT_URL = 'ws://localhost:8080';

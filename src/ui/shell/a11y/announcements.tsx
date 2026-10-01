@@ -4,11 +4,11 @@ import { roleVariable, enumLabel } from '@/core/robot';
 
 import type { SourceStatus } from '@/core/source';
 
-import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../monitor-context';
-import { useRecordings } from '../recordings/recordings-context';
-import { useShell } from '../state/shell-store';
-import { usePresentedVariables } from '../windows/shared/presented-variables';
-import { useAnnounce } from './shell-contexts';
+import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../../monitor-context';
+import { useRecordings } from '../../recordings/recordings-context';
+import { useShell } from '../../state/shell-store';
+import { usePresentedVariables } from '../../windows/shared/presented-variables';
+import { useAnnounce } from '../shell-contexts';
 
 function connectionText(status: SourceStatus): string | null {
   switch (status.kind) {
