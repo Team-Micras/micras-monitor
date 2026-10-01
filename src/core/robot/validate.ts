@@ -113,6 +113,10 @@ function checkTypes(pkg: RobotPackage, fail: Fail): void {
     }
 
     tags.add(type.tag);
+
+    if ((type.View === undefined) === (type.loadView === undefined)) {
+      fail(`types[${index}]`, 'must have either a View or a loadView');
+    }
   });
 }
 

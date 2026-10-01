@@ -1,5 +1,5 @@
 import { RefreshCwIcon } from 'lucide-react';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { roleVariable, type Role, type SerializableType } from '@/core/robot';
 
@@ -13,6 +13,7 @@ import {
   type ReactRobotPackage,
 } from '../../monitor-context';
 import { Button } from '../../primitives/button';
+import { drawBlob } from '../registry';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
 import { CoalescedReads } from './coalesced-reads';
@@ -191,7 +192,9 @@ export function BlobViewWindow({ window }: WindowViewProps) {
                 : 'Connect to a robot to read it.'}
           </p>
         ) : decoded?.kind === 'value' && serializable !== null ? (
-          <serializable.View key={serializable.tag} value={decoded.value} roles={roles} />
+          <Suspense key={serializable.tag} fallback={null}>
+            {drawBlob(serializable, { value: decoded.value, roles })}
+          </Suspense>
         ) : (
           <>
             {decoded?.kind === 'error' ? (

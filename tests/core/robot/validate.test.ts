@@ -70,6 +70,16 @@ describe('validating a package', () => {
     ],
     ['a repeated type tag', { types: [GRID, GRID] }, 'types[1].tag repeats "grid"'],
     [
+      'a type with no view',
+      { types: [{ ...GRID, View: undefined }] },
+      'types[0] must have either a View or a loadView',
+    ],
+    [
+      'a type with both a view and a loader',
+      { types: [{ ...GRID, loadView: () => Promise.resolve(GRID.View ?? (() => '')) }] },
+      'types[0] must have either a View or a loadView',
+    ],
+    [
       'a variable naming an unknown type',
       { variables: { maze: { serializable: 'maze' } } },
       'variables["maze"].serializable names no type of the package ("maze")',

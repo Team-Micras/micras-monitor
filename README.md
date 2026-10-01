@@ -164,7 +164,7 @@ keep their dependencies pointing one way; each rule's message says what it guard
 | `src/recording/`      | The recording format, its writer and reader; `library/` keeps the recordings in OPFS or memory and manages them            | `core`, `history`                                 |
 | `src/tiling/`         | Tiling window engine, no DOM                                                                                               | nothing else in the monitor                       |
 | `src/sources/<s>/`    | Where robot data comes from: `micras-comm` over the robot link, `demo` in memory                                           | `core` and its own folder; never another source   |
-| `src/robots/<robot>/` | Robot packages: types, views, commands, presets                                                                            | `core`, React, and `ui/lazy` to load views lazily |
+| `src/robots/<robot>/` | Robot packages: types, views, commands, presets                                                                            | `core` and React; views load lazily by `loadView` |
 | `src/ui/`             | React: shell, windows, recordings, keyboard, tiling view, phone view, theme; `primitives/` holds the shadcn components     | `core`, `history`, `recording`, `tiling`          |
 | `src/main.tsx`        | The composition root                                                                                                       | everything                                        |
 | `scripts/`            | Simulated robot, live checks, bench and bundle size                                                                        | `core`, the sources; the history bench `history`  |
@@ -240,8 +240,9 @@ export const sumo: RobotPackage = {
 Register it in `src/main.tsx` next to `micras`: `new RobotRegistry([micras, sumo])`. The UI reads
 roles (`state`, `battery`, `pose.x`, `map`, `map.revision`, …) and never names, so the Robot window,
 the phone view and the Commands window work as soon as the roles are set. A package for React adds
-`SerializableType` entries whose `View` draws a blob such as the maze (`src/robots/micras/` is the full
-example), and `idleStates` tells the app when the robot is at rest for updates. A command is
+`SerializableType` entries whose `View` draws a blob, or whose `loadView` imports the view on first
+use, as the maze's does (`src/robots/micras/` is the full example), and `idleStates` tells the app
+when the robot is at rest for updates. A command is
 presented by plain fields: `pinned` keeps it in the top bar and at the bottom of the phone, sent to
 the live robot even while a recording is shown; `key` binds it to a key; `tone: 'danger'` draws it
 in the stop color and lets its key match with modifiers held; `confirm` asks first. `validatePackage`

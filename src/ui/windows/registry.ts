@@ -2,7 +2,8 @@
  * The window kinds of the app: for each kind, its title, icon, the component that draws it and
  * what it asks the link to stream. The components of the heavier kinds load on first use. A kind
  * from an old layout that this build does not know draws as a placeholder listing the window's
- * variables.
+ * variables. The views of the robot packages' types are here too, so that those that load on
+ * demand load like the windows do.
  *
  * @module
  */
@@ -18,10 +19,17 @@ import {
   ZapIcon,
   type LucideIcon,
 } from 'lucide-react';
-import { type ComponentType } from 'react';
+import { createElement, type ComponentType, type ReactNode } from 'react';
 
 import type { VariableDemand } from '@/core/monitor';
-import { roleVariable, type RobotPackage, type Role } from '@/core/robot';
+import {
+  roleVariable,
+  type BlobViewProps,
+  type RobotPackage,
+  type RobotRegistry,
+  type Role,
+  type SerializableType,
+} from '@/core/robot';
 
 import { lazyWithRetry } from '../lazy/lazy-with-retry';
 import { CommandsWindow } from './commands/commands-window';
@@ -221,4 +229,53 @@ export function windowDemand(
   return demand
     ? demand(window, pkg)
     : window.payload.variables.map((variable) => ({ variable, rateHz: DEFAULT_STREAM_RATE_HZ }));
+}
+
+type BlobViewComponent = ComponentType<BlobViewProps<unknown>>;
+
+const BLOB_VIEWS = new WeakMap<SerializableType<unknown, ReactNode>, BlobViewComponent>();
+
+function loadedView(type: SerializableType<unknown, ReactNode>): BlobViewComponent {
+  const { View, loadView } = type;
+
+  if (View !== undefined) {
+    return View;
+  }
+
+  if (loadView === undefined) {
+    throw new Error(`The type ${type.tag} has neither a View nor a loadView`);
+  }
+
+  return lazyWithRetry(() => loadView().then((loaded) => ({ default: loaded }))).Component;
+}
+
+function blobView(type: SerializableType<unknown, ReactNode>): BlobViewComponent {
+  const known = BLOB_VIEWS.get(type);
+
+  if (known !== undefined) {
+    return known;
+  }
+
+  const view = loadedView(type);
+  BLOB_VIEWS.set(type, view);
+  return view;
+}
+
+/**
+ * Draws a decoded value with the view of its type: the type's `View`, or the view its `loadView`
+ * imports when a value is first drawn, which suspends until then and imports it again after a
+ * failed load. Each type keeps one component, so a view keeps its state across draws.
+ */
+export function drawBlob(
+  type: SerializableType<unknown, ReactNode>,
+  props: BlobViewProps<unknown>
+): ReactNode {
+  return createElement(blobView(type), props);
+}
+
+/** Declares the views of every type of the packages, so that prefetching loads them too. */
+export function declareBlobViews(robots: RobotRegistry<ReactNode>): void {
+  for (const pkg of robots.list()) {
+    pkg.types.forEach((type) => blobView(type));
+  }
 }

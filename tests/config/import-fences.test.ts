@@ -87,7 +87,7 @@ const FENCES: readonly Fence[] = [
   ['src/robots/micras/probe.ts', '@/core/variables', false],
   ['src/robots/micras/probe.ts', 'react', false],
   ['src/robots/micras/probe.ts', './maze', false],
-  ['src/robots/micras/probe.ts', '@/ui/lazy/lazy-with-retry', false],
+  ['src/robots/micras/probe.ts', '@/ui/lazy/lazy-with-retry', true],
   ['src/robots/micras/probe.ts', '@/ui/app', true],
   ['src/robots/micras/probe.ts', '@/ui/state/shell-store', true],
   ['src/robots/micras/probe.ts', '@/ui/windows/plot/plot-window', true],
@@ -114,12 +114,6 @@ const FENCES: readonly Fence[] = [
   ['src/ui/windows/plot/probe.ts', '../../../sources/micras-comm/link', true],
   ['src/ui/windows/plot/probe.ts', '../robot/robot-window', false],
   ['src/ui/windows/plot/probe.ts', '../../tiling/tiling-view', false],
-
-  ['src/ui/lazy/probe.ts', 'react', false],
-  ['src/ui/lazy/probe.ts', './idle', false],
-  ['src/ui/lazy/probe.ts', '../app', true],
-  ['src/ui/lazy/probe.ts', '@/core/monitor', true],
-  ['src/ui/lazy/probe.ts', 'lucide-react', true],
 
   ['src/main.tsx', '@/sources/micras-comm/micras-comm-source', false],
   ['src/main.tsx', '@/robots/micras', false],

@@ -41,10 +41,20 @@ export interface SerializableType<T = unknown, Node = unknown> {
   /**
    * Draws a decoded value; a React package returns a `ReactNode`. Declared as a method so that a
    * package can list types of different values together as `SerializableType<unknown>`, and
-   * without `this`, so that the app renders it as a component.
+   * without `this`, so that the app renders it as a component. A type has either this or
+   * `loadView`.
    */
-  View(this: void, props: BlobViewProps<T>): Node;
+  View?(this: void, props: BlobViewProps<T>): Node;
+  /**
+   * Imports the view when a value is first drawn, for a view whose code should stay out of the
+   * first page load, such as `() => import('./maze-view').then((module) => module.MazeView)`. The
+   * app draws nothing until it arrives, and imports it again after a failed load.
+   */
+  loadView?(this: void): Promise<BlobView<T, Node>>;
 }
+
+/** Draws a decoded value of a serializable type, as its `View` does. */
+export type BlobView<T = unknown, Node = unknown> = NonNullable<SerializableType<T, Node>['View']>;
 
 /** One value of an enum. */
 export interface EnumOption {

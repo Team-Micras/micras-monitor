@@ -274,16 +274,8 @@
                 "message": "Shipped code never imports tests or scripts."
               },
               {
-                "regex": "^(@/(history|recording|tiling|sources|main)|(\\.\\./)+(history|recording|tiling|sources|main))(/|$)",
-                "message": "A robot package depends only on src/core, with src/core/robot as its contract, and React."
-              },
-              {
-                "group": ["@/ui/**", "!@/ui/lazy", "!@/ui/lazy/**"],
-                "message": "Of the UI, a robot package may only use src/ui/lazy to load its views on demand."
-              },
-              {
-                "regex": "^(\\.\\./)+ui(/|$)",
-                "message": "Of the UI, a robot package may only use src/ui/lazy, and through @/ui/lazy."
+                "regex": "^(@/(history|recording|tiling|sources|ui|main)|(\\.\\./)+(history|recording|tiling|sources|ui|main))(/|$)",
+                "message": "A robot package depends only on src/core, with src/core/robot as its contract, and React; a view that loads on demand is a loadView, which the UI wraps."
               },
               {
                 "regex": "^(@/robots/|(\\.\\./)+robots/)",
@@ -308,22 +300,6 @@
               {
                 "regex": "^(@/(sources|robots|main)|(\\.\\./)+(sources|robots|main))(/|$)",
                 "message": "The UI reads the monitor of src/core; only src/main.tsx wires sources and robot packages in."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/ui/lazy/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["**", "!react", "!react/**", "!react-dom", "!react-dom/**", "!./**"],
-                "message": "src/ui/lazy is what the robot packages may use of the UI, so it imports only React and its own folder."
               }
             ]
           }

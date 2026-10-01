@@ -13,7 +13,6 @@ import type { RobotPackage, SerializableType } from '@/core/robot';
 import { COMMANDS, REFUSAL_REASONS } from './commands';
 import { FsmState, stateFromLog } from './labels';
 import { decodeMaze, MAZE_TYPE_TAG, type Maze } from './maze';
-import { LazyMazeView } from './lazy-maze-view';
 import { PRESETS } from './presets';
 import { VARIABLES } from './variables';
 
@@ -24,7 +23,7 @@ export const MAZE_TYPE: SerializableType<Maze, ReactNode> = {
   name: 'Maze',
   follows: ['pose.x', 'pose.y', 'pose.heading'],
   decode: decodeMaze,
-  View: LazyMazeView,
+  loadView: () => import('./maze-view').then((module) => module.MazeView),
 };
 
 /** The Micras package, registered by the composition root. */

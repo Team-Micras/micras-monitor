@@ -23,6 +23,7 @@ import {
   MonitorContext,
   PackageChooser,
   useLiveMonitor,
+  useMonitorScope,
   useRobotPackage,
   useStatus,
   useVariables,
@@ -65,6 +66,7 @@ import { applyTheme, initialTheme } from './state/theme';
 import { useStreamDemand } from './stream-demand';
 import { DragGhost } from './tiling/drag-ghost';
 import { TilingView } from './tiling/tiling-view';
+import { declareBlobViews } from './windows/registry';
 import type { WindowPayload } from './windows/types';
 
 /** What the composition root gives the app. */
@@ -157,6 +159,7 @@ function Shell({
   readonly updates: AppUpdates | undefined;
 }) {
   const store = useShellStore();
+  const { packages } = useMonitorScope();
   const live = useLiveMonitor();
   const theme = useShell((state) => state.theme);
   const bindings = useShell((state) => state.bindings);
@@ -178,7 +181,14 @@ function Shell({
   const blockedBy = useReloadBlocked();
 
   useEffect(() => applyTheme(theme), [theme]);
-  useEffect(() => whenIdle(() => void prefetchAll()), []);
+  useEffect(
+    () =>
+      whenIdle(() => {
+        declareBlobViews(packages.robots);
+        void prefetchAll();
+      }),
+    [packages]
+  );
   useEffect(() => saveKeyOverrides(keyOverrides), [keyOverrides]);
   useEffect(() => {
     if (livePackage !== null) {
