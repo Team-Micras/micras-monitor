@@ -4,7 +4,7 @@ import type { LinkCounters } from '../link/link-events';
 export const UART_BYTES_PER_SECOND = 11_520;
 
 /** How a {@link BandwidthEstimator} estimates what the link carries. */
-export interface LinkBudgetOptions {
+export interface BandwidthEstimatorOptions {
   /** The most the link can carry, whatever the credit allows; the robot's UART by default. */
   capBytesPerSecond: number;
   /** The share of the estimate samples may plan for, which leaves room for jitter. */
@@ -30,7 +30,7 @@ export interface LinkBudgetOptions {
 }
 
 /** A radio link's defaults: a round trip of 100 ms until measured, and 15 % of headroom. */
-export const DEFAULT_LINK_BUDGET: LinkBudgetOptions = {
+export const DEFAULT_BANDWIDTH_ESTIMATOR: BandwidthEstimatorOptions = {
   capBytesPerSecond: UART_BYTES_PER_SECOND,
   headroom: 0.85,
   assumedRttMs: 100,
@@ -81,7 +81,7 @@ interface Sample {
  * off what samples may use.
  */
 export class BandwidthEstimator {
-  private readonly options: LinkBudgetOptions;
+  private readonly options: BandwidthEstimatorOptions;
   private last: Sample | undefined;
   private bytesIn = 0;
   private arrivedMax = 0;
@@ -98,10 +98,10 @@ export class BandwidthEstimator {
   private current: BudgetEstimate;
 
   /**
-   * @param options What to change from {@link DEFAULT_LINK_BUDGET}.
+   * @param options What to change from {@link DEFAULT_BANDWIDTH_ESTIMATOR}.
    */
-  constructor(options: Partial<LinkBudgetOptions> = {}) {
-    this.options = { ...DEFAULT_LINK_BUDGET, ...options };
+  constructor(options: Partial<BandwidthEstimatorOptions> = {}) {
+    this.options = { ...DEFAULT_BANDWIDTH_ESTIMATOR, ...options };
     this.current = this.estimate(null, 0, false);
   }
 

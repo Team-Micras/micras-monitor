@@ -51,11 +51,11 @@ export {
   type SampleValue,
 } from './epochs';
 export {
-  DEFAULT_LINK_BUDGET,
+  DEFAULT_BANDWIDTH_ESTIMATOR,
   BandwidthEstimator,
   UART_BYTES_PER_SECOND,
   type BudgetEstimate,
-  type LinkBudgetOptions,
+  type BandwidthEstimatorOptions,
 } from '../streaming/bandwidth-estimator';
 export type { CommandReply } from './messages';
 export {

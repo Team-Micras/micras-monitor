@@ -425,7 +425,7 @@
       }
     },
     {
-      "files": ["scripts/bench-telemetry.ts"],
+      "files": ["scripts/bench-history.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",

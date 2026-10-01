@@ -1,5 +1,5 @@
 /**
- * How the telemetry store holds up at the sizes the plan sets for it.
+ * How the history store holds up at the sizes the plan sets for it.
  *
  * 1. A synthetic hour at 150 samples/s of 16 variables, the Micras over BLE: memory, which must
  *    stay under 100 MB, and the whole-history view at 1,600 px while samples keep arriving, which
@@ -8,7 +8,7 @@
  *    decimation from scratch, which must take no more than 2 ms per signal, then 60 s pans and the
  *    10 s live window.
  *
- * Run with `bun run bench:telemetry`; it exits with 1 if a target is missed.
+ * Run with `bun run bench:history`; it exits with 1 if a target is missed.
  */
 
 import {

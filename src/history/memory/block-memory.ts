@@ -8,7 +8,7 @@ const FIRST_BACKOFF_MS = 1000;
 const LAST_BACKOFF_MS = 60_000;
 
 /**
- * What the residency needs from the store around it.
+ * What the block memory needs from the store around it.
  */
 export interface BlockMemoryOptions {
   /** The most memory blocks and gap records may take. */

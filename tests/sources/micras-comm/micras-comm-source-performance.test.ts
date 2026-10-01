@@ -1,7 +1,7 @@
 import { expect, inject, test } from 'vitest';
 
 import { Monitor } from '@/core/monitor';
-import type { LinkBudgetOptions, WebSocketLike } from '@/sources/micras-comm/link';
+import type { BandwidthEstimatorOptions, WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { HistoryStore } from '@/history';
 import { percentile, reportBench } from '@tests/support/ui/bench';
@@ -67,7 +67,7 @@ function frames(ms: number, onFrame: () => void): Promise<number> {
   });
 }
 
-function benchLink(link: string, budget: Partial<LinkBudgetOptions>): void {
+function benchLink(link: string, budget: Partial<BandwidthEstimatorOptions>): void {
   test(`the session and the store keep up with every variable at the most ${link} carries`, async (context) => {
     const busy: Busy = { ms: 0 };
     const source = new MicrasCommSource({

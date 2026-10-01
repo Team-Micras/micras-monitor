@@ -19,7 +19,7 @@
     "simulate": "bun scripts/simulated-robot.ts",
     "size": "bun scripts/bundle-size.ts",
     "bench": "bun scripts/bench.ts",
-    "bench:telemetry": "bun scripts/bench-telemetry.ts",
+    "bench:history": "bun scripts/bench-history.ts",
     "check:sim": "bun scripts/check-micras-sim.ts",
     "check:recording": "bun scripts/check-recording.ts",
     "check:live": "bun scripts/check-live-session.ts",

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-  DEFAULT_LINK_BUDGET,
+  DEFAULT_BANDWIDTH_ESTIMATOR,
   BandwidthEstimator,
   UART_BYTES_PER_SECOND,
 } from '@/sources/micras-comm/streaming/bandwidth-estimator';
@@ -23,7 +23,7 @@ const BASE: LinkCounters = {
 };
 
 const WINDOW = 256;
-const HEADROOM = DEFAULT_LINK_BUDGET.headroom;
+const HEADROOM = DEFAULT_BANDWIDTH_ESTIMATOR.headroom;
 
 class Feed {
   readonly budget = new BandwidthEstimator({ smoothing: 1 });
@@ -67,7 +67,7 @@ describe('BandwidthEstimator', () => {
     const budget = new BandwidthEstimator();
 
     expect(budget.update(BASE, WINDOW, 0, false).bytesPerSecond).toBeCloseTo(
-      ((WINDOW * 1000) / DEFAULT_LINK_BUDGET.assumedRttMs) * HEADROOM
+      ((WINDOW * 1000) / DEFAULT_BANDWIDTH_ESTIMATOR.assumedRttMs) * HEADROOM
     );
   });
 
@@ -125,10 +125,12 @@ describe('BandwidthEstimator', () => {
       feed.second({ bytesIn: 2500, creditReturned: 2500 }, false).capacityBytesPerSecond
     ).toBeCloseTo(3000);
     const probed = feed.second({ bytesIn: 2500, creditReturned: 2500 }, true);
-    expect(probed.capacityBytesPerSecond).toBeCloseTo(3000 * DEFAULT_LINK_BUDGET.probeGrowth);
+    expect(probed.capacityBytesPerSecond).toBeCloseTo(
+      3000 * DEFAULT_BANDWIDTH_ESTIMATOR.probeGrowth
+    );
     expect(
       feed.second({ bytesIn: 2500, creditReturned: 2500 }, true).capacityBytesPerSecond
-    ).toBeCloseTo(3000 * DEFAULT_LINK_BUDGET.probeGrowth);
+    ).toBeCloseTo(3000 * DEFAULT_BANDWIDTH_ESTIMATOR.probeGrowth);
   });
 
   test('keeps the most that arrived over a run of saturated updates', () => {
@@ -159,7 +161,8 @@ describe('BandwidthEstimator', () => {
     feed.second({ rttMs: 5 });
     feed.link(3000, 8000, 120);
     const dropped = feed.stats.droppedSamples;
-    const quietS = (DEFAULT_LINK_BUDGET.holdMs * DEFAULT_LINK_BUDGET.quietHolds) / 1000;
+    const quietS =
+      (DEFAULT_BANDWIDTH_ESTIMATOR.holdMs * DEFAULT_BANDWIDTH_ESTIMATOR.quietHolds) / 1000;
     feed.link(3000, 8000, quietS + 30);
     const afterFirstQuiet = feed.stats.droppedSamples;
     feed.link(3000, 8000, quietS);

@@ -146,7 +146,7 @@ describe('the PWA', () => {
     expect(urls.some((url) => /geist-latin-wght/.test(url))).toBe(true);
     expect(urls.some((url) => /geist-mono-latin-ext-wght/.test(url))).toBe(true);
     expect(urls.filter((url) => /cyrillic|vietnamese|symbols/.test(url))).toEqual([]);
-    for (const chunk of ['plot-window', 'type-view-window', 'launcher', 'variable-drawer']) {
+    for (const chunk of ['plot-window', 'blob-view-window', 'launcher', 'variable-drawer']) {
       expect(urls.some((url) => url.includes(chunk))).toBe(true);
     }
   });

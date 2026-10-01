@@ -21,7 +21,7 @@ import { CHUNK_SIZE_WARNING_KB } from '../vite.config';
 
 const TARGET_KB = 250;
 const DIST = join(import.meta.dirname, '..', 'dist');
-const FIRST_WORKSPACE = ['plot-window', 'type-view-window', 'maze-view'];
+const FIRST_WORKSPACE = ['plot-window', 'blob-view-window', 'maze-view'];
 const KB = 1024;
 
 function gzipBytes(file: string): number {

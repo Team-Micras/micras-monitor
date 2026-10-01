@@ -180,7 +180,7 @@ export class HistoryStore {
   private readonly listeners = new Set<(event: StoreWarning) => void>();
   private readonly ingestionListeners = new Set<(event: IngestionEvent) => void>();
   private readonly notifier: TickNotifier;
-  private readonly residency: BlockMemory;
+  private readonly memory: BlockMemory;
   private readonly host: StreamRunHost;
   private readonly statusChannel = new ChangeSignal();
   private readonly infoCache = new WeakMap<VariableHistory, Cached<VariableInfo>>();
@@ -199,7 +199,7 @@ export class HistoryStore {
     this.blockSize = checkBlockSize(options.blockSize ?? DEFAULT_BLOCK_SIZE);
     this.registry = new VariableRegistry(options.historyLength ?? 32);
     this.notifier = new TickNotifier(options.scheduler);
-    this.residency = new BlockMemory({
+    this.memory = new BlockMemory({
       capBytes: options.memoryCapBytes ?? DEFAULT_MEMORY_CAP_BYTES,
       warningRatio: options.warningRatio ?? 0.8,
       scheduler: options.scheduler,
@@ -218,12 +218,12 @@ export class HistoryStore {
       dropped: (block) => this.dropBlock(block),
     });
     this.host = {
-      allocate: (layout) => this.residency.allocate(layout),
-      seal: (block) => this.residency.seal(block),
-      account: (bytes) => this.residency.account(bytes),
+      allocate: (layout) => this.memory.allocate(layout),
+      seal: (block) => this.memory.seal(block),
+      account: (bytes) => this.memory.account(bytes),
       gapFinal: (epoch, gap) => this.ingest({ type: 'gap', gap: epoch.recordedGap(gap) }),
     };
-    this.statusSnapshot = this.residency.status();
+    this.statusSnapshot = this.memory.status();
   }
 
   /**
@@ -392,7 +392,7 @@ export class HistoryStore {
       this.notifier.touch(record.channel);
     }
 
-    this.residency.flushIfDue();
+    this.memory.flushIfDue();
   }
 
   /**
@@ -441,7 +441,7 @@ export class HistoryStore {
       }
     }
 
-    this.residency.reset();
+    this.memory.reset();
 
     for (const [epochId, { epoch }] of this.epochs) {
       if (epoch.closed) {
@@ -496,7 +496,7 @@ export class HistoryStore {
           continue;
         }
 
-        this.residency.adopt(block, source);
+        this.memory.adopt(block, source);
         this.noteLastSamples(epoch, records, persisted, lastSamples);
       }
 
@@ -667,7 +667,7 @@ export class HistoryStore {
       return;
     }
 
-    this.residency.beginQuery();
+    this.memory.beginQuery();
 
     for (const { epoch, column } of record.segments) {
       if (column < 0) {
@@ -702,7 +702,7 @@ export class HistoryStore {
    */
   valueAt(variable: VariableRef, timeUs: number): SampleValue | undefined {
     const segments = this.registry.resolve(variable)?.segments ?? [];
-    this.residency.beginQuery();
+    this.memory.beginQuery();
 
     for (let index = segments.length - 1; index >= 0; index--) {
       const { epoch, column } = segments[index];
@@ -712,12 +712,12 @@ export class HistoryStore {
         continue;
       }
 
-      this.residency.markUsed(block);
+      this.memory.markUsed(block);
       const time = block.time;
       const columns = block.columns;
 
       if (!time || !columns) {
-        this.residency.request(block);
+        this.memory.request(block);
         return undefined;
       }
 
@@ -775,8 +775,8 @@ export class HistoryStore {
       into.reset(startUs, endUs, pixels);
     }
 
-    this.residency.beginQuery();
-    decimateSegments(into, record.segments, this.boundaryList, this.residency, options.stats);
+    this.memory.beginQuery();
+    decimateSegments(into, record.segments, this.boundaryList, this.memory, options.stats);
     into.source = record;
     into.mark = mark;
     return into;
@@ -938,7 +938,7 @@ export class HistoryStore {
    * come from {@link replayIngestion}, then {@link onIngestion}.
    */
   startRecording(persistence: BlockBacking): void {
-    this.residency.startRecording(persistence);
+    this.memory.startRecording(persistence);
   }
 
   /**
@@ -947,7 +947,7 @@ export class HistoryStore {
    * samples before the stream goes quiet reach the persistence layer as well.
    */
   flushIfDue(): void {
-    this.residency.flushIfDue();
+    this.memory.flushIfDue();
   }
 
   /**
@@ -957,7 +957,7 @@ export class HistoryStore {
    * @returns A promise that settles once every write under way has.
    */
   stopRecording(): Promise<void> {
-    return this.residency.stopRecording();
+    return this.memory.stopRecording();
   }
 
   private restoreEpoch(recorded: RecordedEpoch): OpenEpoch {
@@ -1063,12 +1063,12 @@ export class HistoryStore {
     startUs: number,
     endUs: number
   ): Omit<SampleRun, 'epochId'> | undefined {
-    this.residency.markUsed(block);
+    this.memory.markUsed(block);
     const time = block.time;
     const columns = block.columns;
 
     if (!time || !columns) {
-      this.residency.request(block);
+      this.memory.request(block);
       return undefined;
     }
 
@@ -1113,7 +1113,7 @@ export class HistoryStore {
   }
 
   private refreshStatus(): void {
-    this.statusSnapshot = this.residency.status();
+    this.statusSnapshot = this.memory.status();
     this.notifier.touch(this.statusChannel);
   }
 

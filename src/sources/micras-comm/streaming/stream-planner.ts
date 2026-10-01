@@ -7,7 +7,7 @@ import type { RobotLink } from '../link/robot-link';
 import {
   BandwidthEstimator,
   type BudgetEstimate,
-  type LinkBudgetOptions,
+  type BandwidthEstimatorOptions,
 } from './bandwidth-estimator';
 import { fitGroups, type PlannedRate, type RateRequest, type StreamPlan } from './fit-groups';
 
@@ -33,7 +33,7 @@ export interface StreamPlannerOptions {
    */
   settleMs?: number;
   /** How the budget is estimated. */
-  budget?: Partial<LinkBudgetOptions>;
+  budget?: Partial<BandwidthEstimatorOptions>;
   /** How long, in milliseconds, to wait before planning again after the robot refused a plan. */
   retryMs?: number;
   /** The current time in milliseconds; `performance.now` by default. */
