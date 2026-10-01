@@ -42,8 +42,8 @@ export interface InMemoryRobot {
   readonly createSocket: WebSocketFactory;
 
   /**
-   * Hands the link to another monitor, as the simulation's bridge does when one connects: every
-   * connection is closed with the code and reason the bridge closes the previous one with.
+   * Hands the link to another monitor, as the simulation's bridge does when one starts sending:
+   * every connection is closed with the code and reason the bridge closes the previous one with.
    */
   takeOver(): void;
 

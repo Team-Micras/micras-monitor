@@ -31,8 +31,8 @@ export interface WebSocketTransportOptions {
 const NORMAL_CLOSURE = 1000;
 
 /**
- * The close code the simulation's bridge closes a monitor with when another one connects, since
- * the radio pairs with one peer at a time.
+ * The close code the simulation's bridge closes a monitor with when another one starts sending,
+ * since the radio pairs with one peer at a time.
  */
 export const TAKEN_OVER_CLOSE_CODE = 4001;
 
