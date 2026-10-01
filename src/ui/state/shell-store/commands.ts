@@ -32,14 +32,13 @@ export function commandsSlice({ set, get, options }: SliceTools): CommandsSlice 
 
     setKeyOverrides: (keyOverrides) => {
       const { commands } = get();
-      const bindings = resolveBindings(keyOverrides, commands);
-      const taken = commandKeyTaken(keyOverrides, bindings, commands);
+      const taken = commandKeyTaken(keyOverrides, commands);
 
       if (taken !== null) {
         return taken;
       }
 
-      set({ keyOverrides, bindings });
+      set({ keyOverrides, bindings: resolveBindings(keyOverrides, commands) });
       return null;
     },
 

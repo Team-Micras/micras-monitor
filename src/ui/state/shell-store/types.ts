@@ -250,15 +250,16 @@ export interface CommandsSlice {
    */
   readonly trackCommand: (id: WindowId, change: 1 | -1) => void;
   /**
-   * Rebinds keys. Nothing changes when an override takes the chord of a command's key.
+   * Rebinds keys. Nothing changes when an override takes the chord of a command's key, or a
+   * command's override takes a chord of the app.
    *
    * @returns Why it was refused, or null when it was applied.
    */
   readonly setKeyOverrides: (overrides: KeyOverrides) => string | null;
   /**
    * Binds the keys of a robot package's commands, replacing those of the package before. The
-   * user's overrides are kept as they are, even one that gives an action of the app a command's
-   * chord: the command wins that chord when it is pressed.
+   * user's overrides are kept as they are; where one clashes with the new keys, the bindings
+   * settle it as `resolveBindings` says.
    */
   readonly setCommands: (commands: readonly CommandSpec[]) => void;
   /** Shows a notice about a command, unless a newer press already has one. */

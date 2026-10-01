@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseChord, type KeyInput } from '@/core/chords';
+import { chordId, parseChord, type KeyInput } from '@/core/chords';
 import {
   ACTIONS,
   actionFor,
@@ -8,11 +8,13 @@ import {
   actionForEvent,
   actionSpec,
   commandAction,
+  commandKeyTaken,
   commandOf,
   reservedChord,
   resolveBindings,
   workspaceAction,
   workspaceIndexOf,
+  type KeyOverrides,
 } from '@/ui/keyboard/keymap';
 import { tilingActionFor } from '@/ui/keyboard/tiling-actions';
 import type { CommandSpec } from '@/core/robot';
@@ -95,21 +97,90 @@ describe('resolveBindings', () => {
       'command.STOP'
     );
     expect(actionFor(bindings, press('g', { ctrlKey: true }, 'KeyG'))).toBeNull();
-    const shared = resolveBindings({ launcher: ['Ctrl+Space'] }, COMMANDS);
-    expect(actionFor(shared, press(' ', { ctrlKey: true }, 'Space'))).toBe('launcher');
-    expect(actionFor(shared, press(' ', { shiftKey: true }, 'Space'))).toBe('command.STOP');
+    const quit: CommandSpec = { ...STOP, name: 'QUIT', label: 'Quit', key: 'Q' };
+    const shared = resolveBindings({}, [quit]);
+    expect(actionFor(shared, press('q', { altKey: true }, 'KeyQ'))).toBe('window.close');
+    expect(actionFor(shared, press('q', { shiftKey: true }, 'KeyQ'))).toBe('command.QUIT');
   });
 
-  test("gives a command's chord to the command over an action of the app rebound to it", () => {
-    const bindings = resolveBindings({ 'window.pause': ['Space'], launcher: ['G'] }, COMMANDS);
+  test("keeps a command's key over an app override that takes it, and drops it from the app", () => {
+    const bindings = resolveBindings(
+      { drawer: ['G'], launcher: ['Space'], 'workspace.1': ['Shift+Space'] },
+      COMMANDS
+    );
+    expect(actionFor(bindings, press('g', {}, 'KeyG'))).toBe('command.GO');
     expect(actionFor(bindings, press(' ', {}, 'Space'))).toBe('command.STOP');
     expect(actionFor(bindings, press(' ', { shiftKey: true }, 'Space'))).toBe('command.STOP');
-    expect(actionFor(bindings, press('g', {}, 'KeyG'))).toBe('command.GO');
+    expect(bindings.get('drawer')).toEqual([]);
+    expect(bindings.get('launcher')).toEqual([]);
+    expect(bindings.get('workspace.1')).toEqual([]);
+  });
+
+  test.each([
+    ['/', press('/'), 'drawer'],
+    ['Ctrl+K', press('k', { ctrlKey: true }, 'KeyK'), 'launcher'],
+    ['Alt+1', press('1', { altKey: true }, 'Digit1'), 'workspace.1'],
+  ] as const)(
+    "drops a command's override of %s, an app chord, for the package's key",
+    (chord, event, app) => {
+      const bindings = resolveBindings({ 'command.GO': [chord] }, COMMANDS);
+      expect(actionFor(bindings, event)).toBe(app);
+      expect(actionFor(bindings, press('g', {}, 'KeyG'))).toBe('command.GO');
+    }
+  );
+
+  test('never binds one chord to a command and an action of the app', () => {
+    const cases: KeyOverrides[] = [
+      { drawer: ['G'], 'command.GO': ['/'] },
+      { launcher: ['Space', 'Ctrl+K'], 'command.STOP': ['Ctrl+K'] },
+      { 'command.GO': ['P'], 'window.pause': ['G'] },
+      { 'workspace.2': ['Shift+Space'], 'command.GO': ['Alt+2'] },
+    ];
+
+    for (const overrides of cases) {
+      const owners = new Map<string, Set<string>>();
+
+      for (const [action, chords] of resolveBindings(overrides, COMMANDS)) {
+        for (const chord of chords) {
+          const side = commandOf(action) === null ? 'app' : 'command';
+          owners.set(chordId(chord), (owners.get(chordId(chord)) ?? new Set()).add(side));
+        }
+      }
+
+      expect([...owners.values()].every((sides) => sides.size === 1)).toBe(true);
+    }
   });
 
   test('keeps the defaults of an override that no longer parses', () => {
     const bindings = resolveBindings({ drawer: ['Hyper+/'] });
     expect(actionFor(bindings, press('/'))).toBe('drawer');
+  });
+});
+
+describe('commandKeyTaken', () => {
+  test.each([
+    ['/', '/ is already used by the app (Variables)'],
+    ['Ctrl+K', 'Ctrl+K is already used by the app (Launcher)'],
+    ['Alt+1', 'Alt+1 is already used by the app (Go to workspace 1)'],
+  ])("refuses a command's override of %s, an app chord", (chord, reason) => {
+    expect(commandKeyTaken({ 'command.GO': [chord] }, COMMANDS)).toBe(reason);
+  });
+
+  test("refuses an app override of a command's key, or of a chord STOP matches held", () => {
+    expect(commandKeyTaken({ drawer: ['G'] }, COMMANDS)).toBe('G is already the key of Go');
+    expect(commandKeyTaken({ 'window.pause': ['Shift+Space'] }, COMMANDS)).toBe(
+      'Shift+Space is already the key of Stop'
+    );
+    expect(commandKeyTaken({ launcher: ['Ctrl+Alt+Space'] }, COMMANDS)).toBe(
+      'Ctrl+Alt+Space is already the key of Stop'
+    );
+  });
+
+  test("lets overrides that take no one else's chord through", () => {
+    expect(commandKeyTaken({ 'command.GO': ['Alt+G'], drawer: ['Ctrl+B'] }, COMMANDS)).toBeNull();
+    expect(
+      commandKeyTaken({ 'command.STOP': ['Ctrl+Space'], drawer: ['Space'] }, COMMANDS)
+    ).toBeNull();
   });
 });
 

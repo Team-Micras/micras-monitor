@@ -156,30 +156,39 @@ export function commandAction(command: Pick<CommandSpec, 'name'>): CommandAction
 }
 
 /**
- * Why a set of overrides cannot be applied, or null: an action other than a command gets the
- * chord a command's key has, which the command would then lose to or share with it.
+ * Why a set of overrides cannot be applied, or null: an action of the app gets a chord of a
+ * command's key, or one that a dangerous command's key matches with modifiers held, such as
+ * Shift+Space for STOP on Space; or a command gets a chord an action of the app has.
  *
  * @param overrides The chords the user chose, by action.
- * @param bindings The chords every action has with those overrides.
  * @param commands The robot package's commands.
  */
 export function commandKeyTaken(
   overrides: KeyOverrides,
-  bindings: KeyBindings,
   commands: readonly CommandSpec[]
 ): string | null {
-  for (const command of commands) {
-    const owner = commandAction(command);
-    const owned = new Set((bindings.get(owner) ?? []).map(chordId));
+  const keys = commandActions(commands).map((spec) => ({
+    spec,
+    chords: chordsOf(overrides, spec),
+  }));
+  const app = ACTIONS.map((spec) => ({ spec, chords: chordsOf(overrides, spec) }));
 
-    for (const [action, texts] of Object.entries(overrides)) {
-      const taker = (texts ?? []).find((text) => {
-        const chords = parseAll([text]);
-        return chords !== undefined && owned.has(chordId(chords[0]));
-      });
+  for (const { spec } of app) {
+    for (const chord of parseAll(overrides[spec.id]) ?? []) {
+      const owner = keys.find((key) => key.chords.some((owned) => takes(owned, key.spec, chord)));
 
-      if (action !== owner && taker !== undefined) {
-        return `${taker} is already the key of ${command.label}`;
+      if (owner !== undefined) {
+        return `${overrideText(overrides, spec.id, chord)} is already the key of ${owner.spec.label}`;
+      }
+    }
+  }
+
+  for (const { spec } of keys) {
+    for (const chord of parseAll(overrides[spec.id]) ?? []) {
+      const user = app.find(({ chords }) => chords.some((own) => chordId(own) === chordId(chord)));
+
+      if (user !== undefined) {
+        return `${overrideText(overrides, spec.id, chord)} is already used by the app (${user.spec.label})`;
       }
     }
   }
@@ -232,7 +241,10 @@ export function actionSpec(action: KeyAction): ActionSpec {
 /**
  * The chords of every action and command key: the user's where they chose some, the defaults
  * elsewhere. Stored overrides that no longer parse, or name no action, are skipped, so a bad
- * entry only costs its own binding.
+ * entry only costs its own binding. No chord ends up on two actions of different sides: a
+ * command's override that takes a chord of the app is dropped for the package's key, and an
+ * override of the app loses the chords of a command's key, as well as those a dangerous
+ * command's key matches with modifiers held.
  *
  * @param overrides The chords the user chose, by action.
  * @param commands The robot package's commands; those with a key get an action.
@@ -241,14 +253,59 @@ export function resolveBindings(
   overrides: KeyOverrides = {},
   commands: readonly CommandSpec[] = []
 ): KeyBindings {
+  const app = ACTIONS.map((spec) => ({ spec, chords: chordsOf(overrides, spec) }));
+  const appIds = new Set(app.flatMap(({ chords }) => chords.map(chordId)));
+  const keys = commandActions(commands).map((spec) => {
+    const chosen = chordsOf(overrides, spec);
+    const chords = chosen.some((chord) => appIds.has(chordId(chord)))
+      ? (parseAll(spec.defaults) ?? [])
+      : chosen;
+    return { spec, chords };
+  });
+  const kept = app.map(({ spec, chords }) => ({
+    spec,
+    chords:
+      parseAll(overrides[spec.id]) === undefined
+        ? chords
+        : chords.filter(
+            (chord) =>
+              !keys.some((key) => key.chords.some((owned) => takes(owned, key.spec, chord)))
+          ),
+  }));
+
   return new Map(
-    [...ACTIONS, ...commandActions(commands)].map((spec) => {
-      const chords = parseAll(overrides[spec.id]) ?? parseAll(spec.defaults) ?? [];
-      return [
-        spec.id,
-        spec.loose === true ? chords.map((chord) => ({ ...chord, loose: true })) : chords,
-      ];
-    })
+    [...kept, ...keys].map(({ spec, chords }) => [
+      spec.id,
+      spec.loose === true ? chords.map((chord) => ({ ...chord, loose: true })) : chords,
+    ])
+  );
+}
+
+function chordsOf(overrides: KeyOverrides, spec: ActionSpec): readonly Chord[] {
+  return parseAll(overrides[spec.id]) ?? parseAll(spec.defaults) ?? [];
+}
+
+function takes(owned: Chord, owner: ActionSpec, chord: Chord): boolean {
+  return (
+    chordId(owned) === chordId(chord) ||
+    (owner.loose === true &&
+      matchesChordHeld(owned, {
+        key: chord.key,
+        code: '',
+        ctrlKey: chord.ctrl,
+        altKey: chord.alt,
+        shiftKey: chord.shift,
+        metaKey: chord.meta,
+      }))
+  );
+}
+
+function overrideText(overrides: KeyOverrides, action: KeyAction, chord: Chord): string {
+  return (
+    overrides[action]?.find((text) => {
+      const parsed = parseAll([text]);
+      return parsed !== undefined && chordId(parsed[0]) === chordId(chord);
+    }) ?? chordId(chord)
   );
 }
 
@@ -268,21 +325,24 @@ function parseAll(texts: readonly string[] | undefined): readonly Chord[] | unde
 }
 
 /**
- * The action an event triggers, or null. When a command and an action of the app share a chord,
- * the command wins, so that a key the user rebound before a package gave a command that chord,
- * such as an override kept in the browser's storage, never takes the key of STOP; between two
- * actions of the same side, the first one wins. A loose chord also matches with more modifiers
- * held than it has, unless another action has exactly that chord.
+ * The action an event triggers, or null. When two actions share a chord, the first one wins;
+ * `resolveBindings` keeps a command and an action of the app from sharing one. A loose chord also
+ * matches with more modifiers held than it has, unless another action has exactly that chord.
  */
 export function actionFor(bindings: KeyBindings, event: KeyInput): KeyAction | null {
-  const ranked = [...bindings].toSorted(
-    ([a], [b]) => Number(commandOf(b) !== null) - Number(commandOf(a) !== null)
-  );
-  const exact = ranked.find(([, chords]) => chords.some((chord) => matchesChord(chord, event)));
-  const held = ranked.find(([, chords]) =>
-    chords.some((chord) => chord.loose === true && matchesChordHeld(chord, event))
-  );
-  return (exact ?? held)?.[0] ?? null;
+  for (const [action, chords] of bindings) {
+    if (chords.some((chord) => matchesChord(chord, event))) {
+      return action;
+    }
+  }
+
+  for (const [action, chords] of bindings) {
+    if (chords.some((chord) => chord.loose === true && matchesChordHeld(chord, event))) {
+      return action;
+    }
+  }
+
+  return null;
 }
 
 /** The workspace index, from 0, that a workspace action names. */
