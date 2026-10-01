@@ -21,6 +21,13 @@ export interface StreamPlannerOptions {
    * again; samples dropping for want of room make it again at once.
    */
   overspendToReplan?: number;
+  /**
+   * How long, in milliseconds, the budget has to stay past what the plan was made for before a
+   * plan that fits or was cut is made again; the share of unmetered traffic, such as the answers
+   * to reads, moves the budget back and forth from one update to the next. Samples dropping, or
+   * the ceiling of the link moving, make the plan again at once.
+   */
+  settleMs?: number;
   /** How the budget is estimated. */
   budget?: Partial<LinkBudgetOptions>;
   /** How long, in milliseconds, to wait before planning again after the robot refused a plan. */
@@ -41,6 +48,7 @@ const DEFAULT_DEBOUNCE_MS = 250;
 const DEFAULT_GROWTH_TO_REPLAN = 0.2;
 const DEFAULT_OVERSPEND_TO_REPLAN = 0.1;
 const DEFAULT_RETRY_MS = 2000;
+const DEFAULT_SETTLE_MS = 3000;
 const MAX_RETRY_MS = 30_000;
 
 function sameRequests(a: readonly RateRequest[], b: readonly RateRequest[]): boolean {
@@ -86,9 +94,10 @@ function sameGroups(a: readonly GroupRequest[], b: readonly GroupRequest[]): boo
  * reconfigures the robot once, and requests equal to the last ones change nothing. The budget is
  * estimated again with every stats event of the session, from the robot's own count of dropped
  * samples when a request says which variable holds it. A plan that no longer fits, or that
- * samples drop under, is made again at once; one that was cut is made again when the ceiling
- * of the link moved or the budget grew enough to be worth a reconfiguration. The robot is only
- * reconfigured when the groups change.
+ * samples drop under, is made again; one that was cut is made again when the ceiling of the
+ * link moved or the budget grew enough to be worth a reconfiguration. Samples dropping and a
+ * ceiling that moved do so at once, a budget that drifted only once it stayed there a while. The
+ * robot is only reconfigured when the groups change.
  *
  * A plan the robot refuses is made again after a backoff, without the variables that did not
  * make it into a streaming group, which it reports as not granted until the schema changes.
@@ -100,6 +109,7 @@ export class StreamPlanner {
   private readonly growthToReplan: number;
   private readonly overspendToReplan: number;
   private readonly retryMs: number;
+  private readonly settleMs: number;
   private readonly now: () => number;
   private readonly detach: Unsubscribe[];
   private readonly dropCounters = new Map<number, number>();
@@ -111,6 +121,7 @@ export class StreamPlanner {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private failures = 0;
   private robotDropped: number | undefined;
+  private driftingSince: number | undefined;
   private closed = false;
 
   /**
@@ -126,6 +137,7 @@ export class StreamPlanner {
     this.growthToReplan = options.growthToReplan ?? DEFAULT_GROWTH_TO_REPLAN;
     this.overspendToReplan = options.overspendToReplan ?? DEFAULT_OVERSPEND_TO_REPLAN;
     this.retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
+    this.settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
     this.now = options.now ?? (() => performance.now());
     this.detach = [
       session.on('schema', () => {
@@ -229,10 +241,11 @@ export class StreamPlanner {
     const window = this.session.robot?.creditWindow ?? 0;
     const plan = this.current;
     const revision = this.estimator.value.revision;
+    const now = this.now();
     const estimate = this.estimator.update(
       stats,
       window,
-      this.now(),
+      now,
       plan?.overBudget === true,
       this.robotDropped
     );
@@ -242,11 +255,10 @@ export class StreamPlanner {
     }
 
     const overspent =
-      estimate.saturated ||
       plan.usedBytesPerSecond > estimate.bytesPerSecond * (1 + this.overspendToReplan);
 
     if (this.retryTimer !== undefined) {
-      if (overspent) {
+      if (estimate.saturated || overspent) {
         clearTimeout(this.retryTimer);
         this.retryTimer = undefined;
         this.replan();
@@ -260,9 +272,20 @@ export class StreamPlanner {
       plan.overBudget &&
       estimate.bytesPerSecond > plan.budgetBytesPerSecond * (1 + this.growthToReplan);
 
-    if (overspent || ceilingMoved || roomToGrow) {
+    if (estimate.saturated || ceilingMoved || this.settled(overspent || roomToGrow, now)) {
       this.replan();
     }
+  }
+
+  /** Whether the budget has been past the plan, without a break, for the settle time. */
+  private settled(drifting: boolean, now: number): boolean {
+    if (!drifting) {
+      this.driftingSince = undefined;
+      return false;
+    }
+
+    this.driftingSince ??= now;
+    return now - this.driftingSince >= this.settleMs;
   }
 
   private replan(): void {
@@ -282,6 +305,7 @@ export class StreamPlanner {
     const plan = this.withRefused(planned);
 
     this.current = plan;
+    this.driftingSince = undefined;
     this.events.emit('plan', plan);
 
     if (this.applied && sameGroups(this.applied, plan.groups)) {

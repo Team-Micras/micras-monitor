@@ -191,4 +191,56 @@ describe('StreamPlanner', () => {
 
     expect(planner.budget.saturated).toBe(true);
   });
+
+  test('leaves the robot alone while the unmetered traffic only spikes for a moment', async () => {
+    const tick = unmeteredTicks();
+    planner.request([{ variable: 'a', rateHz: 8000 }]);
+    await vi.advanceTimersByTimeAsync(20);
+    tick(0);
+    tick(0);
+
+    tick(6000);
+
+    for (let second = 0; second < 10; second++) {
+      tick(0);
+    }
+
+    expect(session.calls).toHaveLength(1);
+  });
+
+  test('plans again once the budget stayed below the plan for the settle time, and only once', async () => {
+    const tick = unmeteredTicks();
+    planner.request([{ variable: 'a', rateHz: 8000 }]);
+    await vi.advanceTimersByTimeAsync(20);
+    tick(0);
+    tick(0);
+
+    tick(6000);
+    tick(6000);
+    tick(6000);
+    expect(session.calls).toHaveLength(1);
+
+    for (let second = 0; second < 10; second++) {
+      tick(6000);
+    }
+
+    expect(session.calls).toHaveLength(2);
+    expect(planner.plan?.budgetBytesPerSecond).toBeLessThan(5000);
+  });
 });
+
+/**
+ * Feeds the planner one stats event a second, with as many bytes arriving that the credit does
+ * not meter as asked.
+ */
+function unmeteredTicks(): (unmeteredBytes: number) => void {
+  let bytesIn = 0;
+  let creditReturned = 0;
+
+  return (unmeteredBytes) => {
+    bytesIn += 10_000;
+    creditReturned += 10_000 - unmeteredBytes;
+    session.events.emit('stats', { ...STATS, bytesIn, creditReturned });
+    vi.advanceTimersByTime(1000);
+  };
+}
