@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { CommandSpec, RobotRegistry } from '@/core/robot';
-import type { SessionManager } from '@/recording/library/recording-manager';
+import type { RecordingManager } from '@/recording/library/recording-manager';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
 import { initialKeyOverrides, saveKeyOverrides } from './keyboard/key-overrides';
 import { actionFor, commandOf, type KeyAction } from './keyboard/keymap';
-import { tilingCommandFor } from './keyboard/tiling-actions';
+import { tilingActionFor } from './keyboard/tiling-actions';
 import { useKeymap } from './keyboard/use-keymap';
 import type { LayoutStorage } from './layouts/saved-layouts';
 import { useLayouts } from './layouts/use-layouts';
@@ -30,8 +30,8 @@ import { PhoneView } from './phone/phone-view';
 import { usePhone } from './phone/use-phone';
 import { TooltipProvider } from './primitives/tooltip';
 import type { AppUpdates } from './pwa/app-updates';
-import { SessionsContext } from './recordings/recordings-context';
-import { SessionView } from './recordings/shown-monitor';
+import { RecordingsContext } from './recordings/recordings-context';
+import { ShownMonitor } from './recordings/shown-monitor';
 import { Announcements } from './shell/announcements';
 import { Announcer } from './shell/announcer';
 import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
@@ -78,7 +78,7 @@ export interface AppProps {
   /** Where new builds of the app come from, such as the service worker; none without one. */
   readonly updates?: AppUpdates;
   /** The recorded and saved sessions; without it there is no REC. */
-  readonly sessions?: SessionManager;
+  readonly sessions?: RecordingManager;
 }
 
 /** The monitor: top bar, tiling of workspaces, status bar, drawer and launcher. */
@@ -105,7 +105,7 @@ export function App({
 
   return (
     <MonitorContext value={scope}>
-      <SessionsContext value={sessions ?? null}>
+      <RecordingsContext value={sessions ?? null}>
         <ShellStoreContext value={store}>
           <TooltipProvider>
             <Announcer>
@@ -113,7 +113,7 @@ export function App({
             </Announcer>
           </TooltipProvider>
         </ShellStoreContext>
-      </SessionsContext>
+      </RecordingsContext>
     </MonitorContext>
   );
 }
@@ -243,7 +243,7 @@ function Shell({
       return;
     }
 
-    const command = tilingCommandFor<WindowPayload>(
+    const command = tilingActionFor<WindowPayload>(
       action,
       state.desktop.workspaces.length,
       state.desktop.active
@@ -311,7 +311,7 @@ function Shell({
         ) : (
           <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
             <TopBar />
-            <SessionView>
+            <ShownMonitor>
               <main className="relative min-h-0 flex-1">
                 <TilingView />
                 {drawerOpen ? (
@@ -320,7 +320,7 @@ function Shell({
                   </LazyPart>
                 ) : null}
               </main>
-            </SessionView>
+            </ShownMonitor>
             <StatusBar />
             {launcherWanted ? (
               <LazyPart fallback={null} resetKey={launcherOpen}>

@@ -5,7 +5,7 @@ import { isIdleState, roleVariable } from '@/core/robot';
 import type { SourceStatus } from '@/core/source';
 
 import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../monitor-context';
-import { useSessions } from '../recordings/recordings-context';
+import { useRecordings } from '../recordings/recordings-context';
 
 /**
  * Why a reload would be unsafe: a recording is under way, the robot is not at rest, or the link is
@@ -66,7 +66,7 @@ export function reloadBlock({
 export function useReloadBlocked(): ReloadBlock | null {
   const monitor = useLiveMonitor();
   const status = useStatus(monitor);
-  const recording = (useSessions()?.recording ?? null) !== null;
+  const recording = (useRecordings()?.recording ?? null) !== null;
   const pkg = useRobotPackage(monitor)?.package ?? null;
   const stateName = roleVariable(pkg, 'state');
   const value = useLiveValue(monitor, stateName)?.value;

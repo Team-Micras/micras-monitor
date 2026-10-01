@@ -2,7 +2,7 @@ import { HistoryIcon, XIcon } from 'lucide-react';
 
 import { Button } from '../primitives/button';
 import { describeRecovery } from './recording-text';
-import { useSessionManager, useSessions } from './recordings-context';
+import { useRecordingManager, useRecordings } from './recordings-context';
 
 /**
  * The notice that a recording a closed tab left behind was recovered, with a way to open it.
@@ -10,8 +10,8 @@ import { useSessionManager, useSessions } from './recordings-context';
  * @param onOpenList Shows the sessions list, for more than one.
  */
 export function RecoveryNotice({ onOpenList }: { readonly onOpenList: () => void }) {
-  const manager = useSessionManager();
-  const recovered = useSessions()?.recovered ?? [];
+  const manager = useRecordingManager();
+  const recovered = useRecordings()?.recovered ?? [];
 
   if (manager === null || recovered.length === 0) {
     return null;

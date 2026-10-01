@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore, type ComponentProps } from 'react';
 
-import { downloadSession } from '@/recording/library/download';
-import type { SessionManager } from '@/recording/library/recording-manager';
+import { downloadRecording } from '@/recording/library/download';
+import type { RecordingManager } from '@/recording/library/recording-manager';
 
 import { lazyWithRetry } from '../lazy/lazy-with-retry';
 
@@ -22,11 +22,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '../primitives/popover';
 import { Separator } from '../primitives/separator';
 import { cn } from '../primitives/utils';
 import { MemoryNotice } from './memory-notice';
-import { useSessionManager, useSessions, useStoreStatus } from './recordings-context';
+import { useRecordingManager, useRecordings, useStoreStatus } from './recordings-context';
 import { RecoveryNotice } from './recovery-notice';
 
-const LazySessionsDialog = lazyWithRetry(() =>
-  import('./recordings-dialog').then((module) => ({ default: module.SessionsDialog }))
+const LazyRecordingsDialog = lazyWithRetry(() =>
+  import('./recordings-dialog').then((module) => ({ default: module.RecordingsDialog }))
 ).Component;
 
 const LazyResetDialog = lazyWithRetry(() =>
@@ -53,14 +53,14 @@ function useNow(active: boolean): number {
 const noStatus = () => () => undefined;
 const noMemory = () => 0;
 
-function useLiveMemory(manager: SessionManager | null): number {
+function useLiveMemory(manager: RecordingManager | null): number {
   return useSyncExternalStore(
     manager === null ? noStatus : (listener) => manager.live.subscribeStatus(listener),
     manager === null ? noMemory : () => manager.live.status().usedBytes
   );
 }
 
-function MemoryLine({ manager }: { readonly manager: SessionManager }) {
+function MemoryLine({ manager }: { readonly manager: RecordingManager }) {
   const status = useStoreStatus(manager.live);
   const onDisk =
     status.evictedBlocks > 0 ? ` · ${status.evictedBlocks} blocks only in the file` : '';
@@ -86,12 +86,12 @@ function LiveSpan() {
  * to start and stop it, list the saved sessions, export the recording and reset the live session.
  */
 export function RecordingControls() {
-  const manager = useSessionManager();
-  const state = useSessions();
+  const manager = useRecordingManager();
+  const state = useRecordings();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [recordingsOpen, setRecordingsOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const sessionsWanted = useEver(sessionsOpen);
+  const sessionsWanted = useEver(recordingsOpen);
   const resetWanted = useEver(confirmReset);
   const recording = state?.recording ?? null;
   const now = useNow(recording !== null);
@@ -170,7 +170,7 @@ export function RecordingControls() {
               Stop recording
             </MenuButton>
           )}
-          <MenuButton onClick={choose(() => setSessionsOpen(true))}>
+          <MenuButton onClick={choose(() => setRecordingsOpen(true))}>
             <FolderOpenIcon />
             Sessions…
             <span className="ml-auto font-mono text-xs text-muted-foreground">
@@ -181,7 +181,7 @@ export function RecordingControls() {
             disabled={last === null}
             onClick={choose(() => {
               if (last !== null) {
-                void downloadSession(manager, last);
+                void downloadRecording(manager, last);
               }
             })}
           >
@@ -206,13 +206,13 @@ export function RecordingControls() {
         </LazyPart>
       ) : null}
       {sessionsWanted ? (
-        <LazyPart fallback={null} resetKey={sessionsOpen} retryOnMount>
-          <LazySessionsDialog open={sessionsOpen} onOpenChange={setSessionsOpen} />
+        <LazyPart fallback={null} resetKey={recordingsOpen} retryOnMount>
+          <LazyRecordingsDialog open={recordingsOpen} onOpenChange={setRecordingsOpen} />
         </LazyPart>
       ) : null}
       <div className="pointer-events-none fixed bottom-14 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
         <MemoryNotice />
-        <RecoveryNotice onOpenList={() => setSessionsOpen(true)} />
+        <RecoveryNotice onOpenList={() => setRecordingsOpen(true)} />
       </div>
     </>
   );

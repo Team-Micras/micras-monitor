@@ -5,8 +5,8 @@
  */
 
 import type {
-  SessionInfo,
-  SessionRecovery,
+  RecordingInfo,
+  RecordingRecovery,
   StorageEstimate,
 } from '@/recording/library/recording-library';
 
@@ -17,8 +17,8 @@ export function describeRecovery({
   session,
   recovery,
 }: {
-  readonly session: SessionInfo;
-  readonly recovery: SessionRecovery;
+  readonly session: RecordingInfo;
+  readonly recovery: RecordingRecovery;
 }): string {
   const kept = `${formatDuration(session.durationUs / 1000)} kept`;
   const cut =
@@ -42,7 +42,7 @@ export function describeStart(atMs: number): string {
 }
 
 /** A session's length, size and samples, as the list shows them. */
-export function describeSize(session: SessionInfo): string {
+export function describeSize(session: RecordingInfo): string {
   const samples = new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(session.samples);
   return `${formatDuration(session.durationUs / 1000)} · ${formatBytes(session.bytes)} · ${samples} samples`;
 }

@@ -1,4 +1,4 @@
-import type { SessionManager } from '@/recording/library/recording-manager';
+import type { RecordingManager } from '@/recording/library/recording-manager';
 
 import { formatDuration } from '../lib/format';
 import { useLiveMonitor } from '../monitor-context';
@@ -15,7 +15,7 @@ import {
 interface ResetDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  readonly manager: SessionManager;
+  readonly manager: RecordingManager;
   /** Whether a recording is under way, which the reset ends. */
   readonly recording: boolean;
 }

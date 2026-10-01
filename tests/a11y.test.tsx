@@ -23,9 +23,9 @@ import type { CommandOutcome } from '@/core/source';
 import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';
 import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
 import { describeRobot } from '@/recording/library/browser-recordings';
-import { MemorySessionLibrary } from '@/recording/library/memory-library';
+import { MemoryRecordingLibrary } from '@/recording/library/memory-library';
 import { MemoryLocks } from '@/recording/library/recording-library';
-import { SessionManager } from '@/recording/library/recording-manager';
+import { RecordingManager } from '@/recording/library/recording-manager';
 import { createShellStore, type ShellStore } from '@/ui/state/shell-store';
 import type { Theme } from '@/ui/state/theme';
 import '@/ui/styles.css';
@@ -70,9 +70,9 @@ async function open(options: Options = {}) {
   monitors.push(monitor);
   const sessions =
     options.sessions === true
-      ? new SessionManager({
+      ? new RecordingManager({
           store: monitor.history,
-          library: new MemorySessionLibrary(),
+          library: new MemoryRecordingLibrary(),
           locks: new MemoryLocks(),
           scheduler: new ManualScheduler(),
           describe: () => describeRobot(monitor),

@@ -9,14 +9,14 @@ import { MemoryRecordingFile, type RecordingFile } from '..';
 
 import {
   byNewest,
-  type SessionInfo,
-  type SessionLibrary,
-  type SessionUpdate,
+  type RecordingInfo,
+  type RecordingLibrary,
+  type RecordingUpdate,
   type StorageEstimate,
 } from './recording-library';
 
 interface Entry {
-  info: SessionInfo;
+  info: RecordingInfo;
   readonly file: MemoryRecordingFile;
   opened: number;
 }
@@ -59,7 +59,7 @@ class SharedFile implements RecordingFile {
 }
 
 /** Sessions kept in memory. */
-export class MemorySessionLibrary implements SessionLibrary {
+export class MemoryRecordingLibrary implements RecordingLibrary {
   readonly kind = 'memory';
   readonly #entries = new Map<string, Entry>();
   readonly #now: () => number;
@@ -82,17 +82,17 @@ export class MemorySessionLibrary implements SessionLibrary {
   }
 
   /** Put a session in as a tab that died would have left it, for tests. */
-  seed(info: SessionInfo, bytes: Uint8Array): void {
+  seed(info: RecordingInfo, bytes: Uint8Array): void {
     this.#entries.set(info.id, { info, file: new MemoryRecordingFile(bytes), opened: 0 });
   }
 
-  list(): Promise<SessionInfo[]> {
+  list(): Promise<RecordingInfo[]> {
     return Promise.resolve(
       [...this.#entries.values()].map((entry) => entry.info).toSorted(byNewest)
     );
   }
 
-  create(info: Omit<SessionInfo, 'updatedAtMs'>) {
+  create(info: Omit<RecordingInfo, 'updatedAtMs'>) {
     const entry: Entry = {
       info: { ...info, updatedAtMs: this.#now() },
       file: new MemoryRecordingFile(),
@@ -107,7 +107,7 @@ export class MemorySessionLibrary implements SessionLibrary {
     return new SharedFile(entry, entry.file);
   }
 
-  async update(id: string, update: SessionUpdate): Promise<SessionInfo> {
+  async update(id: string, update: RecordingUpdate): Promise<RecordingInfo> {
     const entry = await this.#entry(id);
     entry.info = { ...entry.info, ...update, updatedAtMs: this.#now() };
     return entry.info;

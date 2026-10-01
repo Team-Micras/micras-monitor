@@ -6,7 +6,7 @@
  * Layout, under the origin's root:
  *
  * ```
- * micras-monitor/sessions/<id>/session.json    the SessionInfo, rewritten whole
+ * micras-monitor/sessions/<id>/session.json    the RecordingInfo, rewritten whole
  * micras-monitor/sessions/<id>/session.next.json the same, written first on every change
  * micras-monitor/sessions/<id>/recording.mmrec the recording, in the current format version
  * ```
@@ -19,7 +19,12 @@
  * @module
  */
 
-import { byNewest, isSessionInfo, type SessionInfo, type SessionUpdate } from './recording-library';
+import {
+  byNewest,
+  isRecordingInfo,
+  type RecordingInfo,
+  type RecordingUpdate,
+} from './recording-library';
 
 /** A synchronous access handle, as `FileSystemSyncAccessHandle` has it in a worker. */
 export interface SyncAccessHandle {
@@ -54,14 +59,14 @@ export type HostRequest =
   | {
       readonly id: number;
       readonly op: 'create';
-      readonly info: Omit<SessionInfo, 'updatedAtMs'>;
+      readonly info: Omit<RecordingInfo, 'updatedAtMs'>;
       readonly nowMs: number;
     }
   | {
       readonly id: number;
       readonly op: 'update';
       readonly session: string;
-      readonly update: SessionUpdate;
+      readonly update: RecordingUpdate;
       readonly nowMs: number;
     }
   | { readonly id: number; readonly op: 'remove'; readonly session: string }
@@ -85,7 +90,7 @@ export type HostRequest =
   | { readonly id: number; readonly op: 'close'; readonly handle: number };
 
 /** What a request returns. */
-export type HostValue = SessionInfo[] | SessionInfo | number | Uint8Array | null;
+export type HostValue = RecordingInfo[] | RecordingInfo | number | Uint8Array | null;
 
 /** The host's answer to a request. */
 export type HostResponse =
@@ -281,7 +286,7 @@ export class OpfsHost {
     return this.#sessions;
   }
 
-  async #list(): Promise<SessionInfo[]> {
+  async #list(): Promise<RecordingInfo[]> {
     const sessions = await this.#directory();
     const names: string[] = [];
 
@@ -292,26 +297,26 @@ export class OpfsHost {
     const infos = await Promise.all(
       names.map((name) => this.#readInfo(name).catch(() => this.#stray(name)))
     );
-    return infos.filter((info): info is SessionInfo => info !== null).toSorted(byNewest);
+    return infos.filter((info): info is RecordingInfo => info !== null).toSorted(byNewest);
   }
 
-  async #create(info: Omit<SessionInfo, 'updatedAtMs'>, nowMs: number) {
+  async #create(info: Omit<RecordingInfo, 'updatedAtMs'>, nowMs: number) {
     const sessions = await this.#directory();
     const folder = await sessions.getDirectoryHandle(info.id, { create: true });
     await folder.getFileHandle(RECORDING_FILE, { create: true });
-    const created: SessionInfo = { ...info, updatedAtMs: nowMs };
+    const created: RecordingInfo = { ...info, updatedAtMs: nowMs };
     await this.#writeInfo(created);
     return created;
   }
 
-  async #update(id: string, update: SessionUpdate, nowMs: number): Promise<SessionInfo> {
+  async #update(id: string, update: RecordingUpdate, nowMs: number): Promise<RecordingInfo> {
     const current = await this.#readInfo(id).catch(() => this.#stray(id));
 
     if (current === null) {
       throw new Error(`No session ${id}`);
     }
 
-    const next: SessionInfo = { ...current, ...update, updatedAtMs: nowMs };
+    const next: RecordingInfo = { ...current, ...update, updatedAtMs: nowMs };
     await this.#writeInfo(next);
     return next;
   }
@@ -343,11 +348,11 @@ export class OpfsHost {
     return handle;
   }
 
-  async #readInfo(id: string): Promise<SessionInfo> {
+  async #readInfo(id: string): Promise<RecordingInfo> {
     return this.#readInfoFrom(id, INFO_FILE).catch(() => this.#readInfoFrom(id, NEXT_INFO_FILE));
   }
 
-  async #readInfoFrom(id: string, name: string): Promise<SessionInfo> {
+  async #readInfoFrom(id: string, name: string): Promise<RecordingInfo> {
     const sessions = await this.#directory();
     const folder = await sessions.getDirectoryHandle(id);
     const handle = await syncHandle(await folder.getFileHandle(name));
@@ -357,7 +362,7 @@ export class OpfsHost {
       handle.read(bytes, { at: 0 });
       const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
 
-      if (!isSessionInfo(value) || value.id !== id) {
+      if (!isRecordingInfo(value) || value.id !== id) {
         throw new Error(`Session ${id} has no readable description`);
       }
 
@@ -367,7 +372,7 @@ export class OpfsHost {
     }
   }
 
-  async #stray(id: string): Promise<SessionInfo | null> {
+  async #stray(id: string): Promise<RecordingInfo | null> {
     try {
       const sessions = await this.#directory();
       const folder = await sessions.getDirectoryHandle(id);
@@ -390,12 +395,12 @@ export class OpfsHost {
     };
   }
 
-  async #writeInfo(info: SessionInfo): Promise<void> {
+  async #writeInfo(info: RecordingInfo): Promise<void> {
     await this.#writeInfoTo(info, NEXT_INFO_FILE);
     await this.#writeInfoTo(info, INFO_FILE);
   }
 
-  async #writeInfoTo(info: SessionInfo, name: string): Promise<void> {
+  async #writeInfoTo(info: RecordingInfo, name: string): Promise<void> {
     const sessions = await this.#directory();
     const folder = await sessions.getDirectoryHandle(info.id);
     const handle = await syncHandle(await folder.getFileHandle(name, { create: true }));

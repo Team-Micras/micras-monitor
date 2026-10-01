@@ -9,9 +9,9 @@ import type { RecordingFile } from '..';
 
 import type { HostRequest, HostResponse, HostValue } from './opfs-host';
 import type {
-  SessionInfo,
-  SessionLibrary,
-  SessionUpdate,
+  RecordingInfo,
+  RecordingLibrary,
+  RecordingUpdate,
   StorageEstimate,
 } from './recording-library';
 
@@ -183,7 +183,7 @@ function expectBytes(value: HostValue): Uint8Array {
   return value;
 }
 
-function expectInfo(value: HostValue): SessionInfo {
+function expectInfo(value: HostValue): RecordingInfo {
   if (
     value === null ||
     typeof value !== 'object' ||
@@ -196,7 +196,7 @@ function expectInfo(value: HostValue): SessionInfo {
   return value;
 }
 
-function expectList(value: HostValue): SessionInfo[] {
+function expectList(value: HostValue): RecordingInfo[] {
   if (!Array.isArray(value)) {
     throw new TypeError('The storage worker answered something other than a list');
   }
@@ -284,7 +284,7 @@ export interface StorageManagerLike {
 }
 
 /** Saved sessions in the Origin Private File System. */
-export class OpfsSessionLibrary implements SessionLibrary {
+export class OpfsRecordingLibrary implements RecordingLibrary {
   readonly kind = 'opfs';
   readonly #transport: HostTransport;
   readonly #storage: StorageManagerLike | undefined;
@@ -305,11 +305,11 @@ export class OpfsSessionLibrary implements SessionLibrary {
     this.#now = now;
   }
 
-  async list(): Promise<SessionInfo[]> {
+  async list(): Promise<RecordingInfo[]> {
     return expectList(await this.#transport.call({ op: 'list' }));
   }
 
-  async create(info: Omit<SessionInfo, 'updatedAtMs'>) {
+  async create(info: Omit<RecordingInfo, 'updatedAtMs'>) {
     const created = expectInfo(
       await this.#transport.call({ op: 'create', info, nowMs: this.#now() })
     );
@@ -321,7 +321,7 @@ export class OpfsSessionLibrary implements SessionLibrary {
     return new WorkerFile(this.#transport, id, handle);
   }
 
-  async update(id: string, update: SessionUpdate): Promise<SessionInfo> {
+  async update(id: string, update: RecordingUpdate): Promise<RecordingInfo> {
     return expectInfo(
       await this.#transport.call({ op: 'update', session: id, update, nowMs: this.#now() })
     );

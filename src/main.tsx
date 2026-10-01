@@ -5,7 +5,7 @@ import { Monitor } from '@/core/monitor';
 import { RobotRegistry } from '@/core/robot';
 import type { Source } from '@/core/source';
 import { HistoryStore, type Scheduler } from '@/history';
-import type { SessionManager } from '@/recording/library/recording-manager';
+import type { RecordingManager } from '@/recording/library/recording-manager';
 import { startStorageWorker } from '@/recording/library/storage-worker';
 import { micras } from '@/robots/micras';
 import type { BluetoothLike } from '@/sources/micras-comm/link';
@@ -81,7 +81,7 @@ const robots = new RobotRegistry([micras], reservedChord);
 const updates = import.meta.env.PROD ? serviceWorkerUpdates(registerSW) : undefined;
 const reactRoot = createRoot(root);
 
-function render(sessions?: SessionManager): void {
+function render(sessions?: RecordingManager): void {
   reactRoot.render(
     <StrictMode>
       <App
@@ -99,7 +99,7 @@ function render(sessions?: SessionManager): void {
 render();
 importWhenIdle(
   () => import('@/recording/library/browser-recordings'),
-  ({ browserSessions }) =>
-    render(browserSessions(monitor, FRAME_SCHEDULER, storageWorker, viewCapBytes)),
+  ({ browserRecordings }) =>
+    render(browserRecordings(monitor, FRAME_SCHEDULER, storageWorker, viewCapBytes)),
   () => window.dispatchEvent(new Event(PRELOAD_ERROR_EVENT))
 );

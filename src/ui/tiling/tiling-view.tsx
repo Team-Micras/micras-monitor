@@ -19,7 +19,7 @@ import { WindowFrame } from './window-frame';
 
 import type { KeyAction } from '../keyboard/keymap';
 import { Kbd } from '../primitives/kbd';
-import { GutterHandle } from './split-handle';
+import { SplitHandle } from './split-handle';
 
 function Keys({ action }: { readonly action: KeyAction }) {
   const chord = useShell((state) => state.bindings.get(action)?.[0]);
@@ -111,7 +111,7 @@ export function TilingView() {
           const window = desktop.windows.get(id);
           return window === undefined ? id : windowTitle(window);
         });
-        return <GutterHandle key={gutter.path} gutter={gutter} label={`Resize ${a} and ${b}`} />;
+        return <SplitHandle key={gutter.path} gutter={gutter} label={`Resize ${a} and ${b}`} />;
       })}
       {cornerHandles(desktop, metrics).map((handle) => (
         <CornerHandle key={`${handle.id} ${handle.corner}`} handle={handle} />

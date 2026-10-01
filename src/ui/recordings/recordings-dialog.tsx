@@ -10,9 +10,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { downloadSession } from '@/recording/library/download';
-import type { SessionInfo } from '@/recording/library/recording-library';
-import type { SessionManager, SessionsState } from '@/recording/library/recording-manager';
+import { downloadRecording } from '@/recording/library/download';
+import type { RecordingInfo } from '@/recording/library/recording-library';
+import type { RecordingManager, RecordingsState } from '@/recording/library/recording-manager';
 
 import { Button } from '../primitives/button';
 import {
@@ -25,9 +25,9 @@ import {
 import { Input } from '../primitives/input';
 import { cn } from '../primitives/utils';
 import { describeRecovery, describeSize, describeStart, describeStorage } from './recording-text';
-import { useSessionManager, useSessions } from './recordings-context';
+import { useRecordingManager, useRecordings } from './recordings-context';
 
-interface SessionsDialogProps {
+interface RecordingsDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }
@@ -36,9 +36,9 @@ interface SessionsDialogProps {
  * The saved sessions: open one to look at it in the windows, rename, export or delete it. The one
  * being recorded and those the live session still reads from cannot be deleted.
  */
-export function SessionsDialog({ open, onOpenChange }: SessionsDialogProps) {
-  const manager = useSessionManager();
-  const state = useSessions();
+export function RecordingsDialog({ open, onOpenChange }: RecordingsDialogProps) {
+  const manager = useRecordingManager();
+  const state = useRecordings();
   const opened = useRef(false);
 
   if (manager === null || state === null) {
@@ -82,7 +82,7 @@ export function SessionsDialog({ open, onOpenChange }: SessionsDialogProps) {
             </li>
           ) : (
             state.sessions.map((session) => (
-              <SessionRow
+              <RecordingRow
                 key={session.id}
                 session={session}
                 state={state}
@@ -104,14 +104,14 @@ export function SessionsDialog({ open, onOpenChange }: SessionsDialogProps) {
   );
 }
 
-interface SessionRowProps {
-  readonly session: SessionInfo;
-  readonly state: SessionsState;
-  readonly manager: SessionManager;
+interface RecordingRowProps {
+  readonly session: RecordingInfo;
+  readonly state: RecordingsState;
+  readonly manager: RecordingManager;
   readonly onOpened: () => void;
 }
 
-function SessionRow({ session, state, manager, onOpened }: SessionRowProps) {
+function RecordingRow({ session, state, manager, onOpened }: RecordingRowProps) {
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const recording = state.recording?.session.id === session.id;
@@ -212,7 +212,7 @@ function SessionRow({ session, state, manager, onOpened }: SessionRowProps) {
             variant="ghost"
             size="icon-sm"
             aria-label={`Export ${session.name}`}
-            onClick={() => void downloadSession(manager, session.id)}
+            onClick={() => void downloadRecording(manager, session.id)}
           >
             <DownloadIcon />
           </Button>

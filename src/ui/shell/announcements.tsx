@@ -5,7 +5,7 @@ import { roleVariable, enumLabel } from '@/core/robot';
 import type { SourceStatus } from '@/core/source';
 
 import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../monitor-context';
-import { useSessions } from '../recordings/recordings-context';
+import { useRecordings } from '../recordings/recordings-context';
 import { useShell } from '../state/shell-store';
 import { usePresentedVariables } from '../windows/shared/presented-variables';
 import { useAnnounce } from './announce';
@@ -60,7 +60,7 @@ export function Announcements() {
       : null;
   const notice = useShell((shell) => shell.commandNotice);
   const settled = notice !== null && notice.tone !== 'pending' ? notice : null;
-  const recording = (useSessions()?.recording ?? null) !== null;
+  const recording = (useRecordings()?.recording ?? null) !== null;
 
   useChanges(status.kind, () => {
     const text = connectionText(status);

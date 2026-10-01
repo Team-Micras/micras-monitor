@@ -4,7 +4,7 @@ import { useLiveMonitor, useRobotPackage, useStatus, useVariables } from '../mon
 import { useShellStore } from '../state/shell-store';
 import { layoutKey } from './layout-key';
 import { LayoutSession } from './layout-session';
-import { LayoutBook, type LayoutStorage } from './saved-layouts';
+import { SavedLayouts, type LayoutStorage } from './saved-layouts';
 
 /**
  * Keeps the desktop and the layouts saved per robot in step: when a link comes up past its
@@ -20,7 +20,7 @@ export function useLayouts(storage: LayoutStorage | null): void {
   const variables = useVariables(monitor);
   const selection = useRobotPackage(monitor);
   const [session] = useState(() =>
-    storage === null ? null : new LayoutSession(store, new LayoutBook(storage))
+    storage === null ? null : new LayoutSession(store, new SavedLayouts(storage))
   );
   const key =
     status.kind === 'linked' && variables.length > 0

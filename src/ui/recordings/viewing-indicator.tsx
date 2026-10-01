@@ -1,14 +1,14 @@
 import { HistoryIcon, Undo2Icon } from 'lucide-react';
 
-import type { OpenedSession } from '@/recording/library/recording-manager';
+import type { OpenedRecording } from '@/recording/library/recording-manager';
 
 import { Button } from '../primitives/button';
-import { useSessionManager, useSessions, useStoreStatus } from './recordings-context';
+import { useRecordingManager, useRecordings, useStoreStatus } from './recordings-context';
 
 /** Which saved session is on screen, with the way back to the live one. */
 export function ViewingIndicator() {
-  const manager = useSessionManager();
-  const viewing = useSessions()?.viewing ?? null;
+  const manager = useRecordingManager();
+  const viewing = useRecordings()?.viewing ?? null;
 
   if (manager === null || viewing === null) {
     return null;
@@ -21,7 +21,7 @@ function Indicator({
   viewing,
   onLive,
 }: {
-  readonly viewing: OpenedSession;
+  readonly viewing: OpenedRecording;
   readonly onLive: () => void;
 }) {
   const status = useStoreStatus(viewing.store);

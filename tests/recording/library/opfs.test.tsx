@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { Variable } from '@/core/variables';
 import { HistoryStore, ManualScheduler } from '@/history';
 
-import { MessageTransport, OpfsSessionLibrary } from '@/recording/library/opfs-library';
+import { MessageTransport, OpfsRecordingLibrary } from '@/recording/library/opfs-library';
 import { MemoryLocks, WebLocks } from '@/recording/library/recording-library';
-import { SessionManager } from '@/recording/library/recording-manager';
+import { RecordingManager } from '@/recording/library/recording-manager';
 
 const SAMPLE_US = 10_000;
 const VARIABLES: readonly Variable[] = [
@@ -40,9 +40,9 @@ function tab(clock: { ms: number }) {
     groupId: 0,
     variables: [{ id: 0, type: 'f32' }],
   });
-  const manager = new SessionManager({
+  const manager = new RecordingManager({
     store,
-    library: new OpfsSessionLibrary(new MessageTransport(() => worker), navigator.storage),
+    library: new OpfsRecordingLibrary(new MessageTransport(() => worker), navigator.storage),
     locks: new MemoryLocks(),
     scheduler,
     now: () => clock.ms,
@@ -155,7 +155,7 @@ describe('sessions in the Origin Private File System of Chromium', () => {
     expect(second.manager.state.recovered).toEqual([]);
     expect(second.manager.state.sessions).toEqual([saved]);
     await second.manager.rename(saved.id, 'Bench');
-    const exported = await second.manager.exportSession(saved.id);
+    const exported = await second.manager.exportRecording(saved.id);
 
     expect(exported?.fileName).toBe('bench.mmrec');
     expect(exported?.blob.size).toBeGreaterThan(saved.bytes - 64);

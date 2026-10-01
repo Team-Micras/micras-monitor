@@ -11,7 +11,7 @@ import { App } from '@/ui/app';
 import type { AppMonitor } from '@/ui/monitor-context';
 import { createShellStore, type ShellStore } from '@/ui/state/shell-store';
 import '@/ui/styles.css';
-import { LayoutBook, STORAGE_PREFIX } from '@/ui/layouts/saved-layouts';
+import { SavedLayouts, STORAGE_PREFIX } from '@/ui/layouts/saved-layouts';
 import type { DemoRobot, DemoVariable } from '@/sources/demo/demo-source';
 import { MemoryStorage } from '@tests/support/ui/layouts/memory-storage';
 import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
@@ -81,7 +81,7 @@ function workspaceNames({ store }: Pick<Mounted, 'store'>): string[] {
 
 async function saved({ storage }: Mounted, key: string, count: number): Promise<void> {
   await expect
-    .poll(() => new LayoutBook(storage).load(key, [])?.desktop?.workspaces.length)
+    .poll(() => new SavedLayouts(storage).load(key, [])?.desktop?.workspaces.length)
     .toBe(count);
 }
 
@@ -127,7 +127,7 @@ describe('the layout of a robot', () => {
     expect(workspaceNames(first)).toEqual(['Sensor', 'Overview']);
     await expect
       .poll(() =>
-        new LayoutBook(first.storage)
+        new SavedLayouts(first.storage)
           .load('name:rover', [])
           ?.desktop?.workspaces.map((workspace) => workspace.name)
       )
@@ -230,7 +230,7 @@ describe('layout presets', () => {
       .element(screen.getByRole('button', { name: 'Rename Bench' }))
       .not.toBeInTheDocument();
     await saved(mounted, 'name:rover', 3);
-    expect(new LayoutBook(mounted.storage).load('name:rover', [])?.presets).toHaveLength(1);
+    expect(new SavedLayouts(mounted.storage).load('name:rover', [])?.presets).toHaveLength(1);
   });
 
   test('are renamed and deleted from the layouts menu', async () => {
@@ -274,7 +274,7 @@ describe('layout presets', () => {
     await mounted.screen.getByRole('button', { name: 'Add a workspace' }).click();
     window.dispatchEvent(new Event('pagehide'));
     expect(
-      new LayoutBook(mounted.storage).load('name:rover', [])?.desktop?.workspaces
+      new SavedLayouts(mounted.storage).load('name:rover', [])?.desktop?.workspaces
     ).toHaveLength(3);
   });
 

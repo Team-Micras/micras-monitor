@@ -4,11 +4,11 @@
  * @module
  */
 
-import type { SessionManager } from './recording-manager';
+import type { RecordingManager } from './recording-manager';
 
 /** Export a session and hand it to the browser as a download. */
-export async function downloadSession(manager: SessionManager, id: string): Promise<void> {
-  const exported = await manager.exportSession(id);
+export async function downloadRecording(manager: RecordingManager, id: string): Promise<void> {
+  const exported = await manager.exportRecording(id);
 
   if (exported === null) {
     return;

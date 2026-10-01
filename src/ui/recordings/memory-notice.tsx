@@ -4,7 +4,7 @@ import type { MemoryNotice as Notice } from '@/recording/library/recording-manag
 
 import { formatBytes } from '../lib/format';
 import { Button } from '../primitives/button';
-import { useSessionManager, useSessions } from './recordings-context';
+import { useRecordingManager, useRecordings } from './recordings-context';
 
 function describe(notice: Notice, recording: boolean): { title: string; detail: string } {
   const cap = formatBytes(notice.capBytes);
@@ -32,8 +32,8 @@ function describe(notice: Notice, recording: boolean): { title: string; detail: 
 
 /** What the memory cap did to the live history: nearing it, dropping the oldest, or pausing. */
 export function MemoryNotice() {
-  const manager = useSessionManager();
-  const state = useSessions();
+  const manager = useRecordingManager();
+  const state = useRecordings();
   const notice = state?.memory ?? null;
 
   if (manager === null || notice === null) {

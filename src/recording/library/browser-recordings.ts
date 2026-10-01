@@ -8,16 +8,16 @@
 import type { Monitor } from '@/core/monitor';
 import type { HistoryStore, Scheduler } from '@/history';
 
-import { MemorySessionLibrary } from './memory-library';
-import { MessageTransport, OpfsSessionLibrary, type StorageManagerLike } from './opfs-library';
+import { MemoryRecordingLibrary } from './memory-library';
+import { MessageTransport, OpfsRecordingLibrary, type StorageManagerLike } from './opfs-library';
 import {
   MemoryLocks,
   WebLocks,
   type LockManagerLike,
-  type SessionLibrary,
-  type SessionLocks,
+  type RecordingLibrary,
+  type RecordingLocks,
 } from './recording-library';
-import { SessionManager, type RobotDescription } from './recording-manager';
+import { RecordingManager, type RobotDescription } from './recording-manager';
 import { startStorageWorker } from './storage-worker';
 
 interface NavigatorLike {
@@ -30,11 +30,11 @@ function browserNavigator(): NavigatorLike {
   return typeof value === 'object' && value !== null ? value : {};
 }
 
-function library(started: Worker | undefined): SessionLibrary {
+function library(started: Worker | undefined): RecordingLibrary {
   const { storage } = browserNavigator();
 
   if (started === undefined || storage === undefined) {
-    return new MemorySessionLibrary();
+    return new MemoryRecordingLibrary();
   }
 
   let first: Worker | undefined = started;
@@ -48,10 +48,10 @@ function library(started: Worker | undefined): SessionLibrary {
 
     return worker;
   });
-  return new OpfsSessionLibrary(transport, storage);
+  return new OpfsRecordingLibrary(transport, storage);
 }
 
-function locks(): SessionLocks {
+function locks(): RecordingLocks {
   const { locks: manager } = browserNavigator();
   return manager === undefined ? new MemoryLocks() : new WebLocks(manager);
 }
@@ -79,13 +79,13 @@ export function describeRobot(monitor: Monitor<HistoryStore>): RobotDescription 
  *   sessions; they are kept in memory otherwise.
  * @param viewCapBytes The memory cap of an opened session; a share of the live store's otherwise.
  */
-export function browserSessions(
+export function browserRecordings(
   monitor: Monitor<HistoryStore>,
   scheduler: Scheduler,
   worker: Worker | undefined,
   viewCapBytes?: number
-): SessionManager {
-  const manager = new SessionManager({
+): RecordingManager {
+  const manager = new RecordingManager({
     store: monitor.history,
     library: library(worker),
     locks: locks(),

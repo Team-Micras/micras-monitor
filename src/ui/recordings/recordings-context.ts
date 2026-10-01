@@ -8,22 +8,22 @@ import { createContext, use, useSyncExternalStore } from 'react';
 
 import type { StoreStatus, HistoryStore } from '@/history';
 
-import type { SessionManager, SessionsState } from '@/recording/library/recording-manager';
+import type { RecordingManager, RecordingsState } from '@/recording/library/recording-manager';
 
-/** Carries the app's {@link SessionManager}, or null where sessions are not kept. */
-export const SessionsContext = createContext<SessionManager | null>(null);
+/** Carries the app's {@link RecordingManager}, or null where sessions are not kept. */
+export const RecordingsContext = createContext<RecordingManager | null>(null);
 
 /** The sessions manager, or null where sessions are not kept. */
-export function useSessionManager(): SessionManager | null {
-  return use(SessionsContext);
+export function useRecordingManager(): RecordingManager | null {
+  return use(RecordingsContext);
 }
 
 const noSubscription = () => () => undefined;
 const noState = () => null;
 
 /** The sessions' state, rendering again when it changes; null where sessions are not kept. */
-export function useSessions(): SessionsState | null {
-  const manager = useSessionManager();
+export function useRecordings(): RecordingsState | null {
+  const manager = useRecordingManager();
   return useSyncExternalStore(
     manager === null ? noSubscription : (listener) => manager.subscribe(listener),
     manager === null ? noState : () => manager.state

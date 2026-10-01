@@ -15,14 +15,14 @@ import {
   FakeDirectory,
   FakeFile,
 } from '@tests/support/recording/library/fake-opfs';
-import { MemorySessionLibrary } from '@/recording/library/memory-library';
-import { OpfsSessionLibrary } from '@/recording/library/opfs-library';
-import { MemoryLocks, type SessionLibrary } from '@/recording/library/recording-library';
+import { MemoryRecordingLibrary } from '@/recording/library/memory-library';
+import { OpfsRecordingLibrary } from '@/recording/library/opfs-library';
+import { MemoryLocks, type RecordingLibrary } from '@/recording/library/recording-library';
 import {
-  defaultSessionName,
+  defaultRecordingName,
   exportFileName,
-  SessionManager,
-  type SessionsState,
+  RecordingManager,
+  type RecordingsState,
 } from '@/recording/library/recording-manager';
 import { deserializeRecording } from '@tests/support/recording/recording-bytes';
 
@@ -50,7 +50,7 @@ function settle(): Promise<void> {
 }
 
 function rig(
-  library: SessionLibrary = new MemorySessionLibrary(() => 5),
+  library: RecordingLibrary = new MemoryRecordingLibrary(() => 5),
   locks = new MemoryLocks()
 ) {
   const clock = { ms: Date.UTC(2026, 8, 29, 10, 42) };
@@ -62,7 +62,7 @@ function rig(
     groupId: 0,
     variables: [{ id: 0, type: 'f32' }],
   });
-  const manager = new SessionManager({
+  const manager = new RecordingManager({
     store,
     library,
     locks,
@@ -95,7 +95,7 @@ async function each(count: number, step: () => Promise<void>): Promise<void> {
   }
 }
 
-function recordingState(state: SessionsState) {
+function recordingState(state: RecordingsState) {
   if (!state.recording) {
     throw new Error('Not recording');
   }
@@ -140,7 +140,7 @@ describe('recording the live session', () => {
 
   test('holds the lock of a session before its description says it is recording', async () => {
     const locks = new MemoryLocks();
-    const library = new MemorySessionLibrary();
+    const library = new MemoryRecordingLibrary();
     const create = library.create.bind(library);
     const heldAtCreate: boolean[] = [];
     library.create = async (info) => {
@@ -156,7 +156,7 @@ describe('recording the live session', () => {
 
   test('keeps the lock of a session it could not mark saved, so no other tab takes it', async () => {
     const locks = new MemoryLocks();
-    const library = new MemorySessionLibrary();
+    const library = new MemoryRecordingLibrary();
     const { manager, stream } = rig(library, locks);
     await manager.start();
     await manager.startRecording();
@@ -172,7 +172,7 @@ describe('recording the live session', () => {
 
   test('says why recording could not write, and keeps going once it can', async () => {
     const root = new FakeDirectory();
-    const library = new OpfsSessionLibrary(new DirectTransport(root));
+    const library = new OpfsRecordingLibrary(new DirectTransport(root));
     const { store, manager, stream } = rig(library);
     await manager.start();
     await manager.startRecording();
@@ -205,7 +205,7 @@ describe('recording the live session', () => {
     await manager.rename(id, '  Final run  ');
 
     expect(manager.state.recording?.session.name).toBe('Final run');
-    const exported = await manager.exportSession(id);
+    const exported = await manager.exportRecording(id);
     const read = deserializeRecording(new Uint8Array(await exported!.blob.arrayBuffer()));
 
     expect(exported?.fileName).toBe('final-run.mmrec');
@@ -229,7 +229,7 @@ describe('recording the live session', () => {
     await manager.resetLive();
     expect(store.timeRange()).toBeUndefined();
     expect(manager.state.liveSources).toEqual([]);
-    expect(library instanceof MemorySessionLibrary && library.openings(saved.id)).toBe(0);
+    expect(library instanceof MemoryRecordingLibrary && library.openings(saved.id)).toBe(0);
     await manager.remove(saved.id);
     expect(manager.state.sessions).toEqual([]);
   });
@@ -299,7 +299,7 @@ describe('opening a saved session', () => {
   });
 
   test('says why a session that is not a recording does not open', async () => {
-    const library = new MemorySessionLibrary();
+    const library = new MemoryRecordingLibrary();
     library.seed(
       {
         id: 'broken',
@@ -344,7 +344,7 @@ describe('opening a saved session', () => {
     bytes.set(header.subarray(0, 8));
     new DataView(bytes.buffer).setUint32(8, json.byteLength, true);
     bytes.set(json, 12);
-    const library = new MemorySessionLibrary();
+    const library = new MemoryRecordingLibrary();
     library.seed(
       {
         id: 'old',
@@ -373,13 +373,13 @@ describe('opening a saved session', () => {
 async function recordThenDie(seconds: number) {
   const root = new FakeDirectory();
   const transport = new DirectTransport(root);
-  const first = rig(new OpfsSessionLibrary(transport));
+  const first = rig(new OpfsRecordingLibrary(transport));
   await first.manager.start();
   await first.manager.startRecording();
   await first.stream(seconds);
   const { id } = recordingState(first.manager.state).session;
   transport.crash();
-  const after = rig(new OpfsSessionLibrary(new DirectTransport(root)));
+  const after = rig(new OpfsRecordingLibrary(new DirectTransport(root)));
   return { root, id, first, after };
 }
 
@@ -403,7 +403,7 @@ describe('recovering after the tab died', () => {
       robot: 'micras',
       name: expect.stringMatching(/^micras · /),
     });
-    const again = rig(new OpfsSessionLibrary(new DirectTransport(root)));
+    const again = rig(new OpfsRecordingLibrary(new DirectTransport(root)));
     await again.manager.start();
 
     expect(again.manager.state).toMatchObject({ error: null, recovered: [] });
@@ -412,12 +412,12 @@ describe('recovering after the tab died', () => {
 
   test('lists every session even when one of them cannot be recovered', async () => {
     const root = new FakeDirectory();
-    const saver = rig(new OpfsSessionLibrary(new DirectTransport(root)));
+    const saver = rig(new OpfsRecordingLibrary(new DirectTransport(root)));
     await saver.manager.start();
     await saver.manager.startRecording();
     await saver.stream(3);
     await saver.manager.stopRecording();
-    const elsewhere = new OpfsSessionLibrary(new DirectTransport(root));
+    const elsewhere = new OpfsRecordingLibrary(new DirectTransport(root));
     await elsewhere.create({
       id: 'held-elsewhere',
       name: 'held elsewhere',
@@ -428,7 +428,7 @@ describe('recovering after the tab died', () => {
       samples: 0,
       durationUs: 0,
     });
-    const tab = rig(new OpfsSessionLibrary(new DirectTransport(root)));
+    const tab = rig(new OpfsRecordingLibrary(new DirectTransport(root)));
     await tab.manager.start();
 
     expect(tab.manager.state.ready).toBe(true);
@@ -479,10 +479,10 @@ describe('recovering after the tab died', () => {
   test('leaves alone a session another tab is recording', async () => {
     const root = new FakeDirectory();
     const locks = new MemoryLocks();
-    const first = rig(new OpfsSessionLibrary(new DirectTransport(root)), locks);
+    const first = rig(new OpfsRecordingLibrary(new DirectTransport(root)), locks);
     await first.manager.start();
     await first.manager.startRecording();
-    const other = rig(new OpfsSessionLibrary(new DirectTransport(root)), locks);
+    const other = rig(new OpfsRecordingLibrary(new DirectTransport(root)), locks);
     await other.manager.start();
 
     expect(other.manager.state.recovered).toEqual([]);
@@ -490,13 +490,13 @@ describe('recovering after the tab died', () => {
   });
 
   test('lets one of two tabs starting together recover a session, the other skipping it quietly', async () => {
-    const source = new MemorySessionLibrary(() => 5);
+    const source = new MemoryRecordingLibrary(() => 5);
     const saver = rig(source);
     await saver.manager.start();
     await saver.manager.startRecording();
     await saver.stream(3);
     const { id } = recordingState(saver.manager.state).session;
-    const dead = new MemorySessionLibrary(() => 5);
+    const dead = new MemoryRecordingLibrary(() => 5);
     const [info] = await source.list();
     dead.seed(info, source.contents(id));
 
@@ -531,7 +531,7 @@ describe('recovering after the tab died', () => {
   });
 
   test('drops a session whose tab died before its header was written', async () => {
-    const library = new MemorySessionLibrary();
+    const library = new MemoryRecordingLibrary();
     library.seed(
       {
         id: 'empty',
@@ -559,9 +559,9 @@ test('tells about the memory cap nearing, dropping the oldest history, and pausi
   const store = new HistoryStore({ scheduler, blockSize: 1024, memoryCapBytes: 200_000 });
   store.setSchema(VARIABLES);
   store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: 'f32' }] });
-  const manager = new SessionManager({
+  const manager = new RecordingManager({
     store,
-    library: new MemorySessionLibrary(),
+    library: new MemoryRecordingLibrary(),
     locks: new MemoryLocks(),
     scheduler,
     describe: () => ({ name: null, robot: {}, schema: [] }),
@@ -580,8 +580,8 @@ test('tells about the memory cap nearing, dropping the oldest history, and pausi
 });
 
 test('names sessions and their files', () => {
-  expect(defaultSessionName('micras', Date.UTC(2026, 8, 29, 10, 42))).toMatch(/^micras · 29 Sep/);
-  expect(defaultSessionName(null, 0)).toMatch(/^Session · /);
+  expect(defaultRecordingName('micras', Date.UTC(2026, 8, 29, 10, 42))).toMatch(/^micras · 29 Sep/);
+  expect(defaultRecordingName(null, 0)).toMatch(/^Session · /);
   expect(exportFileName('micras · 29 Sep, 10:42')).toBe('micras-29-sep-10-42.mmrec');
   expect(exportFileName('///')).toBe('session.mmrec');
 });

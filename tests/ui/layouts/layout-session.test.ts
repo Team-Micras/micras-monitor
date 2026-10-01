@@ -7,7 +7,7 @@ import { activeWorkspace, leafIds } from '@/tiling';
 import { createShellStore, type ShellStore } from '@/ui/state/shell-store';
 import {
   BACKUP_PREFIX,
-  LayoutBook,
+  SavedLayouts,
   RECORD_VERSION,
   STORAGE_PREFIX,
 } from '@/ui/layouts/saved-layouts';
@@ -48,7 +48,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   storage = new MemoryStorage();
   store = createShellStore();
-  session = new LayoutSession(store, new LayoutBook(storage));
+  session = new LayoutSession(store, new SavedLayouts(storage));
 });
 
 afterEach(() => {
@@ -76,7 +76,7 @@ describe('the layout of a robot that connects for the first time', () => {
 });
 
 function savedNames(): string[] | undefined {
-  return new LayoutBook(storage).load('name:rover', [])?.desktop?.workspaces.map((ws) => ws.name);
+  return new SavedLayouts(storage).load('name:rover', [])?.desktop?.workspaces.map((ws) => ws.name);
 }
 
 describe('saving', () => {
@@ -96,7 +96,7 @@ describe('saving', () => {
     session.follow(subject('name:rover', ['pose/x']));
     store.getState().savePreset('Mine');
     vi.advanceTimersByTime(SAVE_DELAY_MS);
-    expect(new LayoutBook(storage).load('name:rover', [])?.presets.map((p) => p.name)).toEqual([
+    expect(new SavedLayouts(storage).load('name:rover', [])?.presets.map((p) => p.name)).toEqual([
       'Mine',
     ]);
   });
@@ -105,15 +105,15 @@ describe('saving', () => {
     session.follow(subject('name:rover', ['pose/x']));
     store.getState().addWorkspace();
     session.flush();
-    expect(new LayoutBook(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(3);
+    expect(new SavedLayouts(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(3);
 
     store.getState().addWorkspace();
     session.stop();
-    expect(new LayoutBook(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(4);
+    expect(new SavedLayouts(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(4);
     vi.advanceTimersByTime(SAVE_DELAY_MS * 2);
     store.getState().addWorkspace();
     vi.advanceTimersByTime(SAVE_DELAY_MS * 2);
-    expect(new LayoutBook(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(4);
+    expect(new SavedLayouts(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(4);
   });
 });
 
@@ -125,7 +125,9 @@ describe('following robots', () => {
     session.stop();
 
     const reloaded = createShellStore();
-    new LayoutSession(reloaded, new LayoutBook(storage)).follow(subject('name:rover', ['pose/x']));
+    new LayoutSession(reloaded, new SavedLayouts(storage)).follow(
+      subject('name:rover', ['pose/x'])
+    );
     expect(workspaceNames(reloaded)).toEqual(['Overview', 'Pose', 'Workspace 3']);
     expect(reloaded.getState().desktop.active).toBe(2);
   });
@@ -188,7 +190,7 @@ describe('following robots', () => {
 
 function reopened(): { shell: ShellStore; next: LayoutSession } {
   const shell = createShellStore();
-  const next = new LayoutSession(shell, new LayoutBook(storage));
+  const next = new LayoutSession(shell, new SavedLayouts(storage));
   next.start();
   return { shell, next };
 }
@@ -216,7 +218,7 @@ describe('before the first link', () => {
     next.follow(subject('name:rover', ['pose/x']));
     expect(shell.getState().desktop).toBe(edited);
     expect(shell.getState().presets.map((preset) => preset.name)).toEqual(['Mine']);
-    expect(new LayoutBook(storage).load('name:rover', [])?.presets).toHaveLength(1);
+    expect(new SavedLayouts(storage).load('name:rover', [])?.presets).toHaveLength(1);
   });
 
   test('keeps the edits made to the layout shown last when that robot links, and saves them', () => {
@@ -232,7 +234,7 @@ describe('before the first link', () => {
     next.follow(subject('name:rover', ['pose/x']));
     expect(shell.getState().desktop).toBe(edited);
     next.flush();
-    const saved = new LayoutBook(storage).load('name:rover', []);
+    const saved = new SavedLayouts(storage).load('name:rover', []);
     expect(saved?.desktop?.workspaces).toHaveLength(3);
     expect(saved?.presets.map((preset) => preset.name)).toEqual(['Mine']);
   });
@@ -249,7 +251,7 @@ describe('before the first link', () => {
     expect(workspaceNames(shell)).toEqual(['Overview', 'Leg']);
     expect(shell.getState().presets.map((preset) => preset.name)).toEqual(['Made since']);
 
-    const rover = new LayoutBook(storage).load('name:rover', []);
+    const rover = new SavedLayouts(storage).load('name:rover', []);
     expect(rover?.desktop?.workspaces).toHaveLength(3);
     expect(rover?.presets.map((preset) => preset.name)).toEqual(['Rover only', 'Made since']);
   });
@@ -285,6 +287,6 @@ describe('a saved entry that cannot be read', () => {
     store.getState().addWorkspace();
     vi.advanceTimersByTime(SAVE_DELAY_MS);
     expect(storage.getItem(`${BACKUP_PREFIX}name:rover`)).toBe(NEWER);
-    expect(new LayoutBook(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(3);
+    expect(new SavedLayouts(storage).load('name:rover', [])?.desktop?.workspaces).toHaveLength(3);
   });
 });

@@ -8,13 +8,13 @@ import {
 import { isHostRequest, OpfsHost, type HostResponse } from '@/recording/library/opfs-host';
 import {
   MessageTransport,
-  OpfsSessionLibrary,
+  OpfsRecordingLibrary,
   type MessageTarget,
   type StorageManagerLike,
 } from '@/recording/library/opfs-library';
-import { sessionId, type SessionInfo } from '@/recording/library/recording-library';
+import { sessionId, type RecordingInfo } from '@/recording/library/recording-library';
 
-const NEW_SESSION: Omit<SessionInfo, 'updatedAtMs'> = {
+const NEW_SESSION: Omit<RecordingInfo, 'updatedAtMs'> = {
   id: sessionId(Date.UTC(2026, 8, 29, 10, 42)),
   name: 'micras · 29 Sep 10:42',
   robot: 'micras',
@@ -27,7 +27,7 @@ const NEW_SESSION: Omit<SessionInfo, 'updatedAtMs'> = {
 
 function library(root = new FakeDirectory(), storage?: StorageManagerLike) {
   const transport = new DirectTransport(root);
-  return { root, transport, library: new OpfsSessionLibrary(transport, storage, () => 1234) };
+  return { root, transport, library: new OpfsRecordingLibrary(transport, storage, () => 1234) };
 }
 
 function recordingOf(root: FakeDirectory, id: string): FakeFile {
@@ -209,7 +209,7 @@ describe('the message transport', () => {
     });
     channel.port2.start();
     channel.port1.start();
-    const sessions = new OpfsSessionLibrary(new MessageTransport(() => channel.port1));
+    const sessions = new OpfsRecordingLibrary(new MessageTransport(() => channel.port1));
 
     const { info, file } = await sessions.create(NEW_SESSION);
     await file.write(0, new Uint8Array([3, 1, 4]));
@@ -274,7 +274,7 @@ function workers(root = new FakeDirectory()) {
     started.push(worker);
     return worker;
   }, 200);
-  return { started, sessions: new OpfsSessionLibrary(transport), transport };
+  return { started, sessions: new OpfsRecordingLibrary(transport), transport };
 }
 
 describe('the message transport to a worker that dies', () => {

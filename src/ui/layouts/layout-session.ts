@@ -11,7 +11,7 @@ import type { Variable } from '@/core/variables';
 import type { ShellState, ShellStore } from '../state/shell-store';
 import { autoLayout } from './auto-layout';
 import { presetDesktop } from './presets';
-import type { LayoutBook } from './saved-layouts';
+import type { SavedLayouts } from './saved-layouts';
 
 /** How long after the last change a layout is saved. */
 export const SAVE_DELAY_MS = 500;
@@ -37,7 +37,7 @@ export interface LayoutSubject {
  */
 export class LayoutSession {
   readonly #store: ShellStore;
-  readonly #book: LayoutBook;
+  readonly #book: SavedLayouts;
   readonly #delayMs: number;
   #baseline: Pick<ShellState, 'desktop' | 'presets'>;
   #subject: LayoutSubject | null = null;
@@ -52,7 +52,7 @@ export class LayoutSession {
    * @param book Where the layouts are kept.
    * @param delayMs How long after the last change a layout is saved.
    */
-  constructor(store: ShellStore, book: LayoutBook, delayMs = SAVE_DELAY_MS) {
+  constructor(store: ShellStore, book: SavedLayouts, delayMs = SAVE_DELAY_MS) {
     this.#store = store;
     this.#book = book;
     this.#delayMs = delayMs;

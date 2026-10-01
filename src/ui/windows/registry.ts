@@ -135,7 +135,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     description: 'A serializable value, such as the maze',
     icon: MapIcon,
     component: lazyWithRetry(() =>
-      import('./blob-view/blob-view-window').then((module) => ({ default: module.TypeViewWindow }))
+      import('./blob-view/blob-view-window').then((module) => ({ default: module.BlobViewWindow }))
     ).Component,
     acceptsVariables: false,
     demand: typeViewDemand,

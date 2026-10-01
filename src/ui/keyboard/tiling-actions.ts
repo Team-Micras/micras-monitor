@@ -20,7 +20,7 @@ const DIRECTIONS: readonly Direction[] = ['left', 'right', 'up', 'down'];
  * @param workspaces How many workspaces there are.
  * @param active The index of the shown workspace.
  */
-export function tilingCommandFor<P>(
+export function tilingActionFor<P>(
   action: KeyAction,
   workspaces: number,
   active = 0

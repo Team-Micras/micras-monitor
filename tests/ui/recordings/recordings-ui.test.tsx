@@ -11,9 +11,9 @@ import type { AppUpdates } from '@/ui/pwa/app-updates';
 import '@/ui/styles.css';
 import { createShellStore, type ShellStore } from '@/ui/state/shell-store';
 import { describeRobot } from '@/recording/library/browser-recordings';
-import { MemorySessionLibrary } from '@/recording/library/memory-library';
+import { MemoryRecordingLibrary } from '@/recording/library/memory-library';
 import { MemoryLocks } from '@/recording/library/recording-library';
-import { SessionManager } from '@/recording/library/recording-manager';
+import { RecordingManager } from '@/recording/library/recording-manager';
 import { ManualScheduler } from '@/history';
 import { recordCommandOutcomes } from '@tests/support/ui/command-outcomes';
 import { demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
@@ -32,8 +32,8 @@ afterEach(() => {
 async function setup(updates?: AppUpdates) {
   const sent: number[] = [];
   const monitor = demoMonitor({ command: recordCommands(sent) });
-  const library = new MemorySessionLibrary();
-  const sessions = new SessionManager({
+  const library = new MemoryRecordingLibrary();
+  const sessions = new RecordingManager({
     store: monitor.history,
     library,
     locks: new MemoryLocks(),

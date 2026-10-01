@@ -103,7 +103,7 @@ export function safeLocalStorage(): LayoutStorage | null {
  * Reads and writes the saved layouts of every robot. Nothing coordinates two tabs of the
  * monitor: the tab that writes last wins.
  */
-export class LayoutBook {
+export class SavedLayouts {
   readonly #storage: LayoutStorage | null;
 
   /** @param storage Where to keep them; without one, nothing is kept. */

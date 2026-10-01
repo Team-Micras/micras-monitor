@@ -14,7 +14,7 @@ import {
   workspaceAction,
   workspaceIndexOf,
 } from '@/ui/keyboard/keymap';
-import { tilingCommandFor } from '@/ui/keyboard/tiling-actions';
+import { tilingActionFor } from '@/ui/keyboard/tiling-actions';
 import type { CommandSpec } from '@/core/robot';
 
 const STOP: CommandSpec = {
@@ -143,41 +143,41 @@ describe('workspace actions', () => {
   });
 });
 
-describe('tilingCommandFor', () => {
+describe('tilingActionFor', () => {
   test('maps directions, workspaces and window actions', () => {
-    expect(tilingCommandFor('focus.up', 4)).toEqual({ type: 'focusDirection', direction: 'up' });
-    expect(tilingCommandFor('swap.left', 4)).toEqual({ type: 'swapDirection', direction: 'left' });
-    expect(tilingCommandFor('workspace.3', 4)).toEqual({ type: 'switchWorkspace', index: 2 });
-    expect(tilingCommandFor('send-to-workspace.2', 4)).toEqual({
+    expect(tilingActionFor('focus.up', 4)).toEqual({ type: 'focusDirection', direction: 'up' });
+    expect(tilingActionFor('swap.left', 4)).toEqual({ type: 'swapDirection', direction: 'left' });
+    expect(tilingActionFor('workspace.3', 4)).toEqual({ type: 'switchWorkspace', index: 2 });
+    expect(tilingActionFor('send-to-workspace.2', 4)).toEqual({
       type: 'moveToWorkspace',
       index: 1,
       follow: false,
     });
-    expect(tilingCommandFor('window.maximize', 1)).toEqual({ type: 'toggleMaximize' });
-    expect(tilingCommandFor('window.float', 1)).toEqual({ type: 'toggleFloating' });
-    expect(tilingCommandFor('window.close', 1)).toEqual({ type: 'close' });
+    expect(tilingActionFor('window.maximize', 1)).toEqual({ type: 'toggleMaximize' });
+    expect(tilingActionFor('window.float', 1)).toEqual({ type: 'toggleFloating' });
+    expect(tilingActionFor('window.close', 1)).toEqual({ type: 'close' });
   });
 
   test('ignores workspaces that do not exist and actions outside the tiling', () => {
-    expect(tilingCommandFor('workspace.5', 4)).toBeNull();
-    expect(tilingCommandFor('send-to-workspace.9', 4)).toBeNull();
-    expect(tilingCommandFor('command.STOP', 4)).toBeNull();
-    expect(tilingCommandFor('launcher', 4)).toBeNull();
-    expect(tilingCommandFor('workspace.close', 4)).toBeNull();
+    expect(tilingActionFor('workspace.5', 4)).toBeNull();
+    expect(tilingActionFor('send-to-workspace.9', 4)).toBeNull();
+    expect(tilingActionFor('command.STOP', 4)).toBeNull();
+    expect(tilingActionFor('launcher', 4)).toBeNull();
+    expect(tilingActionFor('workspace.close', 4)).toBeNull();
   });
 
   test('moves the shown workspace a place, and nowhere past either end', () => {
-    expect(tilingCommandFor('workspace.move-left', 3, 1)).toEqual({
+    expect(tilingActionFor('workspace.move-left', 3, 1)).toEqual({
       type: 'moveWorkspace',
       from: 1,
       to: 0,
     });
-    expect(tilingCommandFor('workspace.move-right', 3, 1)).toEqual({
+    expect(tilingActionFor('workspace.move-right', 3, 1)).toEqual({
       type: 'moveWorkspace',
       from: 1,
       to: 2,
     });
-    expect(tilingCommandFor('workspace.move-left', 3, 0)).toBeNull();
-    expect(tilingCommandFor('workspace.move-right', 3, 2)).toBeNull();
+    expect(tilingActionFor('workspace.move-left', 3, 0)).toBeNull();
+    expect(tilingActionFor('workspace.move-right', 3, 2)).toBeNull();
   });
 });

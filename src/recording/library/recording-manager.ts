@@ -29,10 +29,10 @@ import {
 } from '..';
 import {
   sessionId,
-  type SessionInfo,
-  type SessionLibrary,
-  type SessionLocks,
-  type SessionRecovery,
+  type RecordingInfo,
+  type RecordingLibrary,
+  type RecordingLocks,
+  type RecordingRecovery,
   type StorageEstimate,
 } from './recording-library';
 
@@ -47,11 +47,11 @@ export interface RobotDescription {
 }
 
 /** How to set up the sessions. */
-export interface SessionManagerOptions {
+export interface RecordingManagerOptions {
   /** The live store, which REC records. */
   readonly store: HistoryStore;
-  readonly library: SessionLibrary;
-  readonly locks: SessionLocks;
+  readonly library: RecordingLibrary;
+  readonly locks: RecordingLocks;
   /** The robot as it is now, for the header of a new recording. */
   readonly describe: () => RobotDescription;
   /** When the stores of opened sessions tell their readers about changes. */
@@ -69,15 +69,15 @@ export interface SessionManagerOptions {
 
 /** The recording under way. */
 export interface LiveRecording {
-  readonly session: SessionInfo;
+  readonly session: RecordingInfo;
   /** When it started, in `Date.now()` milliseconds. */
   readonly startedAtMs: number;
   readonly stats: RecordingWriterStats;
 }
 
 /** A saved session opened to look at. */
-export interface OpenedSession {
-  readonly session: SessionInfo;
+export interface OpenedRecording {
+  readonly session: RecordingInfo;
   /** Its samples, read only. */
   readonly store: HistoryStore;
   /** Its variables, as the schema port gives them. */
@@ -99,30 +99,30 @@ export type MemoryNotice =
   | { readonly kind: 'stopped'; readonly capBytes: number };
 
 /** A recording cut short that the last start recovered. */
-export interface RecoveredSession {
-  readonly session: SessionInfo;
-  readonly recovery: SessionRecovery;
+export interface RecoveredRecording {
+  readonly session: RecordingInfo;
+  readonly recovery: RecordingRecovery;
 }
 
 /** Everything the sessions UI shows. */
-export interface SessionsState {
+export interface RecordingsState {
   /** Whether the saved sessions were listed and any recording cut short recovered. */
   readonly ready: boolean;
   /** Where sessions are kept. */
-  readonly backend: SessionLibrary['kind'];
+  readonly backend: RecordingLibrary['kind'];
   /** Every saved session, newest first. */
-  readonly sessions: readonly SessionInfo[];
+  readonly sessions: readonly RecordingInfo[];
   readonly recording: LiveRecording | null;
   /**
    * The sessions whose files the live store reads blocks back from, until it is reset; they
    * cannot be deleted before.
    */
   readonly liveSources: readonly string[];
-  readonly viewing: OpenedSession | null;
+  readonly viewing: OpenedRecording | null;
   /** The session being opened, while it loads. */
   readonly opening: string | null;
   /** Recordings cut short that were recovered, until dismissed. */
-  readonly recovered: readonly RecoveredSession[];
+  readonly recovered: readonly RecoveredRecording[];
   /** The last thing that went wrong, until the next action. */
   readonly error: string | null;
   /** What the memory cap last did to the live history, until dismissed or it resumes. */
@@ -131,7 +131,7 @@ export interface SessionsState {
 }
 
 /** A session file ready to download. */
-export interface ExportedSession {
+export interface ExportedRecording {
   readonly fileName: string;
   readonly blob: Blob;
 }
@@ -143,7 +143,7 @@ export const RECORDING_EXTENSION = '.mmrec';
 export const RECORDING_MEDIA_TYPE = 'application/vnd.micras-monitor.recording';
 
 interface ActiveRecording {
-  readonly session: SessionInfo;
+  readonly session: RecordingInfo;
   readonly startedAtMs: number;
   readonly recorder: RecordingWriter;
   readonly release: () => void;
@@ -163,7 +163,7 @@ interface Source {
 }
 
 interface Viewed {
-  readonly opened: OpenedSession;
+  readonly opened: OpenedRecording;
   readonly file: RecordingFile;
 }
 
@@ -172,7 +172,7 @@ function messageOf(error: unknown): string {
 }
 
 /** The name a session gets when it starts: the robot and the local date and time. */
-export function defaultSessionName(robot: string | null, atMs: number): string {
+export function defaultRecordingName(robot: string | null, atMs: number): string {
   const when = new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
     month: 'short',
@@ -199,10 +199,10 @@ function pick(event: { readonly usedBytes: number; readonly capBytes: number }) 
 
 function describedBy(
   header: RecordingHeader
-): Partial<Pick<SessionInfo, 'name' | 'robot' | 'createdAtMs'>> {
+): Partial<Pick<RecordingInfo, 'name' | 'robot' | 'createdAtMs'>> {
   const robot = typeof header.robot.name === 'string' ? header.robot.name : null;
   return {
-    name: header.name ?? defaultSessionName(robot, header.startedAtMs),
+    name: header.name ?? defaultRecordingName(robot, header.startedAtMs),
     robot,
     createdAtMs: header.startedAtMs,
   };
@@ -213,19 +213,19 @@ function spanOf(summary: RecordingSummary): number {
 }
 
 /** Records, recovers, lists and opens sessions, and tells the UI about each change. */
-export class SessionManager {
-  readonly #options: SessionManagerOptions;
+export class RecordingManager {
+  readonly #options: RecordingManagerOptions;
   readonly #now: () => number;
   readonly #clock: () => number;
   readonly #listeners = new Set<() => void>();
-  #state: SessionsState;
+  #state: RecordingsState;
   #recording: ActiveRecording | null = null;
   #sources: Source[] = [];
   #viewed: Viewed | null = null;
   #askedToPersist = false;
   #openRequest = 0;
 
-  constructor(options: SessionManagerOptions) {
+  constructor(options: RecordingManagerOptions) {
     this.#options = options;
     this.#now = options.now ?? Date.now;
     this.#clock = options.clock ?? (() => performance.now());
@@ -251,7 +251,7 @@ export class SessionManager {
   }
 
   /** The state; the same object until it changes. */
-  get state(): SessionsState {
+  get state(): RecordingsState {
     return this.#state;
   }
 
@@ -329,7 +329,7 @@ export class SessionManager {
       release = held;
       const { info, file } = await library.create({
         id,
-        name: defaultSessionName(description.name, startedAtMs),
+        name: defaultRecordingName(description.name, startedAtMs),
         robot: description.name,
         createdAtMs: startedAtMs,
         state: 'recording',
@@ -532,7 +532,7 @@ export class SessionManager {
    * A session's file to download, in the recording format, with its current name in the header.
    * The session being recorded is exported as far as it was written.
    */
-  async exportSession(id: string): Promise<ExportedSession | null> {
+  async exportRecording(id: string): Promise<ExportedRecording | null> {
     const session = this.#state.sessions.find((candidate) => candidate.id === id);
 
     if (!session) {
@@ -602,7 +602,7 @@ export class SessionManager {
     }
   }
 
-  async #recover(session: SessionInfo): Promise<RecoveredSession | null> {
+  async #recover(session: RecordingInfo): Promise<RecoveredRecording | null> {
     const { library } = this.#options;
     let file: RecordingFile | undefined;
 
@@ -623,7 +623,7 @@ export class SessionManager {
         await file.truncate(summary.validEnd);
       }
 
-      const recovery: SessionRecovery = {
+      const recovery: RecordingRecovery = {
         recoveredAtMs: this.#now(),
         truncatedBytes: size - summary.validEnd,
         damagedRecords: summary.damaged.length,
@@ -669,7 +669,7 @@ export class SessionManager {
     });
   }
 
-  #set(change: Partial<SessionsState>): void {
+  #set(change: Partial<RecordingsState>): void {
     this.#state = { ...this.#state, ...change };
     [...this.#listeners].forEach((listener) => listener());
   }

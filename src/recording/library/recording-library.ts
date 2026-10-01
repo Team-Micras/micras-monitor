@@ -8,10 +8,10 @@
 import type { RecordingFile } from '..';
 
 /** Whether a session is being recorded, or its recording ended. */
-export type SessionState = 'recording' | 'saved';
+export type RecordingState = 'recording' | 'saved';
 
 /** What recovering a recording cut short found. */
-export interface SessionRecovery {
+export interface RecordingRecovery {
   /** When it was recovered, in `Date.now()` milliseconds. */
   readonly recoveredAtMs: number;
   /** Bytes of the incomplete last record, cut from the file. */
@@ -21,7 +21,7 @@ export interface SessionRecovery {
 }
 
 /** A saved session, as the sessions list shows it. */
-export interface SessionInfo {
+export interface RecordingInfo {
   /** Unique in the library; also the session's directory. */
   readonly id: string;
   /** The name the user gave it, or the one it was made with. */
@@ -36,7 +36,7 @@ export interface SessionInfo {
    * `recording` while a tab records it; a session left `recording` that no tab holds the lock
    * of was cut short and is recovered on the next start.
    */
-  readonly state: SessionState;
+  readonly state: RecordingState;
   /** The size of its file, as of the last update. */
   readonly bytes: number;
   /** The samples of its blocks, as of the last update. */
@@ -44,13 +44,13 @@ export interface SessionInfo {
   /** The span of its samples on the session timeline, as of the last update. */
   readonly durationUs: number;
   /** What its recovery found, if it was cut short. */
-  readonly recovery?: SessionRecovery;
+  readonly recovery?: RecordingRecovery;
 }
 
 /** The part of a session's description that can change after it is made. */
-export type SessionUpdate = Partial<
+export type RecordingUpdate = Partial<
   Pick<
-    SessionInfo,
+    RecordingInfo,
     'name' | 'robot' | 'createdAtMs' | 'state' | 'bytes' | 'samples' | 'durationUs' | 'recovery'
   >
 >;
@@ -66,12 +66,12 @@ export interface StorageEstimate {
 }
 
 /** Saved sessions, each a recording file and its description. */
-export interface SessionLibrary {
+export interface RecordingLibrary {
   /** Where the files are: the Origin Private File System, or memory when it is not available. */
   readonly kind: 'opfs' | 'memory';
 
   /** Every session, newest first. */
-  list(): Promise<SessionInfo[]>;
+  list(): Promise<RecordingInfo[]>;
 
   /**
    * Make a session and its empty recording file, open for writing. The caller picks the id, with
@@ -80,8 +80,8 @@ export interface SessionLibrary {
    * @throws If there is no room, or the file system refuses.
    */
   create(
-    info: Omit<SessionInfo, 'updatedAtMs'>
-  ): Promise<{ readonly info: SessionInfo; readonly file: RecordingFile }>;
+    info: Omit<RecordingInfo, 'updatedAtMs'>
+  ): Promise<{ readonly info: RecordingInfo; readonly file: RecordingFile }>;
 
   /**
    * Open a session's recording file. Opening a file already open shares it; each opening is
@@ -90,7 +90,7 @@ export interface SessionLibrary {
   open(id: string): Promise<RecordingFile>;
 
   /** Change a session's description. */
-  update(id: string, update: SessionUpdate): Promise<SessionInfo>;
+  update(id: string, update: RecordingUpdate): Promise<RecordingInfo>;
 
   /** Delete a session and its file; its file must not be open. */
   remove(id: string): Promise<void>;
@@ -103,7 +103,7 @@ export interface SessionLibrary {
 }
 
 /** Tells a session a live tab records from one left behind by a tab that died. */
-export interface SessionLocks {
+export interface RecordingLocks {
   /**
    * Hold a session's lock until the returned function is called, or the tab dies.
    *
@@ -123,21 +123,21 @@ export interface SessionLocks {
 }
 
 /** Locks for one tab alone, for tests and for browsers without Web Locks. */
-export class MemoryLocks implements SessionLocks {
+export class MemoryLocks implements RecordingLocks {
   readonly #held = new Set<string>();
 
-  /** {@inheritDoc SessionLocks.hold} */
+  /** {@inheritDoc RecordingLocks.hold} */
   hold(id: string): Promise<() => void> {
     this.#held.add(id);
     return Promise.resolve(() => this.#held.delete(id));
   }
 
-  /** {@inheritDoc SessionLocks.held} */
+  /** {@inheritDoc RecordingLocks.held} */
   held(id: string): Promise<boolean> {
     return Promise.resolve(this.#held.has(id));
   }
 
-  /** {@inheritDoc SessionLocks.runIfFree} */
+  /** {@inheritDoc RecordingLocks.runIfFree} */
   async runIfFree<T>(id: string, task: () => Promise<T>): Promise<{ readonly value: T } | null> {
     if (this.#held.has(id)) {
       return null;
@@ -165,14 +165,14 @@ export interface LockManagerLike {
 }
 
 /** Locks shared by every tab of the origin, over the Web Locks API. */
-export class WebLocks implements SessionLocks {
+export class WebLocks implements RecordingLocks {
   readonly #locks: LockManagerLike;
 
   constructor(locks: LockManagerLike) {
     this.#locks = locks;
   }
 
-  /** {@inheritDoc SessionLocks.hold} */
+  /** {@inheritDoc RecordingLocks.hold} */
   hold(id: string): Promise<() => void> {
     return new Promise((resolve, reject) => {
       this.#locks
@@ -189,7 +189,7 @@ export class WebLocks implements SessionLocks {
   }
 
   /**
-   * {@inheritDoc SessionLocks.held} Asked by trying to take the lock without waiting, which is
+   * {@inheritDoc RecordingLocks.held} Asked by trying to take the lock without waiting, which is
    * given back at once when it was free.
    */
   held(id: string): Promise<boolean> {
@@ -198,7 +198,7 @@ export class WebLocks implements SessionLocks {
     );
   }
 
-  /** {@inheritDoc SessionLocks.runIfFree} */
+  /** {@inheritDoc RecordingLocks.runIfFree} */
   runIfFree<T>(id: string, task: () => Promise<T>): Promise<{ readonly value: T } | null> {
     return this.#locks.request(
       LOCK_PREFIX + id,
@@ -218,12 +218,12 @@ export function sessionId(nowMs: number, random: () => number = Math.random): st
 }
 
 /** Whether a value read back from storage is a session description. */
-export function isSessionInfo(value: unknown): value is SessionInfo {
+export function isRecordingInfo(value: unknown): value is RecordingInfo {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
 
-  const info: Partial<Record<keyof SessionInfo, unknown>> = value;
+  const info: Partial<Record<keyof RecordingInfo, unknown>> = value;
   return (
     typeof info.id === 'string' &&
     typeof info.name === 'string' &&
@@ -238,6 +238,6 @@ export function isSessionInfo(value: unknown): value is SessionInfo {
 }
 
 /** Newest first. */
-export function byNewest(left: SessionInfo, right: SessionInfo): number {
+export function byNewest(left: RecordingInfo, right: RecordingInfo): number {
   return right.createdAtMs - left.createdAtMs;
 }

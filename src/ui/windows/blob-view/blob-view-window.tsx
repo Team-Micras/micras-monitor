@@ -78,7 +78,7 @@ function useFollowedRoles(
  * package's revision of it changes from one it had, one READ at a time. The view gets the values
  * of the roles its type follows.
  */
-export function TypeViewWindow({ window }: WindowViewProps) {
+export function BlobViewWindow({ window }: WindowViewProps) {
   const monitor = useShownMonitor();
   const values = monitor.history;
   const pkg = useRobotPackage(monitor)?.package ?? null;

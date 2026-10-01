@@ -5,7 +5,7 @@ import { createDesktop, createWorkspace, leaf, serializeDesktop } from '@/tiling
 import type { WindowPayload } from '@/ui/windows/types';
 import {
   BACKUP_PREFIX,
-  LayoutBook,
+  SavedLayouts,
   RECORD_VERSION,
   safeLocalStorage,
   STORAGE_PREFIX,
@@ -23,7 +23,7 @@ const PRESETS = [{ name: 'Mine', root: { window: { kind: 'log' } } }];
 
 describe('the saved layouts', () => {
   test('give back what was saved for a robot', () => {
-    const book = new LayoutBook(new MemoryStorage());
+    const book = new SavedLayouts(new MemoryStorage());
     book.save('package:micras', { desktop: desktop('a', 'b'), presets: PRESETS }, ['a', 'b']);
     const loaded = book.load('package:micras', ['a', 'b']);
     expect(loaded?.desktop).toEqual(desktop('a', 'b'));
@@ -33,7 +33,7 @@ describe('the saved layouts', () => {
 
   test('keep a layout per robot under its own storage key', () => {
     const storage = new MemoryStorage();
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     book.save('package:micras', { desktop: desktop('a'), presets: [] }, []);
     book.save('name:rover', { desktop: desktop('z'), presets: [] }, []);
     expect(storage.getItem(`${STORAGE_PREFIX}package:micras`)).not.toBeNull();
@@ -44,7 +44,7 @@ describe('the saved layouts', () => {
 
   test('write a version and the desktop as the tiling engine serializes it', () => {
     const storage = new MemoryStorage();
-    new LayoutBook(storage).save('package:m', { desktop: desktop('a'), presets: [] }, []);
+    new SavedLayouts(storage).save('package:m', { desktop: desktop('a'), presets: [] }, []);
     expect(JSON.parse(storage.getItem(`${STORAGE_PREFIX}package:m`) ?? '')).toEqual({
       version: RECORD_VERSION,
       desktop: serializeDesktop(desktop('a')),
@@ -61,7 +61,7 @@ describe('the saved layouts', () => {
     };
     storage.setItem(`${STORAGE_PREFIX}package:m`, JSON.stringify(record));
     storage.setItem(`${STORAGE_PREFIX}package:old`, JSON.stringify({ ...record, version: 0 }));
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     expect(book.load('package:m', [])).toBeNull();
     expect(book.load('package:old', [])).toBeNull();
   });
@@ -71,7 +71,7 @@ describe('the saved layouts', () => {
     storage.setItem(`${STORAGE_PREFIX}package:a`, '{"version": 1, ');
     storage.setItem(`${STORAGE_PREFIX}package:b`, '[1, 2]');
     storage.setItem(`${STORAGE_PREFIX}package:c`, 'null');
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     expect(book.load('package:a', [])).toBeNull();
     expect(book.load('package:b', [])).toBeNull();
     expect(book.load('package:c', [])).toBeNull();
@@ -88,7 +88,7 @@ describe('the saved layouts', () => {
       `${STORAGE_PREFIX}package:m`,
       JSON.stringify({ version: RECORD_VERSION, desktop: broken, presets: PRESETS })
     );
-    expect(new LayoutBook(storage).load('package:m', [])).toEqual({
+    expect(new SavedLayouts(storage).load('package:m', [])).toEqual({
       desktop: null,
       presets: PRESETS,
     });
@@ -110,12 +110,12 @@ describe('the saved layouts', () => {
         `${STORAGE_PREFIX}package:m`,
         JSON.stringify({ version: RECORD_VERSION, desktop: bad, presets: [] })
       );
-      expect(new LayoutBook(storage).load('package:m', [])?.desktop).toBeNull();
+      expect(new SavedLayouts(storage).load('package:m', [])?.desktop).toBeNull();
     }
   });
 
   test('do nothing without storage, and survive storage that refuses', () => {
-    const none = new LayoutBook(null);
+    const none = new SavedLayouts(null);
     none.save('package:m', { desktop: desktop('a'), presets: [] }, []);
     expect(none.load('package:m', [])).toBeNull();
 
@@ -123,14 +123,14 @@ describe('the saved layouts', () => {
     full.setItem = () => {
       throw new Error('quota');
     };
-    const book = new LayoutBook(full);
+    const book = new SavedLayouts(full);
     expect(() => book.save('package:m', { desktop: desktop('a'), presets: [] }, [])).not.toThrow();
   });
 });
 
 function saved(key: string, names: readonly string[]) {
   const storage = new MemoryStorage();
-  new LayoutBook(storage).save(key, { desktop: desktop(...names), presets: PRESETS }, names);
+  new SavedLayouts(storage).save(key, { desktop: desktop(...names), presets: PRESETS }, names);
   return storage;
 }
 
@@ -139,12 +139,12 @@ describe('the layouts of a robot known only by its variable names', () => {
 
   test('find the layout again for the very same names', () => {
     const storage = saved('signature:aaaa', NAMES);
-    expect(new LayoutBook(storage).load('signature:aaaa', NAMES)?.presets).toEqual(PRESETS);
+    expect(new SavedLayouts(storage).load('signature:aaaa', NAMES)?.presets).toEqual(PRESETS);
   });
 
   test('find the layout of a schema that gained a variable, and copy it to the new key', () => {
     const storage = saved('signature:aaaa', NAMES);
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     const loaded = book.load('signature:bbbb', [...NAMES, 'v10']);
     expect(loaded?.desktop).toEqual(desktop(...NAMES));
     expect(storage.getItem(`${STORAGE_PREFIX}signature:aaaa`)).not.toBeNull();
@@ -152,7 +152,7 @@ describe('the layouts of a robot known only by its variable names', () => {
 
   test('keep two similar robots apart once each has edited its copy', () => {
     const storage = saved('signature:aaaa', NAMES);
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     const other = [...NAMES, 'v10'];
     book.load('signature:bbbb', other);
     book.save('signature:bbbb', { desktop: desktop('only-b'), presets: [] }, other);
@@ -163,7 +163,7 @@ describe('the layouts of a robot known only by its variable names', () => {
 
   test('do not take the layout of a robot with mostly other variables', () => {
     const storage = saved('signature:aaaa', NAMES);
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     expect(
       book.load('signature:bbbb', [...NAMES.slice(0, 5), 'w1', 'w2', 'w3', 'w4', 'w5'])
     ).toBeNull();
@@ -172,24 +172,24 @@ describe('the layouts of a robot known only by its variable names', () => {
 
   test('take the closest of several, and never one filed under a name or a package', () => {
     const storage = saved('signature:near', NAMES);
-    new LayoutBook(storage).save('signature:far', { desktop: desktop('x'), presets: [] }, [
+    new SavedLayouts(storage).save('signature:far', { desktop: desktop('x'), presets: [] }, [
       'x',
       ...NAMES.slice(0, 8),
     ]);
-    new LayoutBook(storage).save('name:rover', { desktop: desktop('n'), presets: [] }, NAMES);
-    const loaded = new LayoutBook(storage).load('signature:new', [...NAMES, 'extra']);
+    new SavedLayouts(storage).save('name:rover', { desktop: desktop('n'), presets: [] }, NAMES);
+    const loaded = new SavedLayouts(storage).load('signature:new', [...NAMES, 'extra']);
     expect(loaded?.desktop).toEqual(desktop(...NAMES));
   });
 
   test('never adopt the layout of a key that is not a signature', () => {
     const storage = saved('signature:aaaa', NAMES);
-    expect(new LayoutBook(storage).load('name:rover', NAMES)).toBeNull();
+    expect(new SavedLayouts(storage).load('name:rover', NAMES)).toBeNull();
   });
 });
 
 describe('the last robot', () => {
   test('is remembered and read back', () => {
-    const book = new LayoutBook(new MemoryStorage());
+    const book = new SavedLayouts(new MemoryStorage());
     expect(book.last()).toBeNull();
     book.remember('name:rover');
     expect(book.last()).toBe('name:rover');
@@ -197,7 +197,7 @@ describe('the last robot', () => {
 
   test('is not taken for a robot when looking for near signatures', () => {
     const storage = new MemoryStorage();
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     book.remember('signature:aaaa');
     expect(book.load('signature:bbbb', ['a'])).toBeNull();
   });
@@ -207,7 +207,7 @@ describe('an entry that cannot be read', () => {
   test('is told from a missing one, and copied aside on request', () => {
     const storage = new MemoryStorage();
     storage.setItem(`${STORAGE_PREFIX}name:a`, JSON.stringify({ version: RECORD_VERSION + 1 }));
-    const book = new LayoutBook(storage);
+    const book = new SavedLayouts(storage);
     expect(book.unreadable('name:a')).toBe(true);
     expect(book.unreadable('name:missing')).toBe(false);
     book.save('name:ok', { desktop: desktop('a'), presets: [] }, []);

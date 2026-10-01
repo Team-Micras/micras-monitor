@@ -5,7 +5,7 @@ import type { Gutter } from '@/tiling';
 
 import '@/ui/styles.css';
 import { createShellStore, ShellStoreContext } from '@/ui/state/shell-store';
-import { GutterHandle } from '@/ui/tiling/split-handle';
+import { SplitHandle } from '@/ui/tiling/split-handle';
 
 const GUTTER: Gutter = {
   path: '',
@@ -18,11 +18,11 @@ const GUTTER: Gutter = {
   between: ['first', 'second'],
 };
 
-describe('GutterHandle', () => {
+describe('SplitHandle', () => {
   test('keeps its value inside its own bounds however the ratios round', async () => {
     const screen = await render(
       <ShellStoreContext value={createShellStore()}>
-        <GutterHandle gutter={GUTTER} label="Resize First and Second" />
+        <SplitHandle gutter={GUTTER} label="Resize First and Second" />
       </ShellStoreContext>
     );
     const splitter = screen.getByRole('separator', { name: 'Resize First and Second' });

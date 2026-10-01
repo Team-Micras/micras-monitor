@@ -22,7 +22,7 @@ const KEY_STEP_LARGE = 0.1;
  * after the first windows of both sides, since either can hold several. It is a Radix separator
  * because oxlint rejects the role on a plain element.
  */
-export function GutterHandle({
+export function SplitHandle({
   gutter,
   label,
 }: {
