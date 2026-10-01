@@ -66,7 +66,7 @@ Name: "Micras Monitor". Existing logo: `public/micras_monitor_logo.svg` (dark #2
 ## Evidence on Hand
 
 - Real robot schema: 68 variables from the Micras firmware (`micras-simulation/targets/micras/MicrasFirmware`, `src/micras.cpp:64-153`), five commands (EXPLORE, SOLVE, CALIBRATE, SAVE, RESET), a 131-byte maze blob.
-- A simulated robot for development: `tools/simulated-robot.ts` (`bun run simulate`).
+- A simulated robot for development: `scripts/simulated-robot.ts` (`bun run simulate`).
 - The MuJoCo harness bridge on `ws://localhost:8080`.
 - Audit of the current code: `.omc/research/audit-2026-09-27.md`.
 - No users outside the team, no testimonials, no metrics; none to be invented.

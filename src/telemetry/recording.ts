@@ -150,26 +150,6 @@ export interface RecordingDamage {
   readonly reason: string;
 }
 
-/**
- * A whole recording.
- */
-export interface Recording {
-  /** The header. */
-  readonly header: RecordingHeader;
-
-  /** The records, in the order they were written. */
-  readonly records: readonly RecordingRecord[];
-
-  /**
-   * Where the last, incomplete record starts, when the recording was cut short, as when the tab
-   * closed in the middle of a write. The records before it are whole.
-   */
-  readonly truncatedAt?: number;
-
-  /** Records skipped in the middle of the recording because they were damaged. */
-  readonly damaged?: readonly RecordingDamage[];
-}
-
 class ByteWriter {
   private bytes: Uint8Array;
   private view: DataView;
@@ -711,25 +691,6 @@ export function recordOf(event: IngestionEvent): RecordingRecord {
 }
 
 /**
- * Lay out a whole recording.
- */
-export function serializeRecording(recording: Recording): Uint8Array {
-  const parts = [
-    encodeRecordingHeader(recording.header),
-    ...recording.records.map((record) => encodeRecordingRecord(record)),
-  ];
-  const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.byteLength, 0));
-  let offset = 0;
-
-  for (const part of parts) {
-    bytes.set(part, offset);
-    offset += part.byteLength;
-  }
-
-  return bytes;
-}
-
-/**
  * The header of a recording and where the records after it start.
  *
  * @throws If the bytes are not a recording, or its version is not 1.
@@ -875,10 +836,13 @@ export interface RecordingScan {
   /** Where the whole records end: the size to cut the file to, to drop a damaged tail. */
   readonly validEnd: number;
 
-  /** {@inheritDoc Recording.truncatedAt} */
+  /**
+   * Where the last, incomplete record starts, when the recording was cut short, as when the tab
+   * closed in the middle of a write. The records before it are whole.
+   */
   readonly truncatedAt?: number;
 
-  /** {@inheritDoc Recording.damaged} */
+  /** Records skipped in the middle of the recording because they were damaged. */
   readonly damaged?: readonly RecordingDamage[];
 }
 
@@ -893,7 +857,8 @@ const KIND_NAMES = new Map<number, RecordingRecord['kind']>([
 
 /**
  * Find the records of a recording without decoding their samples, for a reader that decodes
- * blocks only when it needs them. Damage is handled as {@link deserializeRecording} does.
+ * blocks only when it needs them. A recording cut short, or whose last record is damaged, still gives the records before; a
+ * damaged record in the middle is skipped and listed.
  *
  * @throws If the bytes are not a recording, or its version is not 1.
  */
@@ -970,20 +935,3 @@ export function decodeLocated(record: LocatedRecord): RecordingRecord {
 
 /** How many bytes a record's own header takes before its payload. */
 export const RECORD_OVERHEAD = RECORD_HEADER_SIZE;
-
-/**
- * Read a whole recording. A recording cut short, or whose last record is damaged, still gives
- * the records before, with {@link Recording.truncatedAt} saying where it ends; a damaged record
- * in the middle is skipped and listed in {@link Recording.damaged}.
- *
- * @throws If the bytes are not a recording, or its version is not 1.
- */
-export function deserializeRecording(bytes: Uint8Array): Recording {
-  const scan = scanRecording(bytes);
-  return {
-    header: scan.header,
-    records: scan.records.map((record) => decodeLocated(record)),
-    ...(scan.truncatedAt === undefined ? {} : { truncatedAt: scan.truncatedAt }),
-    ...(scan.damaged === undefined ? {} : { damaged: scan.damaged }),
-  };
-}

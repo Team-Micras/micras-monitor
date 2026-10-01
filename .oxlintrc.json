@@ -46,13 +46,13 @@
       }
     },
     {
-      "files": ["e2e/**"],
+      "files": ["tests/e2e/**"],
       "rules": {
         "no-await-in-loop": "off"
       }
     },
     {
-      "files": ["src/**", "robots/**"],
+      "files": ["src/**", "robots/**", "tests/**"],
       "env": {
         "browser": true
       }
@@ -241,26 +241,25 @@
       }
     },
     {
-      "files": [
-        "src/main.tsx",
-        "src/composition.test.tsx",
-        "src/phone.test.tsx",
-        "src/a11y.test.tsx",
-        "src/a11y-phone.test.tsx",
-        "src/phone-plan.test.ts"
-      ],
+      "files": ["src/main.tsx"],
       "rules": {
         "no-restricted-imports": "off"
       }
     },
     {
-      "files": ["tools/**", "*.config.ts"],
+      "files": ["scripts/**", "tests/**", "*.config.ts"],
       "env": {
         "node": true
       }
     },
     {
-      "files": ["tools/**"],
+      "files": ["tests/support/**", "tests/scripts/**", "tests/link/**"],
+      "rules": {
+        "no-await-in-loop": "off"
+      }
+    },
+    {
+      "files": ["scripts/**"],
       "rules": {
         "no-await-in-loop": "off",
         "no-restricted-imports": [
@@ -281,7 +280,7 @@
       }
     },
     {
-      "files": ["tools/simulated-robot/**"],
+      "files": ["scripts/simulated-robot/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -301,7 +300,7 @@
       }
     },
     {
-      "files": ["tools/live-robot.test.ts"],
+      "files": ["tests/app/live/live-robot.test.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -321,7 +320,7 @@
       }
     },
     {
-      "files": ["tools/simulated-maze.test.ts"],
+      "files": ["tests/scripts/simulated-maze.test.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -341,7 +340,7 @@
       }
     },
     {
-      "files": ["tools/bench-telemetry.ts"],
+      "files": ["scripts/bench-telemetry.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",

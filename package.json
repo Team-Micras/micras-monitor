@@ -16,10 +16,13 @@
     "test:unit": "vitest run --project unit",
     "test:browser": "vitest run --project browser",
     "test:e2e": "vitest run --project e2e",
-    "simulate": "bun tools/simulated-robot.ts",
-    "size": "bun tools/bundle-size.ts",
-    "bench": "bun tools/bench.ts",
-    "bench:telemetry": "bun tools/bench-telemetry.ts",
+    "simulate": "bun scripts/simulated-robot.ts",
+    "size": "bun scripts/bundle-size.ts",
+    "bench": "bun scripts/bench.ts",
+    "bench:telemetry": "bun scripts/bench-telemetry.ts",
+    "check:sim": "bun scripts/check-micras-sim.ts",
+    "check:recording": "bun scripts/check-recording.ts",
+    "check:live": "bun scripts/check-live-session.ts",
     "check": "bun run lint && bun run format:check && bun run typecheck && bun run test && bun run test:e2e && bun run build && bun run size"
   },
   "dependencies": {

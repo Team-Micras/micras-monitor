@@ -5,9 +5,9 @@ import { playwright } from '@vitest/browser-playwright';
 import { VitePWA } from 'vite-plugin-pwa';
 import { configDefaults, defineConfig } from 'vitest/config';
 
-import { mouse } from './tools/browser-mouse.ts';
+import { mouse } from './tests/support/browser-mouse.ts';
 
-const PERFORMANCE_TESTS = ['src/**/*-performance.test.{ts,tsx}'];
+const PERFORMANCE_TESTS = ['tests/**/*-performance.test.{ts,tsx}'];
 
 function chromium() {
   return {
@@ -101,8 +101,8 @@ export default defineConfig({
           name: 'unit',
           maxWorkers: WORKERS.unit,
           sequence: { groupOrder: 0 },
-          include: ['src/**/*.test.ts', 'robots/**/*.test.ts', 'tools/**/*.test.ts'],
-          exclude: [...configDefaults.exclude, ...PERFORMANCE_TESTS],
+          include: ['tests/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, 'tests/e2e/**', ...PERFORMANCE_TESTS],
           environment: 'node',
           testTimeout: 30_000,
         },
@@ -113,7 +113,7 @@ export default defineConfig({
           name: 'e2e',
           maxWorkers: WORKERS.e2e,
           sequence: { groupOrder: 3 },
-          include: ['e2e/**/*.test.ts'],
+          include: ['tests/e2e/**/*.test.ts'],
           environment: 'node',
           testTimeout: 90_000,
           hookTimeout: 180_000,
@@ -125,14 +125,9 @@ export default defineConfig({
           name: 'browser',
           maxWorkers: WORKERS.browser,
           sequence: { groupOrder: 1 },
-          include: [
-            'src/app/**/*.test.tsx',
-            'src/lazy/**/*.test.tsx',
-            'src/*.test.tsx',
-            'robots/**/*.test.tsx',
-          ],
+          include: ['tests/**/*.test.tsx'],
           exclude: [...configDefaults.exclude, ...PERFORMANCE_TESTS],
-          globalSetup: ['tools/browser-setup.ts'],
+          globalSetup: ['tests/support/browser-setup.ts'],
           testTimeout: 60_000,
           hookTimeout: 60_000,
           expect: { poll: { timeout: 10_000 } },
@@ -144,7 +139,7 @@ export default defineConfig({
         test: {
           name: 'performance',
           include: PERFORMANCE_TESTS,
-          globalSetup: ['tools/browser-setup.ts'],
+          globalSetup: ['tests/support/browser-setup.ts'],
           testTimeout: 60_000,
           hookTimeout: 60_000,
           expect: { poll: { timeout: 10_000 } },

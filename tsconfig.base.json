@@ -19,7 +19,9 @@
 
     "paths": {
       "@/*": ["./src/*"],
-      "@robots/*": ["./robots/*"]
+      "@robots/*": ["./robots/*"],
+      "@tests/*": ["./tests/*"],
+      "@scripts/*": ["./scripts/*"]
     }
   }
 }

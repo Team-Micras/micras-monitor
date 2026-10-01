@@ -52,7 +52,7 @@ export interface PersistedBlock {
  * Where sealed blocks go while recording, so that they can leave memory and come back when a
  * query needs them.
  *
- * The application implements it over OPFS; {@link MemoryBlockPersistence} stands in for tests.
+ * The application implements it over OPFS; an in-memory one stands in for tests.
  */
 export interface BlockPersistence {
   /**

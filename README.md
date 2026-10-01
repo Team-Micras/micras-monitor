@@ -30,7 +30,7 @@ The connection pill in the top bar takes a WebSocket URL or starts the Bluetooth
 query parameters: `?memory-cap-mb=<n>` caps the live session's memory and `?view-cap-mb=<n>` that
 of an opened session. The simulated robot listens on `MICRAS_SIM_PORT` when it is set, and flags
 shape its link and inject faults, for example `bun run simulate --throughput 3000 --latency 50
---corrupt 0.02`; the header of `tools/simulated-robot.ts` lists them all.
+--corrupt 0.02`; the header of `scripts/simulated-robot.ts` lists them all.
 
 ## Keyboard
 
@@ -146,7 +146,7 @@ changes, robot state changes, command refusals with their reason, recording star
 window that failed to load; an assertive one announces what STOP came to. Samples are never
 announced. The drawer, the launcher and the dialogs keep Tab inside them and give the focus back to
 where it came from on Escape. Motion stops under `prefers-reduced-motion`. The text tokens meet
-WCAG AA in both themes (`src/app/state/theme-contrast.test.tsx` checks every pair), and axe runs in
+WCAG AA in both themes (`tests/app/state/theme-contrast.test.tsx` checks every pair), and axe runs in
 the browser tests over the workspace, the phone view and the open dialogs.
 
 ## Architecture
@@ -154,17 +154,18 @@ the browser tests over the workspace, the phone view and the open dialogs.
 The app is a single package. Folders are layers, and `no-restricted-imports` rules in `.oxlintrc.json`
 keep their dependencies pointing one way.
 
-| Path              | Layer                                                       | May import                       |
-| ----------------- | ----------------------------------------------------------- | -------------------------------- |
-| `src/protocol/`   | COBS, frames, message layouts and value codecs              | nothing else in the monitor      |
-| `src/link/`       | Transports, the session and the stream planner              | `protocol`                       |
-| `src/telemetry/`  | Session store, history, decimation and recording format     | types of `protocol`              |
-| `src/tiling/`     | Tiling window engine, no DOM                                | nothing else in the monitor      |
-| `src/robot-kit/`  | Contracts for robot packages and the helpers that read them | `protocol`                       |
-| `src/lazy/`       | Idle and retrying dynamic imports                           | nothing else in the monitor      |
-| `src/app/`        | React: shell, windows, sessions, phone view, theme          | every layer above                |
-| `robots/<robot>/` | Robot packages: types, views, commands, presets             | `robot-kit`, React for the views |
-| `tools/`          | Simulated robot, live checks, bench and their tests         | `protocol`, `link`, `telemetry`  |
+| Path              | Layer                                                                                                                                 | May import                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `src/protocol/`   | COBS, frames, message layouts and value codecs                                                                                        | nothing else in the monitor      |
+| `src/link/`       | Transports, the session and the stream planner                                                                                        | `protocol`                       |
+| `src/telemetry/`  | Session store, history, decimation and recording format                                                                               | types of `protocol`              |
+| `src/tiling/`     | Tiling window engine, no DOM                                                                                                          | nothing else in the monitor      |
+| `src/robot-kit/`  | Contracts for robot packages and the helpers that read them                                                                           | `protocol`                       |
+| `src/lazy/`       | Idle and retrying dynamic imports                                                                                                     | nothing else in the monitor      |
+| `src/app/`        | React: shell, windows, sessions, phone view, theme                                                                                    | every layer above                |
+| `robots/<robot>/` | Robot packages: types, views, commands, presets                                                                                       | `robot-kit`, React for the views |
+| `scripts/`        | Simulated robot, live checks, bench and bundle size                                                                                   | `protocol`, `link`, `telemetry`  |
+| `tests/`          | Every test, mirroring `src/`, `robots/` and `scripts/`; `tests/support/` holds their fixtures and helpers, `tests/e2e/` the PWA check | everything                       |
 
 Only `src/app/` and the `src/main.tsx` entry point may import React. `src/main.tsx` is the composition
 root: it is the only file that imports the robot packages, and it hands them to the app, so nothing
@@ -173,7 +174,7 @@ else in `src/` depends on `robots/`. Aliases: `@/…` for `src/…` and `@robots
 values, history, commands, reads, writes, log), which `src/app/live/` implements over the link and
 `src/app/fake/` over an in-memory robot. File names are kebab-case throughout.
 
-The frame vectors in `src/protocol/fixtures/` are the bytes the firmware's own codec produces
+The frame vectors in `tests/support/protocol/` are the bytes the firmware's own codec produces
 (`tests/host/test_frame.cpp` in the firmware); a change to the wire format changes both together.
 
 ## Adding a robot package
@@ -224,26 +225,29 @@ rejects a malformed package at registration.
 
 ## Tests and checks
 
-| Command                   | What it does                                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `bun run check`           | Everything below, in order, as in CI                                                                           |
-| `bun run lint`            | oxlint, type-aware, with the React Compiler and layer rules                                                    |
-| `bun run format`          | Format with oxfmt (`format:check` only checks)                                                                 |
-| `bun run typecheck`       | `tsc -b` over the app, tools and config projects                                                               |
-| `bun run test`            | Unit (Node) and browser (Playwright Chromium) tests; `test:e2e` runs on its own                                |
-| `bun run test:unit`       | Only the unit tests                                                                                            |
-| `bun run test:browser`    | Only the browser tests                                                                                         |
-| `bun run test:e2e`        | Builds the app and checks the PWA in Chromium (about 20 s)                                                     |
-| `bun run test:watch`      | Vitest in watch mode                                                                                           |
-| `bun run build`           | Typecheck and build into `dist/`; `bun run preview` serves it                                                  |
-| `bun run size`            | Gzipped size of the bundle against its target (reports, does not fail)                                         |
-| `bun run bench:telemetry` | Memory and query times of the telemetry store at full size                                                     |
-| `bun run bench`           | Frame budget of 8 plots against the stored baseline (`tools/bench-baseline.json`); `--record` stores a new one |
+| Command                   | What it does                                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `bun run check`           | Everything below, in order, as in CI                                                                             |
+| `bun run lint`            | oxlint, type-aware, with the React Compiler and layer rules                                                      |
+| `bun run format`          | Format with oxfmt (`format:check` only checks)                                                                   |
+| `bun run typecheck`       | `tsc -b` over the app, scripts, tests and config projects                                                        |
+| `bun run test`            | Unit (Node) and browser (Playwright Chromium) tests; `test:e2e` runs on its own                                  |
+| `bun run test:unit`       | Only the unit tests                                                                                              |
+| `bun run test:browser`    | Only the browser tests                                                                                           |
+| `bun run test:e2e`        | Builds the app and checks the PWA in Chromium (about 20 s)                                                       |
+| `bun run test:watch`      | Vitest in watch mode                                                                                             |
+| `bun run build`           | Typecheck and build into `dist/`; `bun run preview` serves it                                                    |
+| `bun run size`            | Gzipped size of the bundle against its target (reports, does not fail)                                           |
+| `bun run bench:telemetry` | Memory and query times of the telemetry store at full size                                                       |
+| `bun run check:live`      | Streams a live robot's variables through a session and prints what the link did (manual)                         |
+| `bun run check:sim`       | Follows an exploration of Micras in the simulation through the app (manual)                                      |
+| `bun run check:recording` | Records a long session, kills the tab and checks the recovery (manual)                                           |
+| `bun run bench`           | Frame budget of 8 plots against the stored baseline (`scripts/bench-baseline.json`); `--record` stores a new one |
 
 `bun run bench` is not part of `check`: it fails when the p95 frame of eight plots passes 8 ms or
 when a time passes 1.5 times the baseline plus 0.5 ms. On CI, `.github/workflows/bench.yml` runs on
 pull requests and pushes to `main` and compares only relative regression: the same runner measures
-the base and the head twice each (`--no-budgets --output`), and `tools/bench-diff.ts` compares the best
+the base and the head twice each (`--no-budgets --output`), and `scripts/bench-diff.ts` compares the best
 of each side. Tests run one project after another with capped parallelism (`vite.config.ts`), so
 `check` takes about a minute and 2.5 GB; run only one suite at a time.
 
@@ -251,11 +255,11 @@ of each side. Tests run one project after another with capped parallelism (`vite
 
 These need a running simulation and are not part of CI.
 
-`bun tools/check-live-session.ts --url ws://localhost:8080` connects a session to a live robot, such
+`bun run check:live --url ws://localhost:8080` connects a session to a live robot, such
 as the simulation's monitor bridge (`just micras serve`), streams a few variables for five seconds
 and prints what the link did.
 
-`bun tools/check-micras-sim.ts --robot ws://localhost:8080 [--screens <dir>]` follows a whole
+`bun run check:sim --robot ws://localhost:8080 [--screens <dir>]` follows a whole
 exploration of Micras in the simulation through the app itself: it serves the app with Vite, opens it
 headless at `?connect=…` and reads what the windows show. It sends EXPLORE from IDLE, checks that SAVE
 during the run is refused as not idle, that every change of the maze follows a new `maze/revision`,
@@ -266,7 +270,7 @@ under 0.01 m/s, in the cell it was stopped in or the next one, with the map unch
 that stays up after the search (such as `explore_link` without its `[[events]]` and its `[stop]`) and
 `--monitor`, and a dev tree nobody edits meanwhile.
 
-`bun tools/check-recording.ts --robot ws://localhost:8080 [--minutes 30] [--kill-at 15]
+`bun run check:recording --robot ws://localhost:8080 [--minutes 30] [--kill-at 15]
 [--memory-cap-mb <n>] [--view-cap-mb <n>] [--screens <dir>]` records a long session through the app,
 kills the browser with SIGKILL at `--kill-at` minutes, reopens it on the same profile and checks that
 the recording is recovered with at most the last 5 s lost, then opens it, shows the whole history and

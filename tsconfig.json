@@ -4,14 +4,16 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"],
-      "@robots/*": ["./robots/*"]
+      "@robots/*": ["./robots/*"],
+      "@tests/*": ["./tests/*"],
+      "@scripts/*": ["./scripts/*"]
     }
   },
   "references": [
     { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.tools.json" },
+    { "path": "./tsconfig.scripts.json" },
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.sw.json" },
-    { "path": "./tsconfig.e2e.json" }
+    { "path": "./tsconfig.tests.json" }
   ]
 }

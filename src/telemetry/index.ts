@@ -16,7 +16,6 @@ export {
   type Decimation,
   type DecimationStats,
 } from './decimation';
-export { MemoryBlockPersistence } from './memory-persistence';
 export type {
   BlockPersistence,
   BlockRef,
@@ -36,7 +35,6 @@ export { SavedRecording, type RecordingSummary } from './recording-reader';
 export {
   decodeBlock,
   decodeRecordingHeader,
-  deserializeRecording,
   encodeBlock,
   encodeRecordingHeader,
   encodeRecordingRecord,
@@ -45,8 +43,6 @@ export {
   RECORDING_FORMAT_VERSION,
   recordOf,
   scanRecording,
-  serializeRecording,
-  type Recording,
   type RecordingDamage,
   type RecordingHeader,
   type RecordingRecord,
@@ -54,7 +50,7 @@ export {
   type RecordingVariable,
   type LocatedRecord,
 } from './recording';
-export { ManualScheduler, type Scheduler } from './scheduler';
+export type { Scheduler } from './scheduler';
 export {
   toBandSeries,
   toLineSeries,

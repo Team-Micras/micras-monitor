@@ -45,7 +45,7 @@ jobs:
             exit 0
           fi
           git worktree add --detach "$BASE_DIR" "$BASE_SHA"
-          if grep -q -- "'no-budgets'" "$BASE_DIR/tools/bench.ts" 2>/dev/null; then
+          if grep -q -- "'no-budgets'" "$BASE_DIR/scripts/bench.ts" 2>/dev/null; then
             echo "benchable=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::The base commit has no bench to compare with."
@@ -77,7 +77,7 @@ jobs:
       - name: Compare the head with the base
         if: steps.runs.outputs.base_ok == 'true'
         run: >-
-          bun tools/bench-diff.ts
+          bun scripts/bench-diff.ts
           --base "$RESULTS/base-1.json" --base "$RESULTS/base-2.json"
           --head "$RESULTS/head-1.json" --head "$RESULTS/head-2.json"
 
