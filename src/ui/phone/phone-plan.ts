@@ -1,8 +1,8 @@
 /**
- * When the app is a phone, and what the phone shows then, chosen from the connected robot's package and schema by role and by
- * kind, so that any robot gets a sensible view: the map when the package names one, two values
- * and a small plot from the plots its presets open, its commands, and the settings it labels and
- * lets the user write.
+ * When the app is a phone, and what the phone shows then, chosen from the connected robot's
+ * package and schema by role and by kind, so that any robot gets a sensible view: the map when the
+ * package names one, two values and a small plot from the plots its presets open, its commands,
+ * and the settings it labels and lets the user write.
  *
  * @module
  */

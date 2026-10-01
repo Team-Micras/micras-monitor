@@ -1,7 +1,7 @@
 /**
  * The layouts saved for each robot, in the browser's storage: one versioned entry per robot
- * key, holding its desktop and the presets the user made for it. A robot's key is the package
- * that draws it, else the name it announced, else the names of its variables; never the schema
+ * key, holding its desktop and the presets the user made for it. A robot's key is the name it
+ * announced, else the package that draws it, else the names of its variables; never the schema
  * hash, which changes whenever the firmware gains a variable.
  *
  * @module
