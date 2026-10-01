@@ -66,13 +66,13 @@ function epochOf(id: number, variableIds: number[]): Epoch {
   return { id, group: 0, variableIds, periodTicks: 80, sampleSize: 4, timeline: 1 };
 }
 
-let session: FakeLink;
+let link: FakeLink;
 let planner: StreamPlanner;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  session = new FakeLink();
-  planner = new StreamPlanner(session, { debounceMs: 10, retryMs: 100, now: () => Date.now() });
+  link = new FakeLink();
+  planner = new StreamPlanner(link, { debounceMs: 10, retryMs: 100, now: () => Date.now() });
 });
 
 afterEach(() => {
@@ -88,28 +88,28 @@ describe('StreamPlanner', () => {
     planner.request([{ variable: 'a', rateHz: 100 }]);
     await vi.advanceTimersByTimeAsync(20);
 
-    expect(session.calls).toEqual([[{ variableIds: [0], periodTicks: 80 }]]);
+    expect(link.calls).toEqual([[{ variableIds: [0], periodTicks: 80 }]]);
   });
 
-  test('ignores a plan the session dropped because it restarted or lost the transport', async () => {
+  test('ignores a plan the link dropped because it restarted or lost the transport', async () => {
     const errors: Error[] = [];
     planner.on('error', (error) => errors.push(error));
-    session.answer = () => Promise.reject(new LinkError('restarted'));
+    link.answer = () => Promise.reject(new LinkError('restarted'));
     planner.request([{ variable: 'a', rateHz: 10 }]);
     await vi.advanceTimersByTimeAsync(20);
-    session.answer = () => Promise.reject(new LinkError('disconnected'));
+    link.answer = () => Promise.reject(new LinkError('disconnected'));
     planner.request([{ variable: 'b', rateHz: 10 }]);
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(errors).toEqual([]);
-    expect(session.calls).toHaveLength(2);
+    expect(link.calls).toHaveLength(2);
   });
 
   test('plans again after a refusal, leaving out what the robot would not stream', async () => {
     const errors: Error[] = [];
     planner.on('error', (error) => errors.push(error));
-    session.answer = () => {
-      session.openEpochs = [epochOf(1, [0])];
+    link.answer = () => {
+      link.openEpochs = [epochOf(1, [0])];
       return Promise.reject(new RobotError(ErrorCode.NOT_STREAMABLE, 1));
     };
     planner.request([
@@ -119,56 +119,56 @@ describe('StreamPlanner', () => {
     await vi.advanceTimersByTimeAsync(20);
 
     expect(errors).toHaveLength(1);
-    session.answer = () => Promise.resolve({ status: 'applied', epochs: session.openEpochs });
+    link.answer = () => Promise.resolve({ status: 'applied', epochs: link.openEpochs });
     await vi.advanceTimersByTimeAsync(100);
 
-    expect(session.calls.at(-1)).toEqual([{ variableIds: [0], periodTicks: 80 }]);
+    expect(link.calls.at(-1)).toEqual([{ variableIds: [0], periodTicks: 80 }]);
     expect(planner.plan?.rates.find((rate) => rate.variable === 'b')?.grantedHz).toBe(0);
   });
 
   test('tries again with a growing wait when the robot does not answer', async () => {
-    session.answer = () => Promise.reject(new Error('No answer'));
+    link.answer = () => Promise.reject(new Error('No answer'));
     planner.request([{ variable: 'a', rateHz: 10 }]);
     await vi.advanceTimersByTimeAsync(20);
     await vi.advanceTimersByTimeAsync(100);
     await vi.advanceTimersByTimeAsync(150);
 
-    expect(session.calls).toHaveLength(2);
+    expect(link.calls).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(60);
-    expect(session.calls).toHaveLength(3);
+    expect(link.calls).toHaveLength(3);
     expect(planner.plan?.rates[0].grantedHz).toBeGreaterThan(0);
   });
 
   test('plans again at once when the link overflows while a retry waits', async () => {
     planner.close();
-    planner = new StreamPlanner(session, {
+    planner = new StreamPlanner(link, {
       debounceMs: 10,
       retryMs: 10_000,
       now: () => Date.now(),
     });
-    session.answer = () => Promise.reject(new Error('No answer'));
+    link.answer = () => Promise.reject(new Error('No answer'));
     planner.request([{ variable: 'a', rateHz: 1000 }]);
     await vi.advanceTimersByTimeAsync(20);
-    session.events.emit('stats', STATS);
+    link.events.emit('stats', STATS);
     await vi.advanceTimersByTimeAsync(1000);
-    session.events.emit('stats', {
+    link.events.emit('stats', {
       ...STATS,
       bytesIn: 3000,
       creditReturned: 3000,
       droppedSamples: 40,
     });
 
-    expect(session.calls).toHaveLength(2);
+    expect(link.calls).toHaveLength(2);
   });
 
   test('while a retry waits, plans again for an overspent budget only once it lasted', async () => {
     planner.close();
-    planner = new StreamPlanner(session, {
+    planner = new StreamPlanner(link, {
       debounceMs: 10,
       retryMs: 60_000,
       now: () => Date.now(),
     });
-    session.answer = () => Promise.reject(new Error('No answer'));
+    link.answer = () => Promise.reject(new Error('No answer'));
     const tick = unmeteredTicks();
     planner.request([{ variable: 'a', rateHz: 8000 }]);
     await vi.advanceTimersByTimeAsync(20);
@@ -178,13 +178,13 @@ describe('StreamPlanner', () => {
     tick(6000);
     tick(0);
     tick(0);
-    expect(session.calls).toHaveLength(1);
+    expect(link.calls).toHaveLength(1);
 
     for (let second = 0; second < 5; second++) {
       tick(6000);
     }
 
-    expect(session.calls).toHaveLength(2);
+    expect(link.calls).toHaveLength(2);
   });
 
   test('falls back to gaps once the epoch carrying the drop counter ends', async () => {
@@ -193,12 +193,12 @@ describe('StreamPlanner', () => {
       { variable: 'c', rateHz: 1, pinned: true, countsDrops: true },
     ]);
     await vi.advanceTimersByTimeAsync(20);
-    session.events.emit('epoch', epochOf(8, [2]));
-    session.events.emit('sample', { epoch: 8, seq: 0, timeUs: 0, values: [0], missingBefore: 0 });
-    session.events.emit('stats', STATS);
-    session.events.emit('epochEnd', { epoch: epochOf(8, [2]), reason: 'redefined' });
+    link.events.emit('epoch', epochOf(8, [2]));
+    link.events.emit('sample', { epoch: 8, seq: 0, timeUs: 0, values: [0], missingBefore: 0 });
+    link.events.emit('stats', STATS);
+    link.events.emit('epochEnd', { epoch: epochOf(8, [2]), reason: 'redefined' });
     await vi.advanceTimersByTimeAsync(1000);
-    session.events.emit('stats', {
+    link.events.emit('stats', {
       ...STATS,
       bytesIn: 3000,
       creditReturned: 3000,
@@ -214,12 +214,12 @@ describe('StreamPlanner', () => {
       { variable: 'c', rateHz: 1, pinned: true, countsDrops: true },
     ]);
     await vi.advanceTimersByTimeAsync(20);
-    session.events.emit('epoch', epochOf(7, [2]));
-    session.events.emit('sample', { epoch: 7, seq: 0, timeUs: 0, values: [0], missingBefore: 0 });
-    session.events.emit('stats', STATS);
+    link.events.emit('epoch', epochOf(7, [2]));
+    link.events.emit('sample', { epoch: 7, seq: 0, timeUs: 0, values: [0], missingBefore: 0 });
+    link.events.emit('stats', STATS);
     await vi.advanceTimersByTimeAsync(1000);
-    session.events.emit('sample', { epoch: 7, seq: 1, timeUs: 1, values: [5], missingBefore: 0 });
-    session.events.emit('stats', { ...STATS, bytesIn: 3000, creditReturned: 3000 });
+    link.events.emit('sample', { epoch: 7, seq: 1, timeUs: 1, values: [5], missingBefore: 0 });
+    link.events.emit('stats', { ...STATS, bytesIn: 3000, creditReturned: 3000 });
 
     expect(planner.budget.saturated).toBe(true);
   });
@@ -237,7 +237,7 @@ describe('StreamPlanner', () => {
       tick(0);
     }
 
-    expect(session.calls).toHaveLength(1);
+    expect(link.calls).toHaveLength(1);
   });
 
   test('plans again once the budget stayed below the plan for the settle time, and only once', async () => {
@@ -250,13 +250,13 @@ describe('StreamPlanner', () => {
     tick(6000);
     tick(6000);
     tick(6000);
-    expect(session.calls).toHaveLength(1);
+    expect(link.calls).toHaveLength(1);
 
     for (let second = 0; second < 10; second++) {
       tick(6000);
     }
 
-    expect(session.calls).toHaveLength(2);
+    expect(link.calls).toHaveLength(2);
     expect(planner.plan?.budgetBytesPerSecond).toBeLessThan(5000);
   });
 });
@@ -272,7 +272,7 @@ function unmeteredTicks(): (unmeteredBytes: number) => void {
   return (unmeteredBytes) => {
     bytesIn += 10_000;
     creditReturned += 10_000 - unmeteredBytes;
-    session.events.emit('stats', { ...STATS, bytesIn, creditReturned });
+    link.events.emit('stats', { ...STATS, bytesIn, creditReturned });
     vi.advanceTimersByTime(1000);
   };
 }

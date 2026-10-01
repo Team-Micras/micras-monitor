@@ -1,5 +1,5 @@
 /**
- * A session connected to a simulated robot of its own through an in-memory socket, with
+ * A link connected to a simulated robot of its own through an in-memory socket, with
  * everything it emits recorded, for the tests that drive the two against each other on virtual
  * time.
  *
@@ -38,7 +38,7 @@ export const TEST_TIMING: Partial<LinkTiming> = {
   statsIntervalMs: 200,
 };
 
-/** Everything a session emitted. */
+/** Everything a link emitted. */
 export class Recording {
   readonly states: LinkState[] = [];
   readonly schemas: SchemaReady[] = [];
@@ -50,18 +50,18 @@ export class Recording {
   readonly protocolErrors: ProtocolErrorEvent[] = [];
   readonly timelines: TimelineEvent[] = [];
 
-  constructor(session: RobotLink) {
-    session.on('state', (state) => this.states.push(state));
-    session.on('schema', (schema) => this.schemas.push(schema));
-    session.on('epoch', (epoch) => this.epochs.push(epoch));
-    session.on('sample', (sample) => this.samples.push(sample));
-    session.on('dropped', ({ epoch, count }) =>
+  constructor(link: RobotLink) {
+    link.on('state', (state) => this.states.push(state));
+    link.on('schema', (schema) => this.schemas.push(schema));
+    link.on('epoch', (epoch) => this.epochs.push(epoch));
+    link.on('sample', (sample) => this.samples.push(sample));
+    link.on('dropped', ({ epoch, count }) =>
       this.dropped.set(epoch, (this.dropped.get(epoch) ?? 0) + count)
     );
-    session.on('write', (write) => this.writes.push(write));
-    session.on('log', (log) => this.logs.push(log));
-    session.on('protocolError', (error) => this.protocolErrors.push(error));
-    session.on('timeline', (timeline) => this.timelines.push(timeline));
+    link.on('write', (write) => this.writes.push(write));
+    link.on('log', (log) => this.logs.push(log));
+    link.on('protocolError', (error) => this.protocolErrors.push(error));
+    link.on('timeline', (timeline) => this.timelines.push(timeline));
   }
 
   /** Why each handshake started, in order. */
@@ -82,25 +82,25 @@ export class Recording {
   }
 }
 
-/** A session talking to a simulated robot of its own. */
+/** A link talking to a simulated robot of its own. */
 export interface Harness {
   readonly robot: InMemoryRobot;
-  readonly session: RobotLink;
+  readonly link: RobotLink;
   readonly recording: Recording;
 
   /** The id of a variable of the robot, by name. */
   readonly id: (name: string) => number;
 
-  /** Close the session and stop the robot. */
+  /** Close the link and stop the robot. */
   readonly close: () => Promise<void>;
 }
 
 /**
- * Start a robot, connect a session to it and wait until the session is ready. The test runs on
+ * Start a robot, connect a link to it and wait until the link is ready. The test runs on
  * virtual time, which `useVirtualTime` moves.
  *
  * @param faults What to do to the link.
- * @param options How to build the session; the test timing by default.
+ * @param options How to build the link; the test timing by default.
  */
 export async function connect(
   faults: Partial<Omit<SimulatedRobotOptions, 'port'>> = {},
@@ -108,29 +108,29 @@ export async function connect(
 ): Promise<Harness> {
   const robot = startInMemoryRobot(faults);
   const transport = new WebSocketTransport('ws://in-memory', { createSocket: robot.createSocket });
-  const session = new RobotLink(transport, {
+  const link = new RobotLink(transport, {
     timing: TEST_TIMING,
     ...options,
   });
-  const recording = new Recording(session);
+  const recording = new Recording(link);
 
-  session.open();
-  await waitFor(() => session.state.kind === 'streaming', 5000, 'the session to stream');
+  link.open();
+  await waitFor(() => link.state.kind === 'streaming', 5000, 'the link to stream');
 
   return {
     robot,
-    session,
+    link,
     recording,
-    id: (name) => variableId(session, name),
+    id: (name) => variableId(link, name),
     close: async () => {
-      session.close();
+      link.close();
       robot.close();
     },
   };
 }
 
-function variableId(session: RobotLink, name: string): number {
-  const entry = session.schema?.find((candidate) => candidate.name === name);
+function variableId(link: RobotLink, name: string): number {
+  const entry = link.schema?.find((candidate) => candidate.name === name);
 
   if (!entry) {
     throw new Error(`No variable named ${name}`);
@@ -165,14 +165,14 @@ export async function waitFor(
 /**
  * Apply a layout and return its epochs, failing if a later layout superseded it.
  *
- * @param session The session to apply it on.
+ * @param link The link to apply it on.
  * @param requests One request per group.
  */
 export async function applyGroups(
-  session: RobotLink,
+  link: RobotLink,
   requests: readonly GroupRequest[]
 ): Promise<readonly Epoch[]> {
-  const result = await session.setGroups(requests);
+  const result = await link.setGroups(requests);
 
   if (result.status !== 'applied') {
     throw new Error('The layout was superseded');

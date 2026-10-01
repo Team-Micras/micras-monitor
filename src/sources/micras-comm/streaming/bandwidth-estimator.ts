@@ -79,33 +79,33 @@ interface Sample {
  * off what samples may use.
  */
 export class BandwidthEstimator {
-  private readonly options: BandwidthEstimatorOptions;
-  private last: Sample | undefined;
-  private bytesIn = 0;
-  private arrivedMax = 0;
-  private unmetered = 0;
-  private ceiling = Number.POSITIVE_INFINITY;
-  private ceilingAt = Number.NEGATIVE_INFINITY;
-  private safe: number | undefined;
-  private probeFrom: number | undefined;
-  private probing = true;
-  private failedProbes = 0;
-  private wasSaturated = false;
-  private episodeCapped = false;
-  private revision = 0;
-  private current: BudgetEstimate;
+  readonly #options: BandwidthEstimatorOptions;
+  #last: Sample | undefined;
+  #bytesIn = 0;
+  #arrivedMax = 0;
+  #unmetered = 0;
+  #ceiling = Number.POSITIVE_INFINITY;
+  #ceilingAt = Number.NEGATIVE_INFINITY;
+  #safe: number | undefined;
+  #probeFrom: number | undefined;
+  #probing = true;
+  #failedProbes = 0;
+  #wasSaturated = false;
+  #episodeCapped = false;
+  #revision = 0;
+  #current: BudgetEstimate;
 
   /**
    * @param options What to change from {@link DEFAULT_BANDWIDTH_ESTIMATOR}.
    */
   constructor(options: Partial<BandwidthEstimatorOptions> = {}) {
-    this.options = { ...DEFAULT_BANDWIDTH_ESTIMATOR, ...options };
-    this.current = this.estimate(null, 0, false);
+    this.#options = { ...DEFAULT_BANDWIDTH_ESTIMATOR, ...options };
+    this.#current = this.#estimate(null, 0, false);
   }
 
   /** The estimate of the last update. */
   get value(): BudgetEstimate {
-    return this.current;
+    return this.#current;
   }
 
   /**
@@ -125,35 +125,35 @@ export class BandwidthEstimator {
     wantsMore: boolean,
     robotDropped?: number
   ): BudgetEstimate {
-    const previous = this.last;
-    this.last = { at: now, stats, robotDropped };
+    const previous = this.#last;
+    this.#last = { at: now, stats, robotDropped };
 
     if (!previous || now <= previous.at || stats.bytesIn < previous.stats.bytesIn) {
-      this.current = this.estimate(stats.rttMs, creditWindow, false);
-      return this.current;
+      this.#current = this.#estimate(stats.rttMs, creditWindow, false);
+      return this.#current;
     }
 
     const seconds = (now - previous.at) / 1000;
     const arrived = (stats.bytesIn - previous.stats.bytesIn) / seconds;
     const metered = (stats.creditReturned - previous.stats.creditReturned) / seconds;
-    const saturated = this.saturatedSince(previous, stats, robotDropped);
+    const saturated = this.#saturatedSince(previous, stats, robotDropped);
 
-    this.bytesIn = this.smooth(this.bytesIn, arrived);
-    this.unmetered = this.smooth(this.unmetered, Math.max(0, arrived - metered));
-    this.arrivedMax = Math.max(this.arrivedMax, arrived);
+    this.#bytesIn = this.#smooth(this.#bytesIn, arrived);
+    this.#unmetered = this.#smooth(this.#unmetered, Math.max(0, arrived - metered));
+    this.#arrivedMax = Math.max(this.#arrivedMax, arrived);
 
     if (saturated) {
-      this.onSaturated(arrived, now);
-    } else if (now - this.ceilingAt >= this.options.holdMs && Number.isFinite(this.ceiling)) {
-      this.onHeld(wantsMore, now);
+      this.#onSaturated(arrived, now);
+    } else if (now - this.#ceilingAt >= this.#options.holdMs && Number.isFinite(this.#ceiling)) {
+      this.#onHeld(wantsMore, now);
     }
 
-    this.wasSaturated = saturated;
-    this.current = this.estimate(stats.rttMs, creditWindow, saturated);
-    return this.current;
+    this.#wasSaturated = saturated;
+    this.#current = this.#estimate(stats.rttMs, creditWindow, saturated);
+    return this.#current;
   }
 
-  private saturatedSince(
+  #saturatedSince(
     previous: Sample,
     stats: LinkCounters,
     robotDropped: number | undefined
@@ -167,80 +167,80 @@ export class BandwidthEstimator {
     return dropped > discarded;
   }
 
-  private onSaturated(arrived: number, now: number): void {
-    const { floorBytesPerSecond } = this.options;
+  #onSaturated(arrived: number, now: number): void {
+    const { floorBytesPerSecond } = this.#options;
 
-    if (this.probeFrom !== undefined) {
-      this.setCeiling(this.probeFrom, now);
-      this.probeFrom = undefined;
-      this.probing = false;
-      this.failedProbes++;
-      this.episodeCapped = true;
+    if (this.#probeFrom !== undefined) {
+      this.#setCeiling(this.#probeFrom, now);
+      this.#probeFrom = undefined;
+      this.#probing = false;
+      this.#failedProbes++;
+      this.#episodeCapped = true;
       return;
     }
 
-    if (this.wasSaturated && this.episodeCapped) {
-      this.ceilingAt = now;
+    if (this.#wasSaturated && this.#episodeCapped) {
+      this.#ceilingAt = now;
       return;
     }
 
-    this.episodeCapped = false;
-    const episodeMax = this.wasSaturated ? Math.max(this.ceiling, arrived) : arrived;
+    this.#episodeCapped = false;
+    const episodeMax = this.#wasSaturated ? Math.max(this.#ceiling, arrived) : arrived;
     const ceiling = Math.max(floorBytesPerSecond, episodeMax);
 
-    if (this.safe !== undefined && ceiling < this.safe) {
-      this.safe = ceiling;
-      this.probing = true;
+    if (this.#safe !== undefined && ceiling < this.#safe) {
+      this.#safe = ceiling;
+      this.#probing = true;
     }
 
-    this.setCeiling(ceiling, now);
+    this.#setCeiling(ceiling, now);
   }
 
-  private onHeld(wantsMore: boolean, now: number): void {
-    const { holdMs, quietHolds } = this.options;
-    const quietMs = holdMs * quietHolds * 2 ** Math.max(0, this.failedProbes - 1);
+  #onHeld(wantsMore: boolean, now: number): void {
+    const { holdMs, quietHolds } = this.#options;
+    const quietMs = holdMs * quietHolds * 2 ** Math.max(0, this.#failedProbes - 1);
 
-    if (!this.probing && now - this.ceilingAt >= quietMs) {
-      this.probing = true;
+    if (!this.#probing && now - this.#ceilingAt >= quietMs) {
+      this.#probing = true;
     }
 
-    if (this.probeFrom !== undefined || this.safe === undefined) {
-      this.safe = this.ceiling;
-      this.probeFrom = undefined;
+    if (this.#probeFrom !== undefined || this.#safe === undefined) {
+      this.#safe = this.#ceiling;
+      this.#probeFrom = undefined;
     }
 
-    if (wantsMore && this.probing) {
-      this.probeFrom = this.ceiling;
-      this.setCeiling(Math.max(this.ceiling, this.arrivedMax) * this.options.probeGrowth, now);
-    }
-  }
-
-  private setCeiling(ceiling: number, now: number): void {
-    this.ceilingAt = now;
-    this.arrivedMax = 0;
-
-    if (ceiling !== this.ceiling) {
-      this.ceiling = ceiling;
-      this.revision++;
+    if (wantsMore && this.#probing) {
+      this.#probeFrom = this.#ceiling;
+      this.#setCeiling(Math.max(this.#ceiling, this.#arrivedMax) * this.#options.probeGrowth, now);
     }
   }
 
-  private smooth(previous: number, next: number): number {
-    return previous + this.options.smoothing * (next - previous);
+  #setCeiling(ceiling: number, now: number): void {
+    this.#ceilingAt = now;
+    this.#arrivedMax = 0;
+
+    if (ceiling !== this.#ceiling) {
+      this.#ceiling = ceiling;
+      this.#revision++;
+    }
   }
 
-  private estimate(rttMs: number | null, creditWindow: number, saturated: boolean): BudgetEstimate {
-    const { capBytesPerSecond, headroom, assumedRttMs, floorBytesPerSecond } = this.options;
+  #smooth(previous: number, next: number): number {
+    return previous + this.#options.smoothing * (next - previous);
+  }
+
+  #estimate(rttMs: number | null, creditWindow: number, saturated: boolean): BudgetEstimate {
+    const { capBytesPerSecond, headroom, assumedRttMs, floorBytesPerSecond } = this.#options;
     const rtt = rttMs !== null && rttMs > 0 ? rttMs : assumedRttMs;
     const credit = creditWindow > 0 ? (creditWindow * 1000) / rtt : capBytesPerSecond;
-    const capacity = Math.min(capBytesPerSecond, credit, this.ceiling);
+    const capacity = Math.min(capBytesPerSecond, credit, this.#ceiling);
 
     return {
-      bytesPerSecond: Math.max(floorBytesPerSecond, capacity * headroom - this.unmetered),
+      bytesPerSecond: Math.max(floorBytesPerSecond, capacity * headroom - this.#unmetered),
       capacityBytesPerSecond: capacity,
-      bytesInPerSecond: this.bytesIn,
+      bytesInPerSecond: this.#bytesIn,
       saturated,
-      revision: this.revision,
+      revision: this.#revision,
     };
   }
 }

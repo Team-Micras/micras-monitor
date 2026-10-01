@@ -108,64 +108,63 @@ function sameGroups(a: readonly GroupRequest[], b: readonly GroupRequest[]): boo
  * make it into a streaming group, which it reports as not granted until the schema changes.
  */
 export class StreamPlanner {
-  private readonly events = new Emitter<StreamPlannerEvents>();
-  private readonly estimator: BandwidthEstimator;
-  private readonly debounceMs: number;
-  private readonly growthToReplan: number;
-  private readonly overspendToReplan: number;
-  private readonly retryMs: number;
-  private readonly settleMs: number;
-  private readonly now: () => number;
-  private readonly detach: Unsubscribe[];
-  private readonly dropCounters = new Map<number, number>();
-  private readonly refused = new Set<string>();
-  private requests: readonly RateRequest[] = [];
-  private current: StreamPlan | undefined;
-  private applied: readonly GroupRequest[] | undefined;
-  private timer: ReturnType<typeof setTimeout> | undefined;
-  private retryTimer: ReturnType<typeof setTimeout> | undefined;
-  private failures = 0;
-  private robotDropped: number | undefined;
-  private driftingSince: number | undefined;
-  private closed = false;
+  readonly #link: PlannerLink;
+  readonly #events = new Emitter<StreamPlannerEvents>();
+  readonly #estimator: BandwidthEstimator;
+  readonly #debounceMs: number;
+  readonly #growthToReplan: number;
+  readonly #overspendToReplan: number;
+  readonly #retryMs: number;
+  readonly #settleMs: number;
+  readonly #now: () => number;
+  readonly #detach: Unsubscribe[];
+  readonly #dropCounters = new Map<number, number>();
+  readonly #refused = new Set<string>();
+  #requests: readonly RateRequest[] = [];
+  #current: StreamPlan | undefined;
+  #applied: readonly GroupRequest[] | undefined;
+  #timer: ReturnType<typeof setTimeout> | undefined;
+  #retryTimer: ReturnType<typeof setTimeout> | undefined;
+  #failures = 0;
+  #robotDropped: number | undefined;
+  #driftingSince: number | undefined;
+  #closed = false;
 
   /**
-   * @param session The link whose groups the planner owns.
+   * @param link The link whose groups the planner owns.
    * @param options How to plan.
    */
-  constructor(
-    private readonly session: PlannerLink,
-    options: StreamPlannerOptions = {}
-  ) {
-    this.estimator = new BandwidthEstimator(options.budget);
-    this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
-    this.growthToReplan = options.growthToReplan ?? DEFAULT_GROWTH_TO_REPLAN;
-    this.overspendToReplan = options.overspendToReplan ?? DEFAULT_OVERSPEND_TO_REPLAN;
-    this.retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
-    this.settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
-    this.now = options.now ?? (() => performance.now());
-    this.detach = [
-      session.on('schema', () => {
-        this.applied = undefined;
-        this.refused.clear();
-        this.failures = 0;
-        this.planSoon();
+  constructor(link: PlannerLink, options: StreamPlannerOptions = {}) {
+    this.#link = link;
+    this.#estimator = new BandwidthEstimator(options.budget);
+    this.#debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+    this.#growthToReplan = options.growthToReplan ?? DEFAULT_GROWTH_TO_REPLAN;
+    this.#overspendToReplan = options.overspendToReplan ?? DEFAULT_OVERSPEND_TO_REPLAN;
+    this.#retryMs = options.retryMs ?? DEFAULT_RETRY_MS;
+    this.#settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
+    this.#now = options.now ?? (() => performance.now());
+    this.#detach = [
+      link.on('schema', () => {
+        this.#applied = undefined;
+        this.#refused.clear();
+        this.#failures = 0;
+        this.#planSoon();
       }),
-      session.on('stats', (stats) => this.onStats(stats)),
-      session.on('epoch', (epoch) => this.onEpoch(epoch)),
-      session.on('epochEnd', ({ epoch }) => this.onEpochEnd(epoch)),
-      session.on('sample', (sample) => this.onSample(sample)),
+      link.on('stats', (stats) => this.#onStats(stats)),
+      link.on('epoch', (epoch) => this.#onEpoch(epoch)),
+      link.on('epochEnd', ({ epoch }) => this.#onEpochEnd(epoch)),
+      link.on('sample', (sample) => this.#onSample(sample)),
     ];
   }
 
   /** The latest plan, or undefined before the schema is known. */
   get plan(): StreamPlan | undefined {
-    return this.current;
+    return this.#current;
   }
 
   /** The latest estimate of what the link carries. */
   get budget(): BudgetEstimate {
-    return this.estimator.value;
+    return this.#estimator.value;
   }
 
   /**
@@ -177,7 +176,7 @@ export class StreamPlanner {
     event: K,
     listener: Listener<StreamPlannerEvents[K]>
   ): Unsubscribe {
-    return this.events.on(event, listener);
+    return this.#events.on(event, listener);
   }
 
   /**
@@ -186,87 +185,87 @@ export class StreamPlanner {
    * @param requests Every variable wanted, with its rate and whether it is pinned.
    */
   request(requests: readonly RateRequest[]): void {
-    if (sameRequests(this.requests, requests)) {
+    if (sameRequests(this.#requests, requests)) {
       return;
     }
 
-    this.requests = requests;
-    this.planSoon();
+    this.#requests = requests;
+    this.#planSoon();
   }
 
   /** Plan what is asked for now, without waiting. */
   flush(): void {
-    clearTimeout(this.timer);
-    this.timer = undefined;
-    this.replan();
+    clearTimeout(this.#timer);
+    this.#timer = undefined;
+    this.#replan();
   }
 
   /** Stop planning. The link keeps the groups it has. */
   close(): void {
-    this.closed = true;
-    clearTimeout(this.timer);
-    clearTimeout(this.retryTimer);
-    this.detach.forEach((unsubscribe) => unsubscribe());
+    this.#closed = true;
+    clearTimeout(this.#timer);
+    clearTimeout(this.#retryTimer);
+    this.#detach.forEach((unsubscribe) => unsubscribe());
   }
 
-  private planSoon(): void {
-    if (this.closed) {
+  #planSoon(): void {
+    if (this.#closed) {
       return;
     }
 
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.flush(), this.debounceMs);
+    clearTimeout(this.#timer);
+    this.#timer = setTimeout(() => this.flush(), this.#debounceMs);
   }
 
-  private onEpoch(epoch: Epoch): void {
-    const counter = this.requests.find((request) => request.countsDrops === true)?.variable;
-    const id = this.session.schema?.find((entry) => entry.name === counter)?.id;
+  #onEpoch(epoch: Epoch): void {
+    const counter = this.#requests.find((request) => request.countsDrops === true)?.variable;
+    const id = this.#link.schema?.find((entry) => entry.name === counter)?.id;
     const index = id === undefined ? -1 : epoch.variableIds.indexOf(id);
 
     if (index >= 0) {
-      this.dropCounters.set(epoch.id, index);
+      this.#dropCounters.set(epoch.id, index);
     }
   }
 
-  private onEpochEnd(epoch: Epoch): void {
-    if (this.dropCounters.delete(epoch.id)) {
-      this.robotDropped = undefined;
+  #onEpochEnd(epoch: Epoch): void {
+    if (this.#dropCounters.delete(epoch.id)) {
+      this.#robotDropped = undefined;
     }
   }
 
-  private onSample(sample: SampleEvent): void {
-    const index = this.dropCounters.get(sample.epoch);
+  #onSample(sample: SampleEvent): void {
+    const index = this.#dropCounters.get(sample.epoch);
 
     if (index !== undefined) {
-      this.robotDropped = Number(sample.values[index]);
+      this.#robotDropped = Number(sample.values[index]);
     }
   }
 
-  private onStats(stats: LinkCounters): void {
-    const window = this.session.robot?.creditWindow ?? 0;
-    const plan = this.current;
-    const revision = this.estimator.value.revision;
-    const now = this.now();
-    const estimate = this.estimator.update(
+  #onStats(stats: LinkCounters): void {
+    const window = this.#link.robot?.creditWindow ?? 0;
+    const plan = this.#current;
+    const revision = this.#estimator.value.revision;
+    const now = this.#now();
+    const estimate = this.#estimator.update(
       stats,
       window,
       now,
       plan?.overBudget === true,
-      this.robotDropped
+      this.#robotDropped
     );
 
-    if (!plan || this.timer !== undefined) {
+    if (!plan || this.#timer !== undefined) {
       return;
     }
 
     const overspent =
-      plan.usedBytesPerSecond > estimate.bytesPerSecond * (1 + this.overspendToReplan);
+      plan.usedBytesPerSecond > estimate.bytesPerSecond * (1 + this.#overspendToReplan);
 
-    if (this.retryTimer !== undefined) {
-      if (estimate.saturated || this.settled(overspent, now)) {
-        clearTimeout(this.retryTimer);
-        this.retryTimer = undefined;
-        this.replan();
+    if (this.#retryTimer !== undefined) {
+      if (estimate.saturated || this.#settled(overspent, now)) {
+        clearTimeout(this.#retryTimer);
+        this.#retryTimer = undefined;
+        this.#replan();
       }
 
       return;
@@ -275,67 +274,67 @@ export class StreamPlanner {
     const ceilingMoved = plan.overBudget && estimate.revision !== revision;
     const roomToGrow =
       plan.overBudget &&
-      estimate.bytesPerSecond > plan.budgetBytesPerSecond * (1 + this.growthToReplan);
+      estimate.bytesPerSecond > plan.budgetBytesPerSecond * (1 + this.#growthToReplan);
 
-    if (estimate.saturated || ceilingMoved || this.settled(overspent || roomToGrow, now)) {
-      this.replan();
+    if (estimate.saturated || ceilingMoved || this.#settled(overspent || roomToGrow, now)) {
+      this.#replan();
     }
   }
 
   /** Whether the budget has been past the plan, without a break, for the settle time. */
-  private settled(drifting: boolean, now: number): boolean {
+  #settled(drifting: boolean, now: number): boolean {
     if (!drifting) {
-      this.driftingSince = undefined;
+      this.#driftingSince = undefined;
       return false;
     }
 
-    this.driftingSince ??= now;
-    return now - this.driftingSince >= this.settleMs;
+    this.#driftingSince ??= now;
+    return now - this.#driftingSince >= this.#settleMs;
   }
 
-  private replan(): void {
-    const schema = this.session.schema;
-    const robot = this.session.robot;
+  #replan(): void {
+    const schema = this.#link.schema;
+    const robot = this.#link.robot;
 
-    if (this.closed || !schema || !robot) {
+    if (this.#closed || !schema || !robot) {
       return;
     }
 
     const planned = fitGroups({
       schema,
       loopTimeUs: robot.loopTimeUs,
-      requests: this.requests.filter((request) => !this.refused.has(request.variable)),
-      budgetBytesPerSecond: this.estimator.value.bytesPerSecond,
+      requests: this.#requests.filter((request) => !this.#refused.has(request.variable)),
+      budgetBytesPerSecond: this.#estimator.value.bytesPerSecond,
     });
-    const plan = this.withRefused(planned);
+    const plan = this.#withRefused(planned);
 
-    this.current = plan;
-    this.driftingSince = undefined;
-    this.events.emit('plan', plan);
+    this.#current = plan;
+    this.#driftingSince = undefined;
+    this.#events.emit('plan', plan);
 
-    if (this.applied && sameGroups(this.applied, plan.groups)) {
+    if (this.#applied && sameGroups(this.#applied, plan.groups)) {
       return;
     }
 
     const groups = plan.groups;
-    this.applied = groups;
-    this.session.setGroups(groups).then(
+    this.#applied = groups;
+    this.#link.setGroups(groups).then(
       (result) => {
-        if (result.status === 'applied' && this.applied === groups) {
-          this.failures = 0;
+        if (result.status === 'applied' && this.#applied === groups) {
+          this.#failures = 0;
         }
       },
-      (error: unknown) => this.onRefused(groups, error)
+      (error: unknown) => this.#onRefused(groups, error)
     );
   }
 
-  private withRefused(plan: StreamPlan): StreamPlan {
-    if (this.refused.size === 0) {
+  #withRefused(plan: StreamPlan): StreamPlan {
+    if (this.#refused.size === 0) {
       return plan;
     }
 
-    const refused: PlannedRate[] = this.requests
-      .filter((request) => this.refused.has(request.variable))
+    const refused: PlannedRate[] = this.#requests
+      .filter((request) => this.#refused.has(request.variable))
       .map((request) => ({
         variable: request.variable,
         rateHz: request.rateHz,
@@ -349,36 +348,36 @@ export class StreamPlanner {
     return { ...plan, rates: [...plan.rates, ...unique] };
   }
 
-  private onRefused(groups: readonly GroupRequest[], error: unknown): void {
-    if (this.closed || this.applied !== groups || isLinkChange(error)) {
+  #onRefused(groups: readonly GroupRequest[], error: unknown): void {
+    if (this.#closed || this.#applied !== groups || isLinkChange(error)) {
       return;
     }
 
-    this.applied = undefined;
+    this.#applied = undefined;
 
     if (error instanceof RobotError) {
-      this.markRefused(groups);
+      this.#markRefused(groups);
     }
 
-    this.events.emit('error', error instanceof Error ? error : new Error(String(error)));
-    const wait = Math.min(MAX_RETRY_MS, this.retryMs * 2 ** this.failures);
-    this.failures++;
-    clearTimeout(this.retryTimer);
-    this.retryTimer = setTimeout(() => {
-      this.retryTimer = undefined;
-      this.replan();
+    this.#events.emit('error', error instanceof Error ? error : new Error(String(error)));
+    const wait = Math.min(MAX_RETRY_MS, this.#retryMs * 2 ** this.#failures);
+    this.#failures++;
+    clearTimeout(this.#retryTimer);
+    this.#retryTimer = setTimeout(() => {
+      this.#retryTimer = undefined;
+      this.#replan();
     }, wait);
   }
 
-  private markRefused(groups: readonly GroupRequest[]): void {
-    const schema = this.session.schema;
-    const streaming = new Set(this.session.openEpochs.flatMap((epoch) => epoch.variableIds));
+  #markRefused(groups: readonly GroupRequest[]): void {
+    const schema = this.#link.schema;
+    const streaming = new Set(this.#link.openEpochs.flatMap((epoch) => epoch.variableIds));
 
     for (const id of groups.flatMap((group) => group.variableIds)) {
       const name = schema?.[id]?.name;
 
       if (name !== undefined && !streaming.has(id)) {
-        this.refused.add(name);
+        this.#refused.add(name);
       }
     }
   }

@@ -1,5 +1,5 @@
 /**
- * Connect a session to a live robot over WebSocket, such as the simulation's monitor bridge,
+ * Connect a robot link to a live robot over WebSocket, such as the simulation's monitor bridge,
  * stream a few variables for a while and print what the link did.
  *
  * ```
@@ -8,7 +8,7 @@
  * ```
  *
  * Without `--variables` it streams the first six streamable numeric variables of the schema.
- * It exits non-zero when the session never streams or no sample arrives.
+ * It exits non-zero when the link never streams or no sample arrives.
  *
  * @module
  */
@@ -82,45 +82,45 @@ function describeStats(stats: LinkCounters, elapsed: number): string {
   ].join(', ');
 }
 
-const session = new RobotLink(new WebSocketTransport(args.url));
+const link = new RobotLink(new WebSocketTransport(args.url));
 const reasons: HandshakeReason[] = [];
 const samplesPerEpoch = new Map<number, number>();
 const lastValues = new Map<number, readonly (number | bigint)[]>();
 let firstSampleUs: number | undefined;
 let lastSampleUs: number | undefined;
 
-session.on('state', (state) => {
+link.on('state', (state) => {
   if (state.kind === 'handshaking' && state.attempt === 1) {
     reasons.push(state.reason);
   }
 
   if (state.kind === 'error') {
-    console.error(`session error: ${state.error.message}`);
+    console.error(`link error: ${state.error.message}`);
   }
 });
-session.on('sample', (sample) => {
+link.on('sample', (sample) => {
   samplesPerEpoch.set(sample.epoch, (samplesPerEpoch.get(sample.epoch) ?? 0) + 1);
   lastValues.set(sample.epoch, sample.values);
   firstSampleUs ??= sample.timeUs;
   lastSampleUs = sample.timeUs;
 });
-session.on('protocolError', (error) => console.warn(`protocol error: ${error.message}`));
-session.on('log', (log) => console.log(`robot log [${log.severity}]: ${log.text}`));
+link.on('protocolError', (error) => console.warn(`protocol error: ${error.message}`));
+link.on('log', (log) => console.log(`robot log [${log.severity}]: ${log.text}`));
 
 console.log(`connecting to ${args.url}`);
-session.open();
+link.open();
 
 try {
-  await waitUntil(() => session.state.kind === 'streaming', 15_000, 'the session to stream');
+  await waitUntil(() => link.state.kind === 'streaming', 15_000, 'the link to stream');
 
-  const schema = session.schema ?? [];
-  const robot = session.robot;
+  const schema = link.schema ?? [];
+  const robot = link.robot;
   console.log(
     `robot: protocol ${robot?.protocolVersion}, ${schema.length} variables, schema ${robot?.schemaHash.toString(16)}, loop ${robot?.loopTimeUs} us, credit ${robot?.creditWindow} B, ${robot?.robotName} boot ${robot?.bootId.toString(16)}`
   );
 
   const chosen = pickVariables(schema);
-  const result = await session.setGroups([
+  const result = await link.setGroups([
     { variableIds: chosen.map((entry) => entry.id), periodTicks },
   ]);
   const epochs: readonly Epoch[] = result.status === 'applied' ? result.epochs : [];
@@ -130,22 +130,22 @@ try {
   );
 
   const started = performance.now();
-  const statsBefore = session.stats;
+  const statsBefore = link.stats;
 
   const progress = setInterval(() => {
     const elapsed = (performance.now() - started) / 1000;
-    console.log(`  t=${elapsed.toFixed(0)}s ${describeStats(session.stats, elapsed)}`);
+    console.log(`  t=${elapsed.toFixed(0)}s ${describeStats(link.stats, elapsed)}`);
   }, 1000);
   await sleep(seconds * 1000 + 50);
   clearInterval(progress);
 
   const elapsed = (performance.now() - started) / 1000;
-  const stats = session.stats;
+  const stats = link.stats;
   const robotSeconds =
     firstSampleUs !== undefined && lastSampleUs !== undefined
       ? (lastSampleUs - firstSampleUs) / 1e6
       : 0;
-  const read = await session.read(chosen[0].id);
+  const read = await link.read(chosen[0].id);
 
   console.log('summary:');
   console.log(`  ${describeStats(stats, elapsed)}`);
@@ -161,11 +161,11 @@ try {
   );
   console.log(`  READ ${chosen[0].name} = ${String(read)}`);
 
-  session.close();
+  link.close();
   process.exit(stats.samples > 0 ? 0 : 1);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
-  console.error(`state: ${session.state.kind}; ${describeStats(session.stats, 1)}`);
-  session.close();
+  console.error(`state: ${link.state.kind}; ${describeStats(link.stats, 1)}`);
+  link.close();
   process.exit(1);
 }

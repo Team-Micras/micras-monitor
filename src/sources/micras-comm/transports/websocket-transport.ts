@@ -50,93 +50,93 @@ export const TAKEN_OVER_REASON = 'another monitor took the link';
  * close the other one, so only `open()` does.
  */
 export class WebSocketTransport extends BaseTransport {
-  private readonly createSocket: WebSocketFactory;
-  private readonly backoff: Backoff;
-  private socket: WebSocketLike | null = null;
-  private retryTimer: ReturnType<typeof setTimeout> | undefined;
-  private wanted = false;
-  private opened = false;
+  /** Where the bridge listens. */
+  readonly url: string;
+  readonly #createSocket: WebSocketFactory;
+  readonly #backoff: Backoff;
+  #socket: WebSocketLike | null = null;
+  #retryTimer: ReturnType<typeof setTimeout> | undefined;
+  #wanted = false;
+  #opened = false;
 
   /**
    * @param url Where the bridge listens, such as `ws://localhost:8080`.
    * @param options How to connect.
    */
-  constructor(
-    readonly url: string,
-    options: WebSocketTransportOptions = {}
-  ) {
+  constructor(url: string, options: WebSocketTransportOptions = {}) {
     super();
-    this.createSocket = options.createSocket ?? runtimeWebSocket;
-    this.backoff = new Backoff(options.backoff ?? DEFAULT_BACKOFF);
+    this.url = url;
+    this.#createSocket = options.createSocket ?? runtimeWebSocket;
+    this.#backoff = new Backoff(options.backoff ?? DEFAULT_BACKOFF);
   }
 
   open(): void {
-    if (this.wanted) {
+    if (this.#wanted) {
       return;
     }
 
-    this.wanted = true;
-    this.connect();
+    this.#wanted = true;
+    this.#connect();
   }
 
   send(bytes: Uint8Array): void {
-    if (this.state.kind !== 'open' || !this.socket) {
+    if (this.state.kind !== 'open' || !this.#socket) {
       this.reportNotOpen(bytes);
       return;
     }
 
-    this.socket.send(bytes);
+    this.#socket.send(bytes);
   }
 
   close(): void {
-    this.wanted = false;
-    this.cancelRetry();
-    this.release()?.close(NORMAL_CLOSURE);
-    this.backoff.reset();
+    this.#wanted = false;
+    this.#cancelRetry();
+    this.#release()?.close(NORMAL_CLOSURE);
+    this.#backoff.reset();
     this.setState({ kind: 'closed', reason: 'closed-by-user' });
   }
 
-  private connect(): void {
-    this.retryTimer = undefined;
-    this.setState({ kind: 'connecting', attempt: this.backoff.attempts + 1 });
+  #connect(): void {
+    this.#retryTimer = undefined;
+    this.setState({ kind: 'connecting', attempt: this.#backoff.attempts + 1 });
 
     try {
-      this.attach(this.createSocket(this.url));
+      this.#attach(this.#createSocket(this.url));
     } catch (error) {
-      this.scheduleRetry('failed', error);
+      this.#scheduleRetry('failed', error);
     }
   }
 
-  private attach(socket: WebSocketLike): void {
-    this.socket = socket;
-    this.opened = false;
+  #attach(socket: WebSocketLike): void {
+    this.#socket = socket;
+    this.#opened = false;
     socket.binaryType = 'arraybuffer';
 
-    for (const [type, listener] of this.listeners) {
+    for (const [type, listener] of this.#listeners) {
       socket.addEventListener(type, listener);
     }
   }
 
-  private readonly onOpen = (): void => {
-    this.opened = true;
+  readonly #onOpen = (): void => {
+    this.#opened = true;
     this.setState({ kind: 'open' });
   };
 
-  private readonly onSocketMessage = (event: unknown): void => {
-    this.backoff.reset();
-    this.onMessage(isRecord(event) ? event.data : undefined);
+  readonly #onSocketMessage = (event: unknown): void => {
+    this.#backoff.reset();
+    this.#onMessage(isRecord(event) ? event.data : undefined);
   };
 
-  private readonly onSocketError = (): void => {
+  readonly #onSocketError = (): void => {
     this.reportError(new Error(`WebSocket error on ${this.url}`));
   };
 
-  private readonly onClose = (event: unknown): void => {
-    this.release();
+  readonly #onClose = (event: unknown): void => {
+    this.#release();
 
     if (isRecord(event) && event.code === TAKEN_OVER_CLOSE_CODE) {
-      this.wanted = false;
-      this.backoff.reset();
+      this.#wanted = false;
+      this.#backoff.reset();
       this.setState({
         kind: 'closed',
         reason: 'taken-over',
@@ -145,20 +145,20 @@ export class WebSocketTransport extends BaseTransport {
       return;
     }
 
-    this.scheduleRetry(
-      this.opened ? 'lost' : 'failed',
+    this.#scheduleRetry(
+      this.#opened ? 'lost' : 'failed',
       new Error(`WebSocket closed (${describeClose(event)})`)
     );
   };
 
-  private readonly listeners: [WebSocketEventType, (event: unknown) => void][] = [
-    ['open', this.onOpen],
-    ['message', this.onSocketMessage],
-    ['error', this.onSocketError],
-    ['close', this.onClose],
+  readonly #listeners: [WebSocketEventType, (event: unknown) => void][] = [
+    ['open', this.#onOpen],
+    ['message', this.#onSocketMessage],
+    ['error', this.#onSocketError],
+    ['close', this.#onClose],
   ];
 
-  private onMessage(data: unknown): void {
+  #onMessage(data: unknown): void {
     if (data instanceof ArrayBuffer) {
       this.receive(new Uint8Array(data));
     } else if (ArrayBuffer.isView(data)) {
@@ -168,34 +168,34 @@ export class WebSocketTransport extends BaseTransport {
     }
   }
 
-  private scheduleRetry(reason: 'lost' | 'failed', error: unknown): void {
-    if (!this.wanted) {
+  #scheduleRetry(reason: 'lost' | 'failed', error: unknown): void {
+    if (!this.#wanted) {
       return;
     }
 
-    const delay = this.backoff.next();
+    const delay = this.#backoff.next();
     this.setState({
       kind: 'closed',
       reason,
       retryInMs: delay,
       error: asError(error),
     });
-    this.retryTimer = setTimeout(() => this.connect(), delay);
+    this.#retryTimer = setTimeout(() => this.#connect(), delay);
   }
 
-  private cancelRetry(): void {
-    clearTimeout(this.retryTimer);
-    this.retryTimer = undefined;
+  #cancelRetry(): void {
+    clearTimeout(this.#retryTimer);
+    this.#retryTimer = undefined;
   }
 
-  private release(): WebSocketLike | null {
-    const socket = this.socket;
+  #release(): WebSocketLike | null {
+    const socket = this.#socket;
 
-    for (const [type, listener] of this.listeners) {
+    for (const [type, listener] of this.#listeners) {
       socket?.removeEventListener(type, listener);
     }
 
-    this.socket = null;
+    this.#socket = null;
     return socket;
   }
 }

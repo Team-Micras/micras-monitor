@@ -70,11 +70,11 @@ interface TransportEvents {
  * connects, sends and receives.
  */
 export abstract class BaseTransport implements Transport {
-  private readonly events = new Emitter<TransportEvents>();
-  private current: TransportState = { kind: 'closed', reason: 'not-opened' };
+  readonly #events = new Emitter<TransportEvents>();
+  #current: TransportState = { kind: 'closed', reason: 'not-opened' };
 
   get state(): TransportState {
-    return this.current;
+    return this.#current;
   }
 
   abstract open(): void;
@@ -84,35 +84,35 @@ export abstract class BaseTransport implements Transport {
   abstract close(): void;
 
   onBytes(listener: Listener<Uint8Array>): Unsubscribe {
-    return this.events.on('bytes', listener);
+    return this.#events.on('bytes', listener);
   }
 
   onState(listener: Listener<TransportState>): Unsubscribe {
-    return this.events.on('state', listener);
+    return this.#events.on('state', listener);
   }
 
   onError(listener: Listener<Error>): Unsubscribe {
-    return this.events.on('error', listener);
+    return this.#events.on('error', listener);
   }
 
   /** Move to a new state and tell the listeners. */
   protected setState(state: TransportState): void {
-    this.current = state;
-    this.events.emit('state', state);
+    this.#current = state;
+    this.#events.emit('state', state);
   }
 
   /** Hand bytes that arrived to the listeners. */
   protected receive(bytes: Uint8Array): void {
-    this.events.emit('bytes', bytes);
+    this.#events.emit('bytes', bytes);
   }
 
   /** Report an error that did not close the transport. */
   protected reportError(error: Error): void {
-    this.events.emit('error', error);
+    this.#events.emit('error', error);
   }
 
   /** Report bytes sent while the transport could not take them. */
   protected reportNotOpen(bytes: Uint8Array): void {
-    this.reportError(new Error(`Dropped ${bytes.length} bytes sent while ${this.current.kind}`));
+    this.reportError(new Error(`Dropped ${bytes.length} bytes sent while ${this.#current.kind}`));
   }
 }

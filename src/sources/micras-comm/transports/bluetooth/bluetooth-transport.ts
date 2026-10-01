@@ -46,14 +46,15 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
  * `needs-user-gesture` state, and then `reconnect()` has to be called from a click.
  */
 export class BluetoothTransport extends BaseTransport {
-  private readonly uart: UartService;
-  private readonly connectTimeoutMs: number;
-  private readonly backoff: Backoff;
-  private readonly writes: GattWriteQueue;
-  private characteristic: GattCharacteristicLike | null = null;
-  private retryTimer: ReturnType<typeof setTimeout> | undefined;
-  private wanted = false;
-  private generation = 0;
+  readonly #device: BluetoothDeviceLike;
+  readonly #uart: UartService;
+  readonly #connectTimeoutMs: number;
+  readonly #backoff: Backoff;
+  readonly #writes: GattWriteQueue;
+  #characteristic: GattCharacteristicLike | null = null;
+  #retryTimer: ReturnType<typeof setTimeout> | undefined;
+  #wanted = false;
+  #generation = 0;
 
   /**
    * Ask the user to choose a robot. Must be called from a user gesture.
@@ -74,16 +75,14 @@ export class BluetoothTransport extends BaseTransport {
    * @param device The device to connect to.
    * @param options How to talk to the module.
    */
-  constructor(
-    private readonly device: BluetoothDeviceLike,
-    options: BluetoothTransportOptions
-  ) {
+  constructor(device: BluetoothDeviceLike, options: BluetoothTransportOptions) {
     super();
-    this.uart = options.uart ?? HM19_UART;
-    this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
-    this.backoff = new Backoff(options.backoff ?? DEFAULT_BACKOFF);
-    this.writes = new GattWriteQueue(
-      (chunk) => this.writeChunk(chunk),
+    this.#device = device;
+    this.#uart = options.uart ?? HM19_UART;
+    this.#connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+    this.#backoff = new Backoff(options.backoff ?? DEFAULT_BACKOFF);
+    this.#writes = new GattWriteQueue(
+      (chunk) => this.#writeChunk(chunk),
       options.chunkSize ?? DEFAULT_CHUNK_SIZE,
       (error) => this.reportError(asError(error)),
       options.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS
@@ -91,12 +90,12 @@ export class BluetoothTransport extends BaseTransport {
   }
 
   open(): void {
-    if (this.wanted) {
+    if (this.#wanted) {
       return;
     }
 
-    this.wanted = true;
-    void this.connect();
+    this.#wanted = true;
+    void this.#connect();
   }
 
   /**
@@ -108,9 +107,9 @@ export class BluetoothTransport extends BaseTransport {
       return;
     }
 
-    this.cancelRetry();
-    this.wanted = true;
-    void this.connect();
+    this.#cancelRetry();
+    this.#wanted = true;
+    void this.#connect();
   }
 
   send(bytes: Uint8Array): void {
@@ -119,120 +118,120 @@ export class BluetoothTransport extends BaseTransport {
       return;
     }
 
-    this.writes.push(bytes);
+    this.#writes.push(bytes);
   }
 
   close(): void {
-    this.wanted = false;
-    this.cancelRetry();
-    this.generation++;
+    this.#wanted = false;
+    this.#cancelRetry();
+    this.#generation++;
 
-    const characteristic = this.release();
+    const characteristic = this.#release();
     void characteristic?.stopNotifications().catch(() => undefined);
-    this.abandonGatt();
-    this.backoff.reset();
+    this.#abandonGatt();
+    this.#backoff.reset();
     this.setState({ kind: 'closed', reason: 'closed-by-user' });
   }
 
-  private async connect(): Promise<void> {
-    const generation = ++this.generation;
-    this.retryTimer = undefined;
-    this.setState({ kind: 'connecting', attempt: this.backoff.attempts + 1 });
+  async #connect(): Promise<void> {
+    const generation = ++this.#generation;
+    this.#retryTimer = undefined;
+    this.setState({ kind: 'connecting', attempt: this.#backoff.attempts + 1 });
 
     try {
       await withTimeout(
-        this.openUart(generation),
-        this.connectTimeoutMs,
-        `connecting to ${this.describeDevice()}`
+        this.#openUart(generation),
+        this.#connectTimeoutMs,
+        `connecting to ${this.#describeDevice()}`
       );
 
-      if (generation === this.generation) {
-        this.backoff.reset();
+      if (generation === this.#generation) {
+        this.#backoff.reset();
         this.setState({ kind: 'open' });
       }
     } catch (error) {
-      if (generation === this.generation) {
-        this.generation++;
-        this.release();
-        this.abandonGatt();
-        this.scheduleRetry('failed', error);
+      if (generation === this.#generation) {
+        this.#generation++;
+        this.#release();
+        this.#abandonGatt();
+        this.#scheduleRetry('failed', error);
       }
     }
   }
 
-  private async openUart(generation: number): Promise<void> {
-    const gatt = this.device.gatt;
+  async #openUart(generation: number): Promise<void> {
+    const gatt = this.#device.gatt;
 
     if (!gatt) {
-      throw new Error(`${this.describeDevice()} has no GATT server`);
+      throw new Error(`${this.#describeDevice()} has no GATT server`);
     }
 
     const server = await gatt.connect();
-    const service = await server.getPrimaryService(this.uart.service);
-    const characteristic = await service.getCharacteristic(this.uart.characteristic);
+    const service = await server.getPrimaryService(this.#uart.service);
+    const characteristic = await service.getCharacteristic(this.#uart.characteristic);
 
-    if (generation !== this.generation) {
-      this.abandonGattUnlessWanted();
+    if (generation !== this.#generation) {
+      this.#abandonGattUnlessWanted();
       return;
     }
 
-    this.adopt(characteristic);
+    this.#adopt(characteristic);
     await characteristic.startNotifications();
   }
 
-  private adopt(characteristic: GattCharacteristicLike): void {
-    this.characteristic = characteristic;
-    characteristic.addEventListener('characteristicvaluechanged', this.onNotification);
-    this.device.addEventListener('gattserverdisconnected', this.onDisconnected);
+  #adopt(characteristic: GattCharacteristicLike): void {
+    this.#characteristic = characteristic;
+    characteristic.addEventListener('characteristicvaluechanged', this.#onNotification);
+    this.#device.addEventListener('gattserverdisconnected', this.#onDisconnected);
   }
 
-  private release(): GattCharacteristicLike | null {
-    const characteristic = this.characteristic;
+  #release(): GattCharacteristicLike | null {
+    const characteristic = this.#characteristic;
 
-    characteristic?.removeEventListener('characteristicvaluechanged', this.onNotification);
-    this.device.removeEventListener('gattserverdisconnected', this.onDisconnected);
-    this.characteristic = null;
-    this.writes.clear();
+    characteristic?.removeEventListener('characteristicvaluechanged', this.#onNotification);
+    this.#device.removeEventListener('gattserverdisconnected', this.#onDisconnected);
+    this.#characteristic = null;
+    this.#writes.clear();
 
     return characteristic;
   }
 
-  private abandonGatt(): void {
-    this.device.gatt?.disconnect();
+  #abandonGatt(): void {
+    this.#device.gatt?.disconnect();
   }
 
-  private abandonGattUnlessWanted(): void {
-    if (!this.wanted) {
-      this.abandonGatt();
+  #abandonGattUnlessWanted(): void {
+    if (!this.#wanted) {
+      this.#abandonGatt();
     }
   }
 
-  private readonly onNotification = (): void => {
-    const view = this.characteristic?.value;
+  readonly #onNotification = (): void => {
+    const view = this.#characteristic?.value;
 
     if (view) {
       this.receive(new Uint8Array(view.buffer, view.byteOffset, view.byteLength).slice());
     }
   };
 
-  private readonly onDisconnected = (): void => {
+  readonly #onDisconnected = (): void => {
     const reason = this.state.kind === 'connecting' ? 'failed' : 'lost';
 
-    this.generation++;
-    this.release();
-    this.scheduleRetry(reason, new Error(`${this.describeDevice()} disconnected`));
+    this.#generation++;
+    this.#release();
+    this.#scheduleRetry(reason, new Error(`${this.#describeDevice()} disconnected`));
   };
 
-  private writeChunk(chunk: Uint8Array): Promise<void> {
-    if (!this.characteristic) {
+  #writeChunk(chunk: Uint8Array): Promise<void> {
+    if (!this.#characteristic) {
       return Promise.reject(new Error('Not connected'));
     }
 
-    return this.characteristic.writeValueWithoutResponse(chunk);
+    return this.#characteristic.writeValueWithoutResponse(chunk);
   }
 
-  private scheduleRetry(reason: 'lost' | 'failed', error: unknown): void {
-    if (!this.wanted) {
+  #scheduleRetry(reason: 'lost' | 'failed', error: unknown): void {
+    if (!this.#wanted) {
       return;
     }
 
@@ -241,18 +240,18 @@ export class BluetoothTransport extends BaseTransport {
       return;
     }
 
-    const delay = this.backoff.next();
+    const delay = this.#backoff.next();
     this.setState({ kind: 'closed', reason, retryInMs: delay, error: asError(error) });
-    this.retryTimer = setTimeout(() => void this.connect(), delay);
+    this.#retryTimer = setTimeout(() => void this.#connect(), delay);
   }
 
-  private describeDevice(): string {
-    return this.device.name ?? this.device.id;
+  #describeDevice(): string {
+    return this.#device.name ?? this.#device.id;
   }
 
-  private cancelRetry(): void {
-    clearTimeout(this.retryTimer);
-    this.retryTimer = undefined;
+  #cancelRetry(): void {
+    clearTimeout(this.#retryTimer);
+    this.#retryTimer = undefined;
   }
 }
 

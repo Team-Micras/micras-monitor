@@ -21,8 +21,8 @@ class FakeCharacteristic implements GattCharacteristicLike {
   hangWrites = 0;
   readonly writes: Uint8Array[] = [];
   maxInFlight = 0;
-  private inFlight = 0;
-  private readonly listeners = new Set<() => void>();
+  #inFlight = 0;
+  readonly #listeners = new Set<() => void>();
 
   startNotifications(): Promise<this> {
     if (this.hangNotifications) {
@@ -45,37 +45,37 @@ class FakeCharacteristic implements GattCharacteristicLike {
       return new Promise(() => undefined);
     }
 
-    if (this.inFlight > 0) {
+    if (this.#inFlight > 0) {
       return Promise.reject(new Error('GATT operation already in progress'));
     }
 
-    this.inFlight++;
-    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    this.#inFlight++;
+    this.maxInFlight = Math.max(this.maxInFlight, this.#inFlight);
     this.writes.push(value.slice());
 
     return new Promise((resolve) => {
       setTimeout(() => {
-        this.inFlight--;
+        this.#inFlight--;
         resolve();
       }, WRITE_TIME_MS);
     });
   }
 
   addEventListener(_type: 'characteristicvaluechanged', listener: () => void): void {
-    this.listeners.add(listener);
+    this.#listeners.add(listener);
   }
 
   removeEventListener(_type: 'characteristicvaluechanged', listener: () => void): void {
-    this.listeners.delete(listener);
+    this.#listeners.delete(listener);
   }
 
   get listenerCount(): number {
-    return this.listeners.size;
+    return this.#listeners.size;
   }
 
   notify(view: DataView): void {
     this.value = view;
-    this.listeners.forEach((listener) => listener());
+    this.#listeners.forEach((listener) => listener());
   }
 }
 
@@ -85,12 +85,14 @@ class FakeDevice implements BluetoothDeviceLike, GattServerLike, GattServiceLike
   hangConnects = 0;
   hangNotifications = false;
   characteristic = new FakeCharacteristic();
-  private readonly listeners = new Set<() => void>();
+  readonly #listeners = new Set<() => void>();
+  readonly id: string;
+  readonly name: string;
 
-  constructor(
-    readonly id = 'robot-1',
-    readonly name = 'MICRAS'
-  ) {}
+  constructor(id = 'robot-1', name = 'MICRAS') {
+    this.id = id;
+    this.name = name;
+  }
 
   get gatt(): GattServerLike {
     return this;
@@ -127,20 +129,20 @@ class FakeDevice implements BluetoothDeviceLike, GattServerLike, GattServiceLike
   }
 
   addEventListener(_type: 'gattserverdisconnected', listener: () => void): void {
-    this.listeners.add(listener);
+    this.#listeners.add(listener);
   }
 
   removeEventListener(_type: 'gattserverdisconnected', listener: () => void): void {
-    this.listeners.delete(listener);
+    this.#listeners.delete(listener);
   }
 
   get listenerCount(): number {
-    return this.listeners.size;
+    return this.#listeners.size;
   }
 
   goOutOfRange(): void {
     this.connected = false;
-    this.listeners.forEach((listener) => listener());
+    this.#listeners.forEach((listener) => listener());
   }
 }
 
