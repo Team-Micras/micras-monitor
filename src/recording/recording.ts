@@ -94,7 +94,7 @@ export interface RecordingHeader {
   /** Always {@link RECORDING_FORMAT_VERSION} for what this module writes. */
   readonly version: typeof RECORDING_FORMAT_VERSION;
 
-  /** When recording started, in milliseconds since the Unix run. */
+  /** When recording started, in milliseconds since the Unix epoch. */
   readonly startedAtMs: number;
 
   /** Whatever the link knows about the robot: its name, boot id, schema hash. */
