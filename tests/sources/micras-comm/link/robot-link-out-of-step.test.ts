@@ -64,6 +64,7 @@ describe('a session whose group the robot streams out of step', { timeout: 10_00
       variableIds: layout,
       periodTicks: 80,
       sampleSize: 8,
+      continues: first.id,
     });
     expect(recording.samples.every((sample) => sample.values.length === 2)).toBe(true);
     expect(recording.dropped.get(first.id) ?? 0).toBeLessThanOrEqual(2);

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { Monitor, type VariableDemand } from '@/core/monitor';
 import type { WebSocketLike } from '@/sources/micras-comm/transports/websocket-transport';
+import { encodeGroupDefine, encodeGroupEnable } from '@/sources/micras-comm/link/messages';
 import { MicrasCommSource, type MicrasCommOptions } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
 import { HistoryStore } from '@/history';
@@ -76,16 +77,28 @@ function start(
   return setup;
 }
 
-function sessionState(source: MicrasCommSource): string | undefined {
-  return source.session?.state.kind;
+/** How many times the link came to stream, as the source logs it. */
+function streamings(monitor: Monitor<HistoryStore>): number {
+  return monitor.state.log.filter((entry) => entry.text === 'streaming').length;
+}
+
+/** The variables the source plans, by name, in the order of its stats. */
+function planned(monitor: Monitor<HistoryStore>): string[] {
+  const names = new Map(monitor.state.variables.map((variable) => [variable.id, variable.name]));
+  return monitor.state.stats.streams.flatMap((stream) => names.get(stream.variableId) ?? []);
 }
 
 function pagedLoads(monitor: Monitor<HistoryStore>): number {
   return monitor.state.log.filter((entry) => entry.text.startsWith('loading a schema')).length;
 }
 
-async function streaming(source: MicrasCommSource, what = 'the link to stream'): Promise<void> {
-  await waitFor(() => sessionState(source) === 'streaming', 5000, what);
+/** Wait for the link to stream more times than it had. */
+async function streaming(
+  monitor: Monitor<HistoryStore>,
+  what = 'the link to stream',
+  after = 0
+): Promise<void> {
+  await waitFor(() => streamings(monitor) > after, 5000, what);
 }
 
 function gauge(monitor: Monitor<HistoryStore>, label: string) {
@@ -119,81 +132,80 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('streams what is asked for into the history, and the planner owns the groups', async () => {
-    const { source, monitor } = start();
+    const { monitor } = start();
     monitor.request([...PINNED, { variable: 'imu/gyro_z', rateHz: 50 }]);
 
-    await streaming(source);
+    await streaming(monitor);
     await waitFor(() => monitor.history.latest('imu/gyro_z') !== undefined, 3000, 'a sample');
+    await waitFor(() => monitor.state.stats.streams.length === 4, 2000, 'link stats');
 
-    const plan = source.planner?.plan;
-    expect(plan?.rates.map((rate) => rate.variable)).toEqual([
+    expect(planned(monitor)).toEqual([
       'state',
       'link/credit',
       'link/dropped_samples',
       'imu/gyro_z',
     ]);
-    expect(plan?.overBudget).toBe(false);
+    expect(gauge(monitor, 'Budget')?.warn).toBe(false);
     expect(monitor.history.timeRange('imu/gyro_z')).toBeDefined();
-    await waitFor(() => monitor.state.stats.streams.length === 4, 2000, 'link stats');
     expect(gauge(monitor, 'Credit')?.capacity).toBe(256);
     expect(monitor.state.log.some((entry) => entry.text === 'streaming')).toBe(true);
   });
 
   test('keeps the variables of the robot while its link recovers', async () => {
-    const { source, monitor, sockets } = start();
-    await streaming(source);
+    const { monitor, sockets } = start();
+    await streaming(monitor);
     const { variables, identity } = monitor.state;
+    const before = streamings(monitor);
 
     sockets[0].close();
-    await waitFor(() => sessionState(source) !== 'streaming', 2000, 'the drop');
+    await waitFor(() => monitor.state.status.kind !== 'linked', 2000, 'the drop');
     expect(monitor.state.variables).toBe(variables);
-    await streaming(source, 'the link to stream again');
+    await streaming(monitor, 'the link to stream again', before);
 
     expect(monitor.state.variables).toBe(variables);
     expect(monitor.state.identity?.name).toBe(identity?.name);
   });
 
   test('learns the schema from its pages once over its reconnections', async () => {
-    const { source, monitor } = start();
-    await streaming(source);
+    const { monitor } = start();
+    await streaming(monitor);
+    const before = streamings(monitor);
     monitor.disconnect();
     monitor.connect(URL);
-    await streaming(source, 'the link to stream again');
+    await streaming(monitor, 'the link to stream again', before);
     expect(pagedLoads(monitor)).toBe(1);
   });
 
   test('skips the paged schema on a later page load with a stored cache', async () => {
     const storage = new MemoryStorage();
     const before = start({}, { schemaCache: new StoredSchemaCache(storage) });
-    await streaming(before.source);
+    await streaming(before.monitor);
 
     const reloaded = start({}, { schemaCache: new StoredSchemaCache(storage) });
-    await streaming(reloaded.source);
+    await streaming(reloaded.monitor);
     expect(pagedLoads(before.monitor)).toBe(1);
     expect(pagedLoads(reloaded.monitor)).toBe(0);
     expect(reloaded.monitor.state.variables).toEqual(before.monitor.state.variables);
   });
 
   test('plans every streamed variable when all are asked for at the loop rate', async () => {
-    const { source, monitor } = start();
-    await streaming(source);
+    const { monitor } = start();
+    await streaming(monitor);
     const streamed = monitor.state.variables.filter((entry) => entry.access.stream);
     monitor.request(streamed.map((entry) => ({ variable: entry.name, rateHz: 8000 })));
 
     await waitFor(
-      () => source.planner?.plan?.rates.length === streamed.length,
+      () => monitor.state.stats.streams.length === streamed.length,
       3000,
       'a plan of every streamed variable'
     );
-    expect(source.planner?.plan?.rates.map((rate) => rate.variable).toSorted()).toEqual(
-      streamed.map((entry) => entry.name).toSorted()
-    );
+    expect(planned(monitor).toSorted()).toEqual(streamed.map((entry) => entry.name).toSorted());
     await waitFor(() => monitor.history.latest('imu/gyro_z') !== undefined, 3000, 'a sample');
   });
 
   test('reads a blob on demand into the latest values', async () => {
-    const { source, monitor } = start();
-    await streaming(source);
+    const { monitor } = start();
+    await streaming(monitor);
 
     const outcome = await monitor.read('maze');
 
@@ -203,8 +215,8 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('writes with the robot confirming or refusing, never assuming', async () => {
-    const { source, monitor } = start();
-    await streaming(source);
+    const { monitor } = start();
+    await streaming(monitor);
 
     const write = monitor.write('run_profile', 3);
     expect(monitor.pendingWrite('run_profile')).toBe(3);
@@ -229,10 +241,10 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('takes a command in every phase of a link that is up', async () => {
-    const { source, monitor } = start();
-    await streaming(source);
+    const { monitor } = start();
+    await streaming(monitor);
     monitor.request([{ variable: 'imu/gyro_z', rateHz: 100 }]);
-    await waitFor(() => sessionState(source) === 'configuring', 2000, 'a reconfiguration');
+    await waitFor(() => planned(monitor).includes('imu/gyro_z'), 2000, 'a reconfiguration');
 
     expect(monitor.state.status.kind).toBe('linked');
     expect(await monitor.command(STOP)).toEqual({ status: 'ok', reason: null });
@@ -249,9 +261,9 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('marks a reboot as a boundary and keeps the timeline going forward', async () => {
-    const { source, monitor } = start({ rebootAfterSeconds: 1 });
+    const { monitor } = start({ rebootAfterSeconds: 1 });
     monitor.request([{ variable: 'imu/gyro_z', rateHz: 100 }]);
-    await streaming(source);
+    await streaming(monitor);
 
     await waitFor(
       () => monitor.history.boundaries().some((boundary) => boundary.kind === 'reboot'),
@@ -259,7 +271,6 @@ describe('MicrasCommSource against the simulated robot', () => {
       'the reboot'
     );
     const reboot = monitor.history.boundaries().find((boundary) => boundary.kind === 'reboot');
-    await streaming(source, 'streaming after the reboot');
     await waitFor(
       () => (monitor.history.latest('imu/gyro_z')?.timeUs ?? 0) > (reboot?.timeUs ?? Infinity),
       3000,
@@ -270,16 +281,17 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('comes back on its own after the connection drops, across a boundary', async () => {
-    const { source, monitor, sockets } = start();
+    const { monitor, sockets } = start();
     monitor.request([{ variable: 'imu/gyro_z', rateHz: 100 }]);
-    await streaming(source);
+    await streaming(monitor);
     await waitFor(() => monitor.history.latest('imu/gyro_z') !== undefined, 3000, 'a sample');
     const before = monitor.history.latest('imu/gyro_z')?.timeUs ?? 0;
+    const streamed = streamings(monitor);
 
     sockets[0].close();
 
-    await waitFor(() => sessionState(source) !== 'streaming', 3000, 'the drop');
-    await streaming(source, 'streaming again');
+    await waitFor(() => monitor.state.status.kind !== 'linked', 3000, 'the drop');
+    await streaming(monitor, 'streaming again', streamed);
     await waitFor(
       () => (monitor.history.latest('imu/gyro_z')?.timeUs ?? 0) > before,
       3000,
@@ -291,8 +303,8 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('notes in the log what goes wrong on the transport', async () => {
-    const { source, monitor, sim } = start();
-    await streaming(source);
+    const { monitor, sim } = start();
+    await streaming(monitor);
 
     sim.close();
 
@@ -307,8 +319,8 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('says another monitor took the link and does not take it back on its own', async () => {
-    const { source, monitor, sim, sockets } = start();
-    await streaming(source);
+    const { monitor, sim, sockets } = start();
+    await streaming(monitor);
 
     sim.takeOver();
     await waitFor(() => monitor.state.status.kind === 'failed', 3000, 'the link to be taken');
@@ -325,15 +337,22 @@ describe('MicrasCommSource against the simulated robot', () => {
   });
 
   test('keeps the samples lost on a noisy link as gaps with their count', async () => {
-    const { source, monitor } = start({ corruptRate: 0.05, seed: 7 });
+    const { monitor } = start({ corruptRate: 0.05, seed: 7 });
     monitor.request([{ variable: 'imu/gyro_z', rateHz: 200 }]);
-    await streaming(source);
-    await waitFor(
-      () => (source.session?.stats.droppedSamples ?? 0) >= 20,
-      10_000,
-      'samples lost to corrupted frames'
-    );
-    const lost = source.session?.stats.droppedSamples;
+    await streaming(monitor);
+    let reported = monitor.state.stats;
+    let agreed: { lost: number; kept: number } | undefined;
+    const stop = monitor.subscribe(() => {
+      if (monitor.state.stats !== reported) {
+        reported = monitor.state.stats;
+        agreed = {
+          lost: reported.samplesDropped,
+          kept: monitor.history.variable('imu/gyro_z')?.droppedSamples ?? 0,
+        };
+      }
+    });
+    await waitFor(() => (agreed?.lost ?? 0) >= 20, 10_000, 'samples lost to corrupted frames');
+    stop();
     monitor.disconnect();
 
     const gaps = monitor.history.gaps('imu/gyro_z', 0, Number.POSITIVE_INFINITY);
@@ -342,11 +361,39 @@ describe('MicrasCommSource against the simulated robot', () => {
 
     expect(dropped.length).toBeGreaterThan(0);
     expect(counted).toBe(monitor.history.variable('imu/gyro_z')?.droppedSamples);
-    expect(counted).toBe(lost);
+    expect(agreed?.kept).toBe(agreed?.lost);
+  });
+
+  test('keeps a group that went out of step as one stream, its lost samples as dropped', async () => {
+    const { monitor, sim } = start();
+    monitor.request([{ variable: 'imu/gyro_z', rateHz: 100 }]);
+    await streaming(monitor);
+    const stored = () => monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0;
+    await waitFor(() => stored() >= 20, 3000, 'the first samples');
+    const others = ['imu/gyro_x', 'imu/gyro_y', 'imu/gyro_z'].map(
+      (name) => monitor.state.variables.find((variable) => variable.name === name)?.id ?? -1
+    );
+
+    sim.robot?.receive(encodeGroupDefine(0, 40, others));
+    sim.robot?.receive(encodeGroupEnable(0, true));
+    await waitFor(
+      () => monitor.state.log.some((entry) => entry.text.startsWith('A sample of group 0 has')),
+      3000,
+      'the group out of step'
+    );
+    const before = stored();
+    await waitFor(() => stored() >= before + 20, 3000, 'the group in step again');
+
+    const gaps = monitor.history.gaps('imu/gyro_z', 0, Number.POSITIVE_INFINITY);
+    const dropped = gaps.filter((gap) => gap.kind === 'dropped');
+    expect(gaps.filter((gap) => gap.kind === 'not-streamed')).toEqual([]);
+    expect(dropped.reduce((total, gap) => total + (gap.count ?? 0), 0)).toBe(
+      monitor.history.variable('imu/gyro_z')?.droppedSamples
+    );
   });
 
   test('settles within a 3 KB/s link through several probes, then stops dropping', async () => {
-    const { source, monitor, sim } = start(
+    const { monitor, sim } = start(
       { throughputBytesPerSecond: 3000 },
       {
         timing: { ...TEST_TIMING, statsIntervalMs: 1000 },
@@ -357,49 +404,39 @@ describe('MicrasCommSource against the simulated robot', () => {
       ...PINNED,
       ...[...IMU, ...CONTROL].map((variable) => ({ variable, rateHz: 100 })),
     ]);
-    await streaming(source);
+    await streaming(monitor);
     await waitFor(
-      () => (source.planner?.budget.capacityBytesPerSecond ?? Infinity) < 3000 * 1.5,
+      () => (gauge(monitor, 'Budget')?.capacity ?? Infinity) < 3000 * 1.5,
       5000,
       'the first ceiling'
     );
 
-    let overspent = false;
-    const watch = setInterval(() => {
-      const plan = source.planner?.plan;
-      overspent ||= (plan?.usedBytesPerSecond ?? 0) > (plan?.budgetBytesPerSecond ?? 0);
-    }, 50);
     await delay(16_000);
     const settled = { ...sim.stats };
-    const settledMonitor = source.session?.stats;
+    const settledMonitor = monitor.state.stats;
     await delay(8000);
-    clearInterval(watch);
 
     const { stats } = monitor.state;
-    const plan = source.planner?.plan;
-    const session = source.session?.stats;
+    const budget = gauge(monitor, 'Budget');
+    const state = monitor.state.variables.find((variable) => variable.name === 'state');
 
-    expect(plan?.overBudget).toBe(true);
-    expect(((session?.bytesIn ?? 0) - (settledMonitor?.bytesIn ?? 0)) / 8).toBeLessThanOrEqual(
-      3000
+    expect(budget?.warn).toBe(true);
+    expect((sim.stats.meteredBytes - settled.meteredBytes) / 8).toBeLessThanOrEqual(3000);
+    expect(budget?.used).toBeLessThanOrEqual(budget?.capacity ?? 0);
+    expect(budget?.capacity).toBeGreaterThan(3000 * 0.75);
+    expect(stats.streams.find((stream) => stream.variableId === state?.id)?.grantedHz).toBeCloseTo(
+      10
     );
-    expect(overspent).toBe(false);
-    expect(plan?.usedBytesPerSecond).toBeLessThanOrEqual(plan?.budgetBytesPerSecond ?? 0);
-    expect(gauge(monitor, 'Budget')?.capacity).toBeGreaterThan(3000 * 0.75);
-    expect(plan?.rates.find((rate) => rate.variable === 'state')?.grantedHz).toBeCloseTo(10);
     expect(sim.stats.radioOverflowBytes).toBe(0);
     expect(sim.stats.samplesDropped - settled.samplesDropped).toBe(0);
-    expect((session?.droppedSamples ?? 0) - (settledMonitor?.droppedSamples ?? 0)).toBe(0);
-    expect(stats.samplesDropped).toBe(session?.droppedSamples);
-    expect(Math.abs(sim.stats.samplesDropped - (session?.droppedSamples ?? 0))).toBeLessThanOrEqual(
-      4
-    );
+    expect(stats.samplesDropped - settledMonitor.samplesDropped).toBe(0);
+    expect(Math.abs(sim.stats.samplesDropped - stats.samplesDropped)).toBeLessThanOrEqual(4);
   });
 
   test('marks a boundary when a stalled link has to shake hands again', async () => {
-    const { source, monitor } = start({ dropCredits: 40 });
+    const { monitor } = start({ dropCredits: 40 });
     monitor.request([{ variable: 'imu/gyro_z', rateHz: 200 }]);
-    await streaming(source);
+    await streaming(monitor);
 
     await waitFor(
       () => monitor.history.boundaries().some((boundary) => boundary.kind === 'reconnect'),
@@ -423,7 +460,7 @@ describe('MicrasCommSource over the WebSocket of the simulated robot', () => {
       try {
         monitor.connect({ transport: 'websocket', url: `ws://127.0.0.1:${sim.port}` });
         monitor.request([{ variable: 'imu/gyro_z', rateHz: 50 }]);
-        await waitFor(() => sessionState(source) === 'streaming', 30_000, 'the link to stream');
+        await waitFor(() => streamings(monitor) > 0, 30_000, 'the link to stream');
         await waitFor(() => monitor.history.latest('imu/gyro_z') !== undefined, 30_000, 'a sample');
 
         const { status } = monitor.state;

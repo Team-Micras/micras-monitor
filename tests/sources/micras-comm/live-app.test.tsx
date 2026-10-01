@@ -59,7 +59,8 @@ test('shows live values of the simulated robot over a WebSocket', async () => {
   await expect.poll(readout).toMatch(/^-?\d+\.\d{3}$/);
   const first = readout();
   await expect.poll(readout).not.toBe(first);
-  expect(source.planner?.plan?.rates.map((rate) => rate.variable)).toContain('imu/gyro_z');
+  const gyro = monitor.state.variables.find((variable) => variable.name === 'imu/gyro_z');
+  expect(monitor.state.stats.streams.map((stream) => stream.variableId)).toContain(gyro?.id);
 });
 
 test('reads the blob of a type view once the schema of the simulated robot has it', async () => {

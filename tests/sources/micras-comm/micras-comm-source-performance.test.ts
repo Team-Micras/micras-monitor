@@ -85,7 +85,9 @@ function benchLink(link: string, budget: Partial<BandwidthEstimatorOptions>): vo
       transport: 'websocket',
       url: `ws://127.0.0.1:${inject('simulatedRobotPort')}`,
     });
-    await expect.poll(() => source.session?.state.kind).toBe('streaming');
+    await expect
+      .poll(() => monitor.state.log.some((entry) => entry.text === 'streaming'))
+      .toBe(true);
     const streamed = monitor.state.variables.filter((entry) => entry.access.stream);
     monitor.request(streamed.map((entry) => ({ variable: entry.name, rateHz: RATE_HZ })));
     await frames(WARM_UP_MS, () => undefined);
@@ -103,7 +105,7 @@ function benchLink(link: string, budget: Partial<BandwidthEstimatorOptions>): vo
       ((monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0) - storedBefore) /
       (elapsedMs / 1000);
     const { bytesInPerSecond } = monitor.state.stats;
-    const planned = source.planner?.plan?.rates.length ?? 0;
+    const planned = monitor.state.stats.streams.length;
     monitor.disconnect();
 
     const share = perFrame.reduce((sum, ms) => sum + ms, 0) / elapsedMs;
