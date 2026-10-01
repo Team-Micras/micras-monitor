@@ -9,10 +9,9 @@ import uPlot from 'uplot';
 
 import type { HistoryMark, HistoryStore, TimeRange } from '@/history';
 
-import { formatClock } from '../../lib/format';
+import { plotConfig, type PlotTheme } from './plot-config';
 import {
   followWindow,
-  layoutAxes,
   PlotData,
   toMicroseconds,
   toSeconds,
@@ -20,6 +19,7 @@ import {
   type GapSpan,
   type PlotVariable,
 } from './plot-data';
+import { drawGaps } from './plot-gaps';
 import {
   historyBounds,
   PAN_STEP,
@@ -28,15 +28,7 @@ import {
   ZOOM_STEP,
   zoomWindow,
 } from './plot-navigation';
-
-/** The colors and font a plot draws with, read from the theme. */
-export interface PlotTheme {
-  readonly axis: string;
-  readonly grid: string;
-  readonly dropped: string;
-  readonly notStored: string;
-  readonly font: string;
-}
+import { PlotTooltip } from './plot-tooltip';
 
 /** What a plot shows besides its lines, for the window to draw around it. */
 export interface PlotStatus {
@@ -72,12 +64,6 @@ export interface PlotControllerOptions {
   readonly onResume?: () => void;
 }
 
-interface Tooltip {
-  readonly element: HTMLDivElement;
-  readonly time: HTMLDivElement;
-  readonly values: readonly HTMLSpanElement[];
-}
-
 interface Drag {
   readonly pointerId: number;
   readonly x: number;
@@ -85,12 +71,9 @@ interface Drag {
   moved: boolean;
 }
 
-const GAP_ALPHA = 0.14;
 const WHEEL_ZOOM_PER_PIXEL = 0.002;
 const WHEEL_LINE_PIXELS = 16;
 const DRAG_THRESHOLD_PX = 3;
-const LABEL_CHAR_PX = 6.7;
-const AXIS_PADDING_PX = 14;
 const MIN_COLUMNS = 2;
 
 function sameStatus(left: PlotStatus | null, right: PlotStatus): boolean {
@@ -102,27 +85,6 @@ function sameStatus(left: PlotStatus | null, right: PlotStatus): boolean {
   );
 }
 
-function timeLabels(splits: number[], increment: number): string[] {
-  return splits.map((seconds) => {
-    if (seconds < 0) {
-      return '';
-    }
-
-    const clock = formatClock(seconds * 1000);
-    return increment >= 1 ? clock.slice(0, -2) : clock;
-  });
-}
-
-function axisWidth(values: readonly string[] | null): number {
-  const longest = values?.reduce((width, value) => Math.max(width, value.length), 0) ?? 4;
-  return Math.ceil(longest * LABEL_CHAR_PX) + AXIS_PADDING_PX;
-}
-
-function valueLabels(splits: number[], increment: number): string[] {
-  const decimals = Math.min(6, Math.max(0, -Math.floor(Math.log10(increment))));
-  return splits.map((value) => value.toFixed(decimals));
-}
-
 /** A plot of some variables over time, in a DOM element it owns. */
 export class PlotController {
   readonly #options: PlotControllerOptions;
@@ -132,7 +94,7 @@ export class PlotController {
   #theme: PlotTheme;
   #names: readonly string[];
   #plot: uPlot;
-  #tooltip: Tooltip;
+  #tooltip: PlotTooltip;
   #unsubscribe: () => void;
   #spanUs: number;
   #paused = false;
@@ -158,7 +120,7 @@ export class PlotController {
     this.#variables = options.variables;
     this.#theme = options.theme;
     this.#names = options.variables.map((variable) => variable.name);
-    this.#tooltip = this.#createTooltip();
+    this.#tooltip = new PlotTooltip(this.#root, this.#variables, this.#options.history);
     this.#plot = this.#createPlot();
     this.#unsubscribe = this.#follow();
     this.#keys.addEventListener('keydown', this.#key);
@@ -174,7 +136,7 @@ export class PlotController {
     this.#variables = variables;
     this.#theme = theme;
     this.#names = variables.map((variable) => variable.name);
-    this.#tooltip = this.#createTooltip();
+    this.#tooltip = new PlotTooltip(this.#root, this.#variables, this.#options.history);
     this.#plot = this.#createPlot();
     this.#unsubscribe = this.#follow();
     this.draw();
@@ -271,7 +233,16 @@ export class PlotController {
   }
 
   #createPlot(): uPlot {
-    const plot = new uPlot(this.#config(this.#root), [[]], this.#root);
+    const config = plotConfig({
+      root: this.#root,
+      variables: this.#variables,
+      theme: this.#theme,
+      syncKey: this.#options.syncKey,
+      xRange: () => this.#xRange(),
+      drawAxes: (drawn) => drawGaps(drawn, this.#spans, this.#theme),
+      setCursor: (moved) => this.#updateTooltip(moved),
+    });
+    const plot = new uPlot(config, [[]], this.#root);
     const { over } = plot;
     over.style.cursor = 'grab';
     over.style.touchAction = 'none';
@@ -317,7 +288,7 @@ export class PlotController {
     over.removeEventListener('pointercancel', this.#up);
     over.removeEventListener('dblclick', this.#fit);
     this.#plot.destroy();
-    this.#tooltip.element.remove();
+    this.#tooltip.remove();
   }
 
   #moveTo(window: TimeRange): void {
@@ -455,155 +426,17 @@ export class PlotController {
     event.stopPropagation();
   };
 
-  #config(root: HTMLElement): uPlot.Options {
-    const variables = this.#variables;
-    const theme = this.#theme;
-    const { syncKey } = this.#options;
-    const layout = layoutAxes(variables);
-    const scales: uPlot.Scales = {
-      x: { time: false, range: () => this.#xRange() },
-    };
-
-    for (const axis of layout.axes) {
-      scales[axis.scale] = { auto: true };
-    }
-
-    return {
-      width: Math.max(1, root.clientWidth),
-      height: Math.max(1, root.clientHeight),
-      pxAlign: 1,
-      legend: { show: false },
-      cursor: {
-        sync: { key: syncKey, setSeries: false },
-        points: { show: false },
-        drag: { x: false, y: false },
-        y: false,
-      },
-      scales,
-      series: [
-        {},
-        ...variables.map((variable, index) => ({
-          label: variable.name,
-          stroke: variable.color,
-          width: 1,
-          scale: layout.scales[index],
-          spanGaps: false,
-          points: { show: false },
-        })),
-      ],
-      axes: [
-        {
-          stroke: theme.axis,
-          font: theme.font,
-          grid: { show: false },
-          ticks: { show: false },
-          gap: 6,
-          size: 28,
-          space: 80,
-          values: (_plot, splits, _index, _space, increment) => timeLabels(splits, increment),
-        },
-        ...layout.axes.map((axis, index) => ({
-          scale: axis.scale,
-          side: axis.side === 'left' ? 3 : 1,
-          stroke: theme.axis,
-          font: theme.font,
-          grid: { show: index === 0, stroke: theme.grid, width: 1 },
-          ticks: { show: false },
-          gap: 6,
-          size: (_plot: uPlot, values: string[] | null) => axisWidth(values),
-          space: 36,
-          values: (
-            _plot: uPlot,
-            splits: number[],
-            _index: number,
-            _space: number,
-            increment: number
-          ) => valueLabels(splits, increment),
-        })),
-      ],
-      hooks: {
-        drawAxes: [(plot) => this.#drawGaps(plot)],
-        setCursor: [(plot) => this.#updateTooltip(plot)],
-      },
-    };
-  }
-
   #xRange(): uPlot.Range.MinMax {
     const window = this.#window;
     return window === undefined ? [0, 1] : [toSeconds(window.startUs), toSeconds(window.endUs)];
   }
 
-  #drawGaps(plot: uPlot): void {
-    if (this.#spans.length === 0) {
-      return;
-    }
-
-    const { ctx, bbox } = plot;
-    const theme = this.#theme;
-    ctx.save();
-    ctx.globalAlpha = GAP_ALPHA;
-
-    for (const span of this.#spans) {
-      const left = plot.valToPos(toSeconds(span.startUs), 'x', true);
-      const right = plot.valToPos(toSeconds(span.endUs), 'x', true);
-      ctx.fillStyle = span.kind === 'dropped' ? theme.dropped : theme.notStored;
-      ctx.fillRect(left, bbox.top, Math.max(devicePixelRatio, right - left), bbox.height);
-    }
-
-    ctx.restore();
-  }
-
-  #createTooltip(): Tooltip {
-    const element = document.createElement('div');
-    element.dataset.plotTooltip = '';
-    element.className =
-      'pointer-events-none absolute z-10 hidden min-w-48 rounded-lg border bg-popover px-3 py-2 font-mono text-xs text-popover-foreground shadow-md';
-    const time = document.createElement('div');
-    time.className = 'mb-1 tabular-nums';
-    element.append(time);
-    const values = this.#variables.map((variable) => {
-      const row = document.createElement('div');
-      row.className = 'flex items-center gap-2';
-      const swatch = document.createElement('span');
-      swatch.className = 'size-2 shrink-0 rounded-[2px]';
-      swatch.style.background = variable.color;
-      const name = document.createElement('span');
-      name.className = 'flex-1 truncate text-muted-foreground';
-      name.textContent = variable.name;
-      const value = document.createElement('span');
-      value.className = 'tabular-nums';
-      row.append(swatch, name, value);
-      element.append(row);
-      return value;
-    });
-    this.#root.append(element);
-    return { element, time, values };
-  }
-
   #updateTooltip(plot: uPlot): void {
-    const left = plot.cursor.left ?? -1;
-    const { element, time, values } = this.#tooltip;
-
-    if (!this.#hovered || left < 0 || this.#window === undefined) {
-      element.classList.add('hidden');
-      return;
+    if (this.#hovered && this.#window !== undefined) {
+      this.#tooltip.show(plot);
+    } else {
+      this.#tooltip.hide();
     }
-
-    const seconds = plot.posToVal(left, 'x');
-    const timeUs = toMicroseconds(seconds);
-    time.textContent = `t ${formatClock(seconds * 1000)}`;
-    this.#variables.forEach((variable, index) => {
-      const sample = this.#options.history.valueAt(variable.name, timeUs);
-      values[index].textContent =
-        sample === undefined || Number.isNaN(sample.value) ? '—' : sample.value.toFixed(3);
-    });
-    element.classList.remove('hidden');
-    const over = plot.over.getBoundingClientRect();
-    const root = plot.root.getBoundingClientRect();
-    const width = element.offsetWidth;
-    const x = left + 12 + width > over.width ? left - width - 12 : left + 12;
-    element.style.left = `${over.left - root.left + x}px`;
-    element.style.top = `${over.top - root.top + 8}px`;
   }
 
   #setStatus(status: PlotStatus): void {
@@ -619,6 +452,6 @@ export class PlotController {
 
   readonly #leave = () => {
     this.#hovered = false;
-    this.#tooltip.element.classList.add('hidden');
+    this.#tooltip.hide();
   };
 }

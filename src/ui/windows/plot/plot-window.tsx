@@ -17,7 +17,8 @@ import { useShellStore } from '../../state/shell-store';
 import { useResolvedColors } from '../shared/document-theme';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
-import { PlotController, type PlotStatus, type PlotTheme } from './plot-controller';
+import type { PlotTheme } from './plot-config';
+import { PlotController, type PlotStatus } from './plot-controller';
 import { layoutAxes, type PlotVariable } from './plot-data';
 
 const PLOT_SPANS_S = [2, 5, 10, 30, 60] as const;
