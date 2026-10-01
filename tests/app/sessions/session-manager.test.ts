@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Variable } from '@/core/variables';
-import { MemoryRecordingFile, SavedRecording, TelemetryStore, ManualScheduler } from '@/telemetry';
+import {
+  encodeRecordingHeader,
+  ManualScheduler,
+  MemoryRecordingFile,
+  RECORDING_FORMAT,
+  RECORDING_FORMAT_VERSION,
+  SavedRecording,
+  TelemetryStore,
+} from '@/telemetry';
 
 import { DirectTransport, FakeDirectory, FakeFile } from '@tests/support/app/sessions/fake-opfs';
 import { MemorySessionLibrary } from '@/app/sessions/memory-library';
@@ -311,6 +319,52 @@ describe('opening a saved session', () => {
     expect(manager.state.viewing).toBeNull();
     expect(manager.state.error).toMatch(/Could not open the session: Not a monitor recording/);
     expect(library.openings('broken')).toBe(0);
+  });
+
+  test('says that a recording of another format version does not open', async () => {
+    const header = encodeRecordingHeader({
+      format: RECORDING_FORMAT,
+      version: RECORDING_FORMAT_VERSION,
+      startedAtMs: 1,
+      robot: {},
+      schema: [],
+    });
+    const json = new TextEncoder().encode(
+      JSON.stringify({
+        format: RECORDING_FORMAT,
+        version: 1,
+        startedAtMs: 1,
+        robot: {},
+        schema: [{ id: 0, name: 'pose/x', type: 9, access: 1 }],
+      })
+    );
+    const bytes = new Uint8Array(12 + json.byteLength);
+    bytes.set(header.subarray(0, 8));
+    new DataView(bytes.buffer).setUint32(8, json.byteLength, true);
+    bytes.set(json, 12);
+    const library = new MemorySessionLibrary();
+    library.seed(
+      {
+        id: 'old',
+        name: 'old',
+        robot: null,
+        createdAtMs: 1,
+        updatedAtMs: 1,
+        state: 'saved',
+        bytes: bytes.byteLength,
+        samples: 0,
+        durationUs: 0,
+      },
+      bytes
+    );
+    const { manager } = rig(library);
+    await manager.start();
+    await manager.open('old');
+
+    expect(manager.state.viewing).toBeNull();
+    expect(manager.state.error).toBe(
+      'Could not open the session: The recording is in format version 1; this monitor reads only version 2'
+    );
   });
 });
 

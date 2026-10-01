@@ -130,7 +130,7 @@ function join(...parts: Uint8Array[]): Uint8Array {
   return bytes;
 }
 
-describe('recording format v1', () => {
+describe('recording format v2', () => {
   test('reads back exactly what it wrote', () => {
     expect(deserializeRecording(serializeRecording(RECORDING))).toEqual(RECORDING);
   });
