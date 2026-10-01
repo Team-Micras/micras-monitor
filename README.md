@@ -34,7 +34,7 @@ shape its link and inject faults, for example `bun run simulate --throughput 300
 
 ## Keyboard
 
-The keymap is central (`src/app/keymap/keymap.ts`), and the launcher (`Ctrl+K`) lists the same
+The keymap is central (`src/ui/keyboard/keymap.ts`), and the launcher (`Ctrl+K`) lists the same
 actions. Keys that are not a modified chord (`P`, `Space`, `/`) are ignored while typing in a text
 field. A robot package gives its commands keys (`key`), which join the keymap and can be bound to
 others like any key; Micras puts STOP on Space. A command's key is handled before anything else,
@@ -63,7 +63,7 @@ browser; the installed PWA does not have that problem.
 | `Tab`                                   | Windows in screen order, then the gaps, then floating windows        |
 | Arrows, `Home`, `End`, `Enter` on a gap | Resize a split by 2% (10% with Shift), to its limits, or even it out |
 
-The keymap reads overrides from the browser's storage (`src/app/state/key-overrides.ts`).
+The keymap reads overrides from the browser's storage (`src/ui/keyboard/key-overrides.ts`).
 
 ## Workspaces and layouts
 
@@ -96,8 +96,8 @@ store carry on underneath, REC keeps recording, and STOP still reaches the robot
 commands, writes and reads are off until **Live** goes back to the live session.
 
 Each session is a directory `micras-monitor/sessions/<id>/` with `session.json` and
-`recording.mmrec` (format version 2, `src/telemetry/recording.ts`). A dedicated worker
-(`src/app/sessions/opfs.worker.ts`) owns the files and appends through synchronous access handles,
+`recording.mmrec` (format version 2, `src/recording/recording.ts`). A dedicated worker
+(`src/recording/library/opfs.worker.ts`) owns the files and appends through synchronous access handles,
 each write flushed before it is acknowledged. The tab recording a session holds a Web Lock on it; on
 start, a session still marked `recording` whose lock nobody holds was cut short: its damaged tail, if
 any, is cut and reported, and it is listed as recovered. Export downloads the file. Browsers without
@@ -113,7 +113,7 @@ idle, or while recording.
 
 Below 640 px of width the tiling gives way to a single column: status, the map, two values, the
 commands, a small plot and the writable labelled settings, above a STOP that is always on screen. It
-is drawn from the package's roles, presets and labels (`src/app/phone/phone-plan.ts`), so a robot with
+is drawn from the package's roles, presets and labels (`src/ui/phone/phone-plan.ts`), so a robot with
 no package gets its first streamed numbers and its commands.
 
 The Pages workflow (`.github/workflows/pages.yml`) runs on `main`: lint, typecheck, tests, a build with
@@ -148,54 +148,58 @@ changes, robot state changes, command refusals with their reason, recording star
 window that failed to load; an assertive one announces what STOP came to. Samples are never
 announced. The drawer, the launcher and the dialogs keep Tab inside them and give the focus back to
 where it came from on Escape. Motion stops under `prefers-reduced-motion`. The text tokens meet
-WCAG AA in both themes (`tests/app/state/theme-contrast.test.tsx` checks every pair), and axe runs in
+WCAG AA in both themes (`tests/ui/state/theme-contrast.test.tsx` checks every pair), and axe runs in
 the browser tests over the workspace, the phone view and the open dialogs.
 
 ## Architecture
 
 The app is a single package. Folders are layers, and `no-restricted-imports` rules in `.oxlintrc.json`
-keep their dependencies pointing one way.
+keep their dependencies pointing one way; each rule's message says what it guards.
 
-| Path               | Layer                                                                                                                                 | May import                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `src/core/`        | The monitor's own model and the `Monitor`: variables, values, the `Source` boundary, log, timeline                                    | nothing else in the monitor                                            |
-| `src/protocol/`    | COBS, frames, message layouts and value codecs                                                                                        | nothing else in the monitor                                            |
-| `src/link/`        | Transports, the session and the stream planner                                                                                        | `protocol`, `core`                                                     |
-| `src/telemetry/`   | Session store, history, decimation and recording format                                                                               | `core`                                                                 |
-| `src/tiling/`      | Tiling window engine, no DOM                                                                                                          | nothing else in the monitor                                            |
-| `src/robot-kit/`   | Contracts for robot packages and the helpers that read them                                                                           | `core`                                                                 |
-| `src/lazy/`        | Idle and retrying dynamic imports                                                                                                     | nothing else in the monitor                                            |
-| `src/sources/<s>/` | Where robot data comes from: `micras-comm` over the link, `demo` in memory                                                            | `core`; `micras-comm` also `protocol` and `link`; never another source |
-| `src/app/`         | React: shell, windows, sessions, phone view, theme                                                                                    | every layer above but `sources`, `protocol` and `link`                 |
-| `robots/<robot>/`  | Robot packages: types, views, commands, presets                                                                                       | `robot-kit`, `core`, React for the views                               |
-| `scripts/`         | Simulated robot, live checks, bench and bundle size                                                                                   | `protocol`, `link`, `core`, `telemetry`                                |
-| `tests/`           | Every test, mirroring `src/`, `robots/` and `scripts/`; `tests/support/` holds their fixtures and helpers, `tests/e2e/` the PWA check | everything                                                             |
+| Path                  | What it holds                                                                                                              | May import                                        |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `src/core/`           | The monitor's own model and the `Monitor`: variables, values, the `Source` boundary, log, timeline, chords                 | nothing else in the monitor                       |
+| `src/core/robot/`     | The contract of robot packages, their registry and the helpers that read them                                              | the rest of `core`                                |
+| `src/history/`        | The history in memory: the store, its blocks and memory cap, decimation for the plots, gaps                                | `core`                                            |
+| `src/recording/`      | The recording format, its writer and reader; `library/` keeps the recordings in OPFS or memory and manages them            | `core`, `history`                                 |
+| `src/tiling/`         | Tiling window engine, no DOM                                                                                               | nothing else in the monitor                       |
+| `src/sources/<s>/`    | Where robot data comes from: `micras-comm` over the robot link, `demo` in memory                                           | `core` and its own folder; never another source   |
+| `src/robots/<robot>/` | Robot packages: types, views, commands, presets                                                                            | `core`, React, and `ui/lazy` to load views lazily |
+| `src/ui/`             | React: shell, windows, recordings, keyboard, tiling view, phone view, theme; `primitives/` holds the shadcn components     | `core`, `history`, `recording`, `tiling`          |
+| `src/main.tsx`        | The composition root                                                                                                       | everything                                        |
+| `scripts/`            | Simulated robot, live checks, bench and bundle size                                                                        | `core`, the sources; the history bench `history`  |
+| `tests/`              | Every test, mirroring `src/` and `scripts/`; `tests/support/` holds their fixtures and helpers, `tests/e2e/` the PWA check | everything                                        |
 
-Only `src/app/` and the `src/main.tsx` entry point may import React. `src/main.tsx` is the composition
-root: it is the only file that imports the robot packages and the sources, and it hands them to the
-app, so nothing else in `src/` depends on `robots/` or `src/sources/`. Aliases: `@/…` for `src/…` and
-`@robots/…` for `robots/…`. Data flows one way: a source (`src/core/source.ts`) pushes status,
+`src/sources/micras-comm/` is the one place that speaks `micras_comm`: `wire/` (COBS, frames, constants
+and value codecs), `link/` (the `RobotLink` with its handshake, schema, epochs, requests, writes and
+credit), `streaming/` (the stream planner, `fitGroups` and the bandwidth estimator) and `transports/`
+(WebSocket and Bluetooth), with the `MicrasCommSource` at its root.
+
+Only `src/ui/`, the robot packages and the `src/main.tsx` entry point may import React. `src/main.tsx`
+is the composition root: it is the only file that imports the robot packages and the sources, and it
+hands them to the UI, so nothing else in `src/` depends on `src/robots/` or `src/sources/`. The alias
+`@/…` stands for `src/…`. Data flows one way: a source (`src/core/source.ts`) pushes status,
 variables, samples, values and log lines into the sink the `Monitor` (`src/core/monitor.ts`) gives
 it; the monitor feeds the history store and is what the UI reads, through `useLiveMonitor()` for
 what acts on the robot and `useShownMonitor()` for the windows, which show a recording when one is
 open. The UI only calls back into the monitor: connect, request streams, command, write, read.
-Above the link, everything speaks the model of `src/core/`; `src/link/value-types.ts` is the one
-place that maps the wire's type codes and access flags onto it.
+Above the link, everything speaks the model of `src/core/`; `src/sources/micras-comm/value-types.ts`
+is the one place that maps the wire's type codes and access flags onto it.
 File names are kebab-case throughout.
 
-The frame vectors in `tests/support/protocol/` are the bytes the firmware's own codec produces
+The frame vectors in `tests/support/sources/micras-comm/` are the bytes the firmware's own codec produces
 (`tests/host/test_frame.cpp` in the firmware); a change to the wire format changes both together.
 
 ## Adding a robot package
 
-A package is plain data (`RobotPackage`, `src/robot-kit/types.ts`) that tells the generic UI what
+A package is plain data (`RobotPackage`, `src/core/robot/types.ts`) that tells the generic UI what
 the schema cannot: labels, units, roles, commands, refusal reasons, layouts and how to draw a
 serialized type. The monitor picks it by the name in HELLO_ACK (`id`), or, for firmware that sends
 none, by the set of variable names in `signature`. Without a package everything still works raw.
 
 ```ts
-// robots/sumo/index.ts
-import type { RobotPackage } from '@/robot-kit';
+// src/robots/sumo/index.ts
+import type { RobotPackage } from '@/core/robot';
 
 export const sumo: RobotPackage = {
   id: 'sumo',
@@ -236,7 +240,7 @@ export const sumo: RobotPackage = {
 Register it in `src/main.tsx` next to `micras`: `new RobotRegistry([micras, sumo])`. The UI reads
 roles (`state`, `battery`, `pose.x`, `map`, `map.revision`, …) and never names, so the Robot window,
 the phone view and the Commands window work as soon as the roles are set. A package for React adds
-`SerializableType` entries whose `View` draws a blob such as the maze (`robots/micras/` is the full
+`SerializableType` entries whose `View` draws a blob such as the maze (`src/robots/micras/` is the full
 example), and `idleStates` tells the app when the robot is at rest for updates. A command is
 presented by plain fields: `pinned` keeps it in the top bar and at the bottom of the phone, sent to
 the live robot even while a recording is shown; `key` binds it to a key; `tone: 'danger'` draws it
@@ -245,8 +249,8 @@ rejects a malformed package at registration.
 
 ## Tests and checks
 
-- Tests mirror the `src/` paths: `src/telemetry/store.ts` is tested by `tests/telemetry/store.test.ts`.
-- An integration test sits with the module it exercises, such as `tests/link/session-simulated.test.ts`.
+- Tests mirror the `src/` paths: `src/history/history-store.ts` is tested by `tests/history/history-store.test.ts`.
+- An integration test sits with the module it exercises, such as `tests/sources/micras-comm/link/robot-link-simulated.test.ts`.
 - `tests/support/` holds the fixtures and helpers, and their own tests; `tests/e2e/` holds the PWA check.
 - `tests/config/` tests the build and test configuration. Shipped code never imports `tests/` or `scripts/`; lint enforces it.
 
@@ -263,7 +267,7 @@ rejects a malformed package at registration.
 | `bun run test:watch`      | Vitest in watch mode                                                                                             |
 | `bun run build`           | Typecheck and build into `dist/`; `bun run preview` serves it                                                    |
 | `bun run size`            | Gzipped size of the bundle against its target (reports, does not fail)                                           |
-| `bun run bench:telemetry` | Memory and query times of the telemetry store at full size                                                       |
+| `bun run bench:history`   | Memory and query times of the history store at full size                                                         |
 | `bun run check:live`      | Streams a live robot's variables through a session and prints what the link did (manual)                         |
 | `bun run check:sim`       | Follows an exploration of Micras in the simulation through the app (manual)                                      |
 | `bun run check:recording` | Records a long session, kills the tab and checks the recovery (manual)                                           |
