@@ -201,13 +201,20 @@ function cellOf(cell: string | null): readonly [number, number] | null {
 }
 
 /**
- * Counts the changes of the map in a stretch of snapshots, and those without a new revision since
- * the previous change, seen in the same snapshot or the next (both are sampled ten times a second).
+ * Counts the changes of the map in a stretch of snapshots, and those no change of the revision
+ * accounts for. Every change of the revision is a credit for one change of the map, since the map
+ * is read again once the revision moves; a change of the map is unannounced when the changes of
+ * the map so far outnumber the changes of the revision up to and including the next snapshot
+ * (both are sampled ten times a second, and a read can answer before the revision shown moves).
  */
 function mapChanges(stretch: readonly Snapshot[]): { total: number; unannounced: number } {
+  let revisions = 0;
+  const credits = stretch.map((latest, index) => {
+    revisions += index > 0 && latest.revision !== stretch[index - 1].revision ? 1 : 0;
+    return revisions;
+  });
   let total = 0;
   let unannounced = 0;
-  let revisionAtMap = stretch[0]?.revision ?? null;
 
   stretch.forEach((latest, index) => {
     const previous = stretch[index - 1];
@@ -218,11 +225,7 @@ function mapChanges(stretch: readonly Snapshot[]): { total: number; unannounced:
 
     if (latest.walls !== previous.walls || latest.explored !== previous.explored) {
       total++;
-      const announcer = [latest, stretch[index + 1]].find(
-        (entry) => entry !== undefined && entry.revision !== revisionAtMap
-      );
-      unannounced += announcer === undefined ? 1 : 0;
-      revisionAtMap = announcer?.revision ?? latest.revision;
+      unannounced += total > credits[Math.min(index + 1, stretch.length - 1)] ? 1 : 0;
     }
   });
 
