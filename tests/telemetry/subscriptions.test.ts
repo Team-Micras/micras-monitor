@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { TypeCode } from '@/protocol';
 
 import { TelemetryStore } from '@/telemetry/store';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 function twoVariables() {
   const scheduler = new ManualScheduler();

@@ -16,7 +16,7 @@ import { RecordingBlocks, SessionRecorder } from '@/telemetry/recorder';
 import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
 import type { SampleValue } from '@/telemetry/types';
 import { serializeRecording } from '@tests/support/telemetry/recording-bytes';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const BLOCK_SIZE = 1024;
 const VARIABLES = [

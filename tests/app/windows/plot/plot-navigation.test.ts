@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { TypeCode } from '@/protocol';
-import { TelemetryStore } from '@/telemetry';
+import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import {
   clampWindow,
@@ -11,7 +11,6 @@ import {
   wholeHistory,
   zoomWindow,
 } from '@/app/windows/plot/plot-navigation';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
 
 const BOUNDS = { startUs: 0, endUs: 60_000_000 };
 

@@ -31,7 +31,7 @@ import '@/app/styles.css';
 import type { AppUpdates } from '@/app/pwa/app-updates';
 import type { ShellWindow, WindowPayload } from '@/app/windows/types';
 import { seriousViolations } from '@tests/support/axe-check';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const IDLE = 1;
 const RUN = 3;

@@ -15,7 +15,7 @@ import { describeRobot } from '@/app/sessions/browser-sessions';
 import { MemorySessionLibrary } from '@/app/sessions/memory-library';
 import { MemoryLocks } from '@/app/sessions/session-library';
 import { SessionManager } from '@/app/sessions/session-manager';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const MICRAS = mouse({ id: 'micras', displayName: 'Micras' });
 const PLOTTED = 'imu/gyro_z';

@@ -7,7 +7,7 @@ import { mouse } from '@tests/support/robot-kit/packages';
 import { createDemoRobot } from '@/app/fake/demo-robot';
 import type { FakeRobot } from '@/app/fake/fake-robot';
 import { PackageSelector } from '@/app/package-selection';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
 

@@ -50,7 +50,7 @@ export {
   type RecordingVariable,
   type LocatedRecord,
 } from './recording';
-export type { Scheduler } from './scheduler';
+export { ManualScheduler, type Scheduler } from './scheduler';
 export {
   toBandSeries,
   toLineSeries,

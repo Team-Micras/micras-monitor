@@ -5,7 +5,7 @@ import { decodeAccess, TypeCode } from '@/protocol';
 import { subscribeThrottled } from '@/app/monitor-context';
 import { createDemoRobot } from '@/app/fake/demo-robot';
 import { FakeRobot } from '@/app/fake/fake-robot';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
 const STOP = 5;

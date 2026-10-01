@@ -65,6 +65,10 @@
           {
             "patterns": [
               {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
                 "regex": "^react(-dom)?(/.*)?$",
                 "message": "Only src/app may use React; keep this layer framework free."
               },
@@ -89,6 +93,10 @@
           {
             "patterns": [
               {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
                 "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
                 "message": "Nothing in src/ imports a robot package; robots register through the app."
               }
@@ -104,6 +112,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
               {
                 "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
                 "message": "Nothing in src/ imports a robot package; robots register through the app."
@@ -124,6 +136,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
               {
                 "regex": "^react(-dom)?(/.*)?$",
                 "message": "Only src/app may use React; keep this layer framework free."
@@ -146,11 +162,15 @@
           {
             "patterns": [
               {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
                 "regex": "^react(-dom)?(/.*)?$",
                 "message": "Only src/app may use React; keep this layer framework free."
               },
               {
-                "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(telemetry|tiling|robot-kit|app|robots|tools))(/|$)",
+                "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(telemetry|tiling|robot-kit|app|robots|scripts))(/|$)",
                 "message": "src/link depends only on src/protocol."
               }
             ]
@@ -165,6 +185,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
               {
                 "regex": "^react(-dom)?(/.*)?$",
                 "message": "Only src/app may use React; keep this layer framework free."
@@ -192,6 +216,10 @@
           {
             "patterns": [
               {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
                 "regex": "^react(-dom)?(/.*)?$",
                 "message": "Only src/app may use React; keep this layer framework free."
               },
@@ -211,6 +239,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
               {
                 "regex": "^react(-dom)?(/.*)?$",
                 "message": "Only src/app may use React; keep this layer framework free."
@@ -232,6 +264,10 @@
           {
             "patterns": [
               {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
                 "regex": "^(@/(link|telemetry|tiling|app)|(\\.\\./)+(src/(link|telemetry|tiling|app)))(/|$)",
                 "message": "Robot packages depend only on src/robot-kit, src/protocol and React."
               }
@@ -243,17 +279,44 @@
     {
       "files": ["src/main.tsx"],
       "rules": {
-        "no-restricted-imports": "off"
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              }
+            ]
+          }
+        ]
       }
     },
     {
-      "files": ["scripts/**", "tests/**", "*.config.ts"],
+      "files": [
+        "scripts/**",
+        "*.config.ts",
+        "tests/e2e/**",
+        "tests/scripts/**",
+        "tests/config/**",
+        "tests/link/session-simulated.test.ts",
+        "tests/link/session-faults.test.ts",
+        "tests/support/browser-*.ts",
+        "tests/support/in-memory-robot.ts",
+        "tests/support/session-harness.ts",
+        "tests/support/virtual-time.ts"
+      ],
       "env": {
         "node": true
       }
     },
     {
-      "files": ["tests/support/**", "tests/scripts/**", "tests/link/**"],
+      "files": [
+        "tests/support/**",
+        "tests/scripts/**",
+        "tests/link/session-simulated.test.ts",
+        "tests/link/session-faults.test.ts"
+      ],
       "rules": {
         "no-await-in-loop": "off"
       }
@@ -266,6 +329,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^(@tests|(\\.\\./)+tests)(/|$)",
+                "message": "Scripts never import tests."
+              },
               {
                 "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(telemetry|tiling|robot-kit|app)|robots))(/|$)",
                 "message": "Tools may only depend on src/protocol and src/link."
@@ -286,6 +353,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^(@tests|(\\.\\./)+tests)(/|$)",
+                "message": "Scripts never import tests."
+              },
               {
                 "regex": "^(@/(link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|telemetry|tiling|robot-kit|app)|robots))(/|$)",
                 "message": "The simulated robot stands in for the firmware and speaks only src/protocol."
@@ -346,6 +417,10 @@
           "error",
           {
             "patterns": [
+              {
+                "regex": "^(@tests|(\\.\\./)+tests)(/|$)",
+                "message": "Scripts never import tests."
+              },
               {
                 "regex": "^(@/(link|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|tiling|robot-kit|app)|robots))(/|$)",
                 "message": "The telemetry benchmark may only depend on src/protocol and src/telemetry."

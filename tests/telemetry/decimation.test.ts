@@ -20,7 +20,7 @@ import { FANOUT, LEAF_SIZE } from '@/telemetry/pyramid';
 import { toBandSeries, toLineSeries } from '@/telemetry/series';
 import { TelemetryStore } from '@/telemetry/store';
 import { historyWindow, liveWindow } from '@/telemetry/window';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const MS = 1000;
 

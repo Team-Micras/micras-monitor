@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { TypeCode } from '@/protocol';
-import { TelemetryStore } from '@/telemetry';
+import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import {
   followWindow,
@@ -12,7 +12,6 @@ import {
   visibleGaps,
   type PlotVariable,
 } from '@/app/windows/plot/plot-data';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
 
 const SPEED = 'pose/linear_speed';
 const REFERENCE = 'reference/linear_speed';

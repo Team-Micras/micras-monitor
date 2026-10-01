@@ -857,8 +857,8 @@ const KIND_NAMES = new Map<number, RecordingRecord['kind']>([
 
 /**
  * Find the records of a recording without decoding their samples, for a reader that decodes
- * blocks only when it needs them. A recording cut short, or whose last record is damaged, still gives the records before; a
- * damaged record in the middle is skipped and listed.
+ * blocks only when it needs them. A recording cut short, or whose last record is damaged, still
+ * gives the records before; a damaged record in the middle is skipped and listed.
  *
  * @throws If the bytes are not a recording, or its version is not 1.
  */

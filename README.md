@@ -225,6 +225,11 @@ rejects a malformed package at registration.
 
 ## Tests and checks
 
+- Tests mirror the `src/` paths: `src/telemetry/store.ts` is tested by `tests/telemetry/store.test.ts`.
+- An integration test sits with the module it exercises, such as `tests/link/session-simulated.test.ts`.
+- `tests/support/` holds the fixtures and helpers, and their own tests; `tests/e2e/` holds the PWA check.
+- `tests/config/` tests the build and test configuration. Shipped code never imports `tests/` or `scripts/`; lint enforces it.
+
 | Command                   | What it does                                                                                                     |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `bun run check`           | Everything below, in order, as in CI                                                                             |

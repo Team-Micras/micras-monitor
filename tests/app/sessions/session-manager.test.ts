@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { TypeCode, decodeAccess } from '@/protocol';
-import { MemoryRecordingFile, SavedRecording, TelemetryStore } from '@/telemetry';
+import { MemoryRecordingFile, SavedRecording, TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import { DirectTransport, FakeDirectory, FakeFile } from '@tests/support/app/sessions/fake-opfs';
 import { MemorySessionLibrary } from '@/app/sessions/memory-library';
@@ -15,7 +15,6 @@ import {
   SessionManager,
   type SessionsState,
 } from '@/app/sessions/session-manager';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
 import { deserializeRecording } from '@tests/support/telemetry/recording-bytes';
 
 const SAMPLE_US = 10_000;

@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
 import { TypeCode } from '@/protocol';
-import { TelemetryStore } from '@/telemetry';
+import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import { TransitionTracker } from '@/app/windows/robot/transitions';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
 
 describe('TransitionTracker', () => {
   test('finds each change once, across scans and epochs', () => {

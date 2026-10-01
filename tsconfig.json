@@ -4,9 +4,7 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["./src/*"],
-      "@robots/*": ["./robots/*"],
-      "@tests/*": ["./tests/*"],
-      "@scripts/*": ["./scripts/*"]
+      "@robots/*": ["./robots/*"]
     }
   },
   "references": [
@@ -14,6 +12,7 @@
     { "path": "./tsconfig.scripts.json" },
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.sw.json" },
-    { "path": "./tsconfig.tests.json" }
+    { "path": "./tsconfig.tests.json" },
+    { "path": "./tsconfig.tests-browser.json" }
   ]
 }

@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import { TypeCode, decodeAccess } from '@/protocol';
-import { TelemetryStore } from '@/telemetry';
+import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import { MessageTransport, OpfsSessionLibrary } from '@/app/sessions/opfs-library';
 import { MemoryLocks, WebLocks } from '@/app/sessions/session-library';
 import { recordedSchema, SessionManager } from '@/app/sessions/session-manager';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
 
 const SAMPLE_US = 10_000;
 const VARIABLES = [

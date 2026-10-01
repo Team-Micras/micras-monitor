@@ -8,7 +8,7 @@ import type { BlockPersistence, BlockRef, PersistedBlock } from '@/telemetry/per
 import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
 import type { TelemetryEvent } from '@/telemetry/types';
 import { MemoryBlockPersistence } from '@tests/support/telemetry/memory-persistence';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const BLOCK_SIZE = 1024;
 const VARIABLES = [

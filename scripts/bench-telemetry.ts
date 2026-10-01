@@ -17,8 +17,8 @@ import {
   historyWindow,
   TelemetryStore,
   type VariableSpec,
+  ManualScheduler,
 } from '../src/telemetry';
-import { ManualScheduler } from '../tests/support/telemetry/manual-scheduler';
 
 const MB = 1024 * 1024;
 const PIXELS = 1600;

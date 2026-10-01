@@ -7,7 +7,7 @@ import { GAP_BYTES } from '@/telemetry/epoch';
 import { toLineSeries } from '@/telemetry/series';
 import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
 import type { IngestionEvent, SchemaEntry, TelemetryEvent } from '@/telemetry/types';
-import { ManualScheduler } from '@tests/support/telemetry/manual-scheduler';
+import { ManualScheduler } from '@/telemetry';
 
 const MS = 1000;
 const SECOND = 1_000_000;
