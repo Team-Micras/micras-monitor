@@ -10,7 +10,7 @@
 
 export type * from './types';
 export { PackageError } from './package-error';
-export { validatePackage } from './validate';
+export { validatePackage, type ReservedChord } from './validate';
 export {
   RobotRegistry,
   type PackageMatch,

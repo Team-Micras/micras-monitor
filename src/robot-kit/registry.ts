@@ -6,7 +6,7 @@
 
 import { PackageError } from './package-error';
 import type { RobotPackage } from './types';
-import { validatePackage } from './validate';
+import { validatePackage, type ReservedChord } from './validate';
 
 /** What the monitor knows about a connected robot when it picks a package. */
 export interface RobotDescription {
@@ -28,12 +28,16 @@ export interface PackageSelection<Node = unknown> {
 /** The robot packages the monitor was built with, by id. */
 export class RobotRegistry<Node = unknown> {
   readonly #packages = new Map<string, RobotPackage<Node>>();
+  readonly #reservedChord: ReservedChord | undefined;
 
   /**
    * @param packages Packages to register, in order.
+   * @param reservedChord Tells which chords the app keeps for itself, which no command key may use.
    * @throws {PackageError} As `register` does.
    */
-  constructor(packages: Iterable<RobotPackage<Node>> = []) {
+  constructor(packages: Iterable<RobotPackage<Node>> = [], reservedChord?: ReservedChord) {
+    this.#reservedChord = reservedChord;
+
     for (const pkg of packages) {
       this.register(pkg);
     }
@@ -45,7 +49,7 @@ export class RobotRegistry<Node = unknown> {
    * @throws {PackageError} When the package is inconsistent or its id is already registered.
    */
   register(pkg: RobotPackage<Node>): void {
-    validatePackage(pkg);
+    validatePackage(pkg, this.#reservedChord);
 
     if (this.#packages.has(pkg.id)) {
       throw new PackageError(pkg.id, 'id', 'is already registered');

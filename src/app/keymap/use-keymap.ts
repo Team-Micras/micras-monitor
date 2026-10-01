@@ -52,20 +52,24 @@ export function typesCharacter(event: KeyboardEvent): boolean {
  * command's key is handled before anything else: its keydown and keyup are both swallowed, so the
  * same press never also presses a focused button, and a held key sends the command only once.
  * Space is swallowed the same way outside text fields even when no command has it, so it never
- * presses a button.
+ * presses a button; a press that no action takes is then offered to `onUnboundSpace`.
  *
  * @param bindings The chords of every action.
  * @param onAction Runs the action a key triggered.
  * @param onType Offered every key that types a character outside a text field before the
  *   keymap sees it; returning true claims the key, as the variables drawer does to send it to
  *   its search field.
+ * @param onUnboundSpace Runs for a press of Space, outside text fields, that no action took and
+ *   that is not a held key repeating.
  */
 export function useKeymap(
   bindings: KeyBindings,
   onAction: (action: KeyAction) => void,
-  onType?: (event: KeyboardEvent) => boolean
+  onType?: (event: KeyboardEvent) => boolean,
+  onUnboundSpace?: () => void
 ): void {
   const act = useEffectEvent(onAction);
+  const unboundSpace = useEffectEvent(() => onUnboundSpace?.());
   const type = useEffectEvent((event: KeyboardEvent) => onType?.(event) ?? false);
 
   useEffect(() => {
@@ -85,6 +89,10 @@ export function useKeymap(
 
       const action = actionForEvent(bindings, event, inText);
       swallow(event, action, inText);
+
+      if (action === null && !inText && event.key === ' ' && !event.repeat) {
+        unboundSpace();
+      }
 
       if (action === null || (commandOf(action) !== null && event.repeat)) {
         return;

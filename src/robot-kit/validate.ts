@@ -5,19 +5,23 @@
  * @module
  */
 
+import { chordId, parseChord, type Chord } from '@/core/chords';
+
 import { PackageError } from './package-error';
 import type { BitmaskType, EnumType, PresetNode, RobotPackage } from './types';
 
 const MAX_BIT = 52;
 
 /**
- * Checks a package's internal consistency: a non-empty id, unique command codes, names and keys,
+ * Checks a package's internal consistency: a non-empty id, unique command codes and names, keys that are chords no two commands or app actions share,
  * unique enum values and bits, unique type tags, variables that name known types, and presets
  * whose ratios lie strictly inside (0, 1).
  *
+ * @param pkg The package to check.
+ * @param reservedChord Tells which chords the app keeps for itself, which no command key may use.
  * @throws {PackageError} Naming the first field that breaks a rule.
  */
-export function validatePackage(pkg: RobotPackage): void {
+export function validatePackage(pkg: RobotPackage, reservedChord?: ReservedChord): void {
   const fail = (path: string, problem: string): never => {
     throw new PackageError(pkg.id, path, problem);
   };
@@ -26,16 +30,19 @@ export function validatePackage(pkg: RobotPackage): void {
     fail('id', 'must be a non-empty string');
   }
 
-  checkCommands(pkg, fail);
+  checkCommands(pkg, fail, reservedChord);
   checkTypes(pkg, fail);
   checkVariables(pkg, fail);
   checkIdleStates(pkg, fail);
   checkPresets(pkg, fail);
 }
 
+/** Tells what already uses a chord, such as an action of the app, or null when it is free. */
+export type ReservedChord = (chord: Chord) => string | null;
+
 type Fail = (path: string, problem: string) => never;
 
-function checkCommands(pkg: RobotPackage, fail: Fail): void {
+function checkCommands(pkg: RobotPackage, fail: Fail, reservedChord?: ReservedChord): void {
   const codes = new Set<number>();
   const names = new Set<string>();
   const keys = new Map<string, number>();
@@ -56,17 +63,14 @@ function checkCommands(pkg: RobotPackage, fail: Fail): void {
     }
 
     if (command.key !== undefined) {
-      const bound = keys.get(command.key.toLowerCase());
-
-      if (command.key.trim() === '') {
-        fail(`${path}.key`, 'must be a non-empty chord');
-      }
+      const id = chordId(chordOf(command.key, `${path}.key`, fail, reservedChord));
+      const bound = keys.get(id);
 
       if (bound !== undefined) {
         fail(`${path}.key`, `is already the key of commands[${bound}]`);
       }
 
-      keys.set(command.key.toLowerCase(), index);
+      keys.set(id, index);
     }
 
     if (command.argument?.options !== undefined) {
@@ -76,6 +80,24 @@ function checkCommands(pkg: RobotPackage, fail: Fail): void {
     codes.add(command.code);
     names.add(command.name);
   });
+}
+
+function chordOf(key: string, path: string, fail: Fail, reservedChord?: ReservedChord): Chord {
+  let chord: Chord;
+
+  try {
+    chord = parseChord(key.trim() === '' ? '' : key);
+  } catch {
+    return fail(path, 'must be a non-empty chord, such as "Space" or "Alt+E"');
+  }
+
+  const taken = reservedChord?.(chord) ?? null;
+
+  if (taken !== null) {
+    fail(path, `"${key}" is already used by ${taken}`);
+  }
+
+  return chord;
 }
 
 function checkTypes(pkg: RobotPackage, fail: Fail): void {

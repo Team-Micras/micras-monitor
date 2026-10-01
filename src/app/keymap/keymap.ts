@@ -5,10 +5,17 @@
  * @module
  */
 
-import type { CommandSpec } from '@/robot-kit';
+import type { CommandSpec, ReservedChord } from '@/robot-kit';
 import type { Direction } from '@/tiling';
 
-import { matchesChord, matchesChordHeld, parseChord, type Chord, type KeyInput } from './chords';
+import {
+  chordId,
+  matchesChord,
+  matchesChordHeld,
+  parseChord,
+  type Chord,
+  type KeyInput,
+} from '@/core/chords';
 
 /** A workspace number a chord can name. */
 export type WorkspaceDigit = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
@@ -124,6 +131,24 @@ export const ACTIONS: readonly ActionSpec[] = [
 
 const SPECS: ReadonlyMap<KeyAction, ActionSpec> = new Map(ACTIONS.map((spec) => [spec.id, spec]));
 const COMMAND_PREFIX = 'command.';
+
+/**
+ * The action of the app that already has a chord by default, such as `window.pause` for `P`, or
+ * null: the chords a robot package cannot give to its commands.
+ */
+export function appActionOf(chord: Chord): KeyAction | null {
+  const id = chordId(chord);
+  const spec = ACTIONS.find((action) =>
+    action.defaults.some((text) => chordId(parseChord(text)) === id)
+  );
+  return spec?.id ?? null;
+}
+
+/** Tells which action of the app keeps a chord, for a robot registry to refuse it to a command. */
+export const reservedChord: ReservedChord = (chord) => {
+  const action = appActionOf(chord);
+  return action === null ? null : `the app (${actionSpec(action).label})`;
+};
 
 /** The action that sends a command. */
 export function commandAction(command: Pick<CommandSpec, 'name'>): CommandAction {

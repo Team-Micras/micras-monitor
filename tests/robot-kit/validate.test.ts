@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
+import { chordId } from '@/core/chords';
 import { GRID, mouse } from '@tests/support/robot-kit/packages';
 import { validatePackage, type CommandSpec, type RobotPackage } from '@/robot-kit';
 
 function problemOf(pkg: RobotPackage<string>): string {
   try {
-    validatePackage(pkg);
+    validatePackage(pkg, (chord) => (chordId(chord) === 'P' ? 'the app (pause)' : null));
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
@@ -43,9 +44,29 @@ describe('validating a package', () => {
       'commands[1].key is already the key of commands[0]',
     ],
     [
+      'one chord written two ways',
+      {
+        commands: [
+          { ...stop, key: 'Alt+Shift+E' },
+          { ...stop, code: 6, name: 'HALT', key: 'Shift+Alt+E' },
+        ],
+      },
+      'commands[1].key is already the key of commands[0]',
+    ],
+    [
       'an empty key',
       { commands: [{ ...stop, key: ' ' }] },
       'commands[0].key must be a non-empty chord',
+    ],
+    [
+      'a key that is not a chord',
+      { commands: [{ ...stop, key: 'Hyper+E' }] },
+      'commands[0].key must be a non-empty chord',
+    ],
+    [
+      'a key the app uses',
+      { commands: [{ ...stop, key: 'P' }] },
+      'commands[0].key "P" is already used by the app (pause)',
     ],
     ['a repeated type tag', { types: [GRID, GRID] }, 'types[1].tag repeats "grid"'],
     [

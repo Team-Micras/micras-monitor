@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from '@/app/app';
+import { reservedChord } from '@/app/keymap/keymap';
 import { safeLocalStorage } from '@/app/layouts/layout-book';
 import type { AppMonitor } from '@/app/monitor-context';
 import { serviceWorkerUpdates } from '@/app/pwa/app-updates';
@@ -76,7 +77,7 @@ if (connectTo !== null) {
 }
 
 const storageWorker = startStorageWorker();
-const robots = new RobotRegistry([micras]);
+const robots = new RobotRegistry([micras], reservedChord);
 const updates = import.meta.env.PROD ? serviceWorkerUpdates(registerSW) : undefined;
 const reactRoot = createRoot(root);
 

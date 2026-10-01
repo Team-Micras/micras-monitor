@@ -11,6 +11,7 @@ import {
   type PresetNode,
 } from '@/robot-kit';
 
+import { reservedChord } from '@/app/keymap/keymap';
 import { Command, Reason } from '@robots/micras/commands';
 import {
   COMMAND_NAMES,
@@ -47,7 +48,7 @@ function presetVariables(node: PresetNode | null): string[] {
 
 describe('the Micras package', () => {
   test('is consistent', () => {
-    expect(() => validatePackage(micras)).not.toThrow();
+    expect(() => validatePackage(micras, reservedChord)).not.toThrow();
   });
 
   test('is chosen by the name the robot announces', () => {
