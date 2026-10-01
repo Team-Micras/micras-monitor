@@ -7,28 +7,31 @@
  * @module
  */
 
-export {
-  RecordingBlocks,
-  RecordingWriter,
-  type BlockLocation,
-  type RecordingWriterStats,
-} from './recording-writer';
-export { MemoryRecordingFile, type RecordingFile } from './recording-file';
-export { RecordingReader, type RecordingSummary } from './recording-reader';
+export type { RecordingRecord } from '@/history/types';
 export {
   decodeBlock,
   decodeRecordingHeader,
   encodeBlock,
   encodeRecordingHeader,
-  encodeRecordingRecord,
   peekBlock,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
-  recordOf,
-  scanRecording,
-  type RecordingDamage,
   type RecordingHeader,
-  type RecordingRecord,
-  type RecordingScan,
+} from './codec';
+export { loadRecording, type LoadedRecording, type StoredRecording, type StoredRun } from './load';
+export { MemoryRecordingFile, type RecordingFile } from './recording-file';
+export {
+  RecordingBlocks,
+  RecordingReader,
+  type BlockLocation,
+  type RecordingSummary,
+} from './recording-reader';
+export { RecordingWriter, type RecordingWriterStats } from './recording-writer';
+export {
+  decodeLocated,
+  encodeRecordingRecord,
+  scanRecording,
   type LocatedRecord,
-} from './recording';
+  type RecordingDamage,
+  type RecordingScan,
+} from './scan';

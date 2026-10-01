@@ -1,6 +1,6 @@
 import type { ValueType } from '@/core/variables';
 
-import { ChangeSignal } from './tick-notifier';
+import { ChangeSignal, type TickNotifier } from './tick-notifier';
 import type { HistoryVariable, VariableRef } from './types';
 import { VariableHistory } from './variable-history';
 
@@ -13,19 +13,25 @@ import { VariableHistory } from './variable-history';
  * named after its id.
  */
 export class VariableRegistry {
-  private readonly records = new Map<string, VariableHistory>();
-  private readonly latestByName = new Map<string, VariableHistory>();
-  private readonly channels = new Map<string, ChangeSignal>();
-  private schema = new Map<number, HistoryVariable>();
+  readonly #historyLength: number;
+  readonly #notifier: TickNotifier;
+  readonly #records = new Map<string, VariableHistory>();
+  readonly #latestByName = new Map<string, VariableHistory>();
+  readonly #channels = new Map<string, ChangeSignal>();
+  #schema = new Map<number, HistoryVariable>();
 
   /**
    * @param historyLength How many values to keep for variables not stored numerically.
+   * @param notifier Tells the readers of each name about its changes.
    */
-  constructor(private readonly historyLength: number) {}
+  constructor(historyLength: number, notifier: TickNotifier) {
+    this.#historyLength = historyLength;
+    this.#notifier = notifier;
+  }
 
   /** Every record, one per name and type. */
   all(): IterableIterator<VariableHistory> {
-    return this.records.values();
+    return this.#records.values();
   }
 
   /**
@@ -34,11 +40,11 @@ export class VariableRegistry {
    * @returns Whether a name already known came back with another type.
    */
   setSchema(entries: readonly HistoryVariable[]): boolean {
-    this.schema = new Map(entries.map((entry) => [entry.id, entry]));
+    this.#schema = new Map(entries.map((entry) => [entry.id, entry]));
     let changed = false;
 
     for (const entry of entries) {
-      const current = this.latestByName.get(entry.name);
+      const current = this.#latestByName.get(entry.name);
 
       if (current?.type !== undefined && current.type !== entry.type) {
         changed = true;
@@ -52,12 +58,12 @@ export class VariableRegistry {
 
   /** The name of an id in the current schema, or one made from the id. */
   nameOf(id: number): string {
-    return this.schema.get(id)?.name ?? `#${id}`;
+    return this.#schema.get(id)?.name ?? `#${id}`;
   }
 
   /** The type of an id in the current schema, if it has one. */
   typeOf(id: number): ValueType | undefined {
-    return this.schema.get(id)?.type;
+    return this.#schema.get(id)?.type;
   }
 
   /**
@@ -65,27 +71,27 @@ export class VariableRegistry {
    * the type; a different known type goes back to the record of that type, or starts one.
    */
   recordFor(name: string, type: ValueType | undefined): VariableHistory {
-    const current = this.latestByName.get(name);
+    const current = this.#latestByName.get(name);
 
     if (current && (type === undefined || current.type === type)) {
       return current;
     }
 
     if (current && current.type === undefined) {
-      this.records.delete(keyOf(name, undefined));
-      this.records.set(keyOf(name, type), current);
+      this.#records.delete(keyOf(name, undefined));
+      this.#records.set(keyOf(name, type), current);
       current.type = type;
       return current;
     }
 
-    let record = this.records.get(keyOf(name, type));
+    let record = this.#records.get(keyOf(name, type));
 
     if (!record) {
-      record = new VariableHistory(name, type, this.channelOf(name), this.historyLength);
-      this.records.set(keyOf(name, type), record);
+      record = new VariableHistory(name, type, this.#channelOf(name), this.#historyLength);
+      this.#records.set(keyOf(name, type), record);
     }
 
-    this.latestByName.set(name, record);
+    this.#latestByName.set(name, record);
     return record;
   }
 
@@ -95,27 +101,27 @@ export class VariableRegistry {
    */
   resolve(ref: VariableRef): VariableHistory | undefined {
     if (typeof ref === 'object') {
-      return this.records.get(keyOf(ref.name, ref.type));
+      return this.#records.get(keyOf(ref.name, ref.type));
     }
 
-    return this.latestByName.get(typeof ref === 'number' ? this.nameOf(ref) : ref);
+    return this.#latestByName.get(typeof ref === 'number' ? this.nameOf(ref) : ref);
   }
 
   /** The change channel of the name a reference points at, made if needed. */
   channelFor(ref: VariableRef): ChangeSignal {
     if (typeof ref === 'object') {
-      return this.channelOf(ref.name);
+      return this.#channelOf(ref.name);
     }
 
-    return this.channelOf(typeof ref === 'number' ? this.nameOf(ref) : ref);
+    return this.#channelOf(typeof ref === 'number' ? this.nameOf(ref) : ref);
   }
 
-  private channelOf(name: string): ChangeSignal {
-    let channel = this.channels.get(name);
+  #channelOf(name: string): ChangeSignal {
+    let channel = this.#channels.get(name);
 
     if (!channel) {
-      channel = new ChangeSignal();
-      this.channels.set(name, channel);
+      channel = new ChangeSignal(this.#notifier);
+      this.#channels.set(name, channel);
     }
 
     return channel;

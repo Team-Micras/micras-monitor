@@ -23,35 +23,34 @@ interface Entry {
 
 /** A {@link RecordingFile} that shares one file among openings, each closed on its own. */
 class SharedFile implements RecordingFile {
+  readonly #entry: Entry;
   #closed = false;
 
-  constructor(
-    private readonly entry: Entry,
-    private readonly target: MemoryRecordingFile
-  ) {
+  constructor(entry: Entry) {
+    this.#entry = entry;
     entry.opened++;
   }
 
   size(): Promise<number> {
-    return this.target.size();
+    return this.#entry.file.size();
   }
 
   read(offset: number, length: number): Promise<Uint8Array> {
-    return this.target.read(offset, length);
+    return this.#entry.file.read(offset, length);
   }
 
   write(offset: number, bytes: Uint8Array): Promise<void> {
-    return this.target.write(offset, bytes);
+    return this.#entry.file.write(offset, bytes);
   }
 
   truncate(size: number): Promise<void> {
-    return this.target.truncate(size);
+    return this.#entry.file.truncate(size);
   }
 
   close(): Promise<void> {
     if (!this.#closed) {
       this.#closed = true;
-      this.entry.opened--;
+      this.#entry.opened--;
     }
 
     return Promise.resolve();
@@ -71,21 +70,6 @@ export class MemoryRecordingLibrary implements RecordingLibrary {
     this.#now = now;
   }
 
-  /** The bytes of a session's file, for tests. */
-  contents(id: string): Uint8Array {
-    return this.#entries.get(id)?.file.contents() ?? new Uint8Array(0);
-  }
-
-  /** How many openings of a session's file are not closed, for tests. */
-  openings(id: string): number {
-    return this.#entries.get(id)?.opened ?? 0;
-  }
-
-  /** Put a session in as a tab that died would have left it, for tests. */
-  seed(info: RecordingInfo, bytes: Uint8Array): void {
-    this.#entries.set(info.id, { info, file: new MemoryRecordingFile(bytes), opened: 0 });
-  }
-
   list(): Promise<RecordingInfo[]> {
     return Promise.resolve(
       [...this.#entries.values()].map((entry) => entry.info).toSorted(byNewest)
@@ -99,12 +83,12 @@ export class MemoryRecordingLibrary implements RecordingLibrary {
       opened: 0,
     };
     this.#entries.set(info.id, entry);
-    return Promise.resolve({ info: entry.info, file: new SharedFile(entry, entry.file) });
+    return Promise.resolve({ info: entry.info, file: new SharedFile(entry) });
   }
 
   async open(id: string): Promise<RecordingFile> {
     const entry = await this.#entry(id);
-    return new SharedFile(entry, entry.file);
+    return new SharedFile(entry);
   }
 
   async update(id: string, update: RecordingUpdate): Promise<RecordingInfo> {

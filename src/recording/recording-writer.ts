@@ -1,27 +1,12 @@
+import { Emitter, type Unsubscribe } from '@/core/emitter';
 import type { BlockBacking, BlockRef, BlockData } from '@/history/block-backing';
 import type { HistoryStore } from '@/history/history-store';
+import type { RecordingRecord } from '@/history/types';
 
-import {
-  decodeBlock,
-  encodeRecordingHeader,
-  encodeRecordingRecord,
-  RECORD_OVERHEAD,
-  recordOf,
-  type RecordingHeader,
-  type RecordingRecord,
-} from './recording';
+import { encodeRecordingHeader, type RecordingHeader } from './codec';
 import type { RecordingFile } from './recording-file';
-
-/**
- * Where a block's record sits in a recording file.
- */
-export interface BlockLocation {
-  /** Where its payload starts. */
-  readonly offset: number;
-
-  /** How many bytes its payload takes. */
-  readonly size: number;
-}
+import { RecordingBlocks } from './recording-reader';
+import { encodeRecordingRecord, RECORD_OVERHEAD } from './scan';
 
 /**
  * How far a recorder got, for the recording indicator.
@@ -51,62 +36,6 @@ interface Pending {
 }
 
 /**
- * The key of a block reference in a map.
- */
-export function blockKey(ref: BlockRef): string {
-  return `${ref.runId}:${ref.index}`;
-}
-
-/**
- * The blocks of a recording file, read back by where their records are: the persistence layer
- * of a store loaded from the file, and of a store recording into it.
- */
-export class RecordingBlocks implements BlockBacking {
-  private readonly locations = new Map<string, BlockLocation>();
-  private readCount = 0;
-
-  /**
-   * @param file The recording.
-   */
-  constructor(private readonly file: RecordingFile) {}
-
-  /** Note where a block's record is. */
-  place(ref: BlockRef, location: BlockLocation): void {
-    this.locations.set(blockKey(ref), location);
-  }
-
-  /** How many blocks were read back from the file. */
-  get reads(): number {
-    return this.readCount;
-  }
-
-  /** Whether a block's record is known. */
-  has(ref: BlockRef): boolean {
-    return this.locations.has(blockKey(ref));
-  }
-
-  /** {@inheritDoc BlockBacking.write} */
-  write(block: BlockData): Promise<void> {
-    return Promise.reject(
-      new Error(`Block ${block.ref.index} of run ${block.ref.runId}: the file is read only`)
-    );
-  }
-
-  /** {@inheritDoc BlockBacking.read} */
-  async read(ref: BlockRef): Promise<BlockData> {
-    const location = this.locations.get(blockKey(ref));
-
-    if (!location) {
-      throw new Error(`No block ${ref.index} of run ${ref.runId} in the recording`);
-    }
-
-    const block = decodeBlock(await this.file.read(location.offset, location.size));
-    this.readCount++;
-    return block;
-  }
-}
-
-/**
  * Writes a store's session to a recording file as it grows: the header, then what the store
  * already holds, then every block and ingestion event as they come. It is the store's persistence
  * layer while recording, so blocks written can leave memory and come back from the file.
@@ -117,26 +46,26 @@ export class RecordingBlocks implements BlockBacking {
  * the file, so a write cut short is overwritten by the next one.
  */
 export class RecordingWriter implements BlockBacking {
-  private readonly blocks: RecordingBlocks;
-  private readonly listeners = new Set<() => void>();
-  private queue: Pending[] = [];
-  private draining: Promise<void> | undefined;
-  private committed: number;
-  private writtenBlocks = 0;
-  private writtenSamples = 0;
-  private failing = false;
-  private stopped = false;
-  private detach: (() => void) | undefined;
-  private snapshot: RecordingWriterStats;
+  readonly #file: RecordingFile;
+  readonly #onError: (error: unknown) => void;
+  readonly #blocks: RecordingBlocks;
+  readonly #changes = new Emitter<{ change: undefined }>();
+  #queue: Pending[] = [];
+  #draining: Promise<void> | undefined;
+  #committed: number;
+  #writtenBlocks = 0;
+  #writtenSamples = 0;
+  #failing = false;
+  #stopped = false;
+  #detach: Unsubscribe | undefined;
+  #status: RecordingWriterStats;
 
-  private constructor(
-    private readonly file: RecordingFile,
-    headerBytes: number,
-    private readonly onError: (error: unknown) => void
-  ) {
-    this.blocks = new RecordingBlocks(file);
-    this.committed = headerBytes;
-    this.snapshot = this.stats();
+  private constructor(file: RecordingFile, headerBytes: number, onError: (error: unknown) => void) {
+    this.#file = file;
+    this.#onError = onError;
+    this.#blocks = new RecordingBlocks(file);
+    this.#committed = headerBytes;
+    this.#status = this.#stats();
   }
 
   /**
@@ -158,32 +87,31 @@ export class RecordingWriter implements BlockBacking {
     await file.truncate(0);
     await file.write(0, head);
     const recorder = new RecordingWriter(file, head.byteLength, onError);
-    const take = (record: RecordingRecord) => void recorder.enqueue(record).catch(() => undefined);
-    store.replayIngestion((event) => take(recordOf(event)));
-    recorder.detach = store.onIngestion((event) => take(recordOf(event)));
+    recorder.#detach = store.follow(
+      (record) => void recorder.#enqueue(record).catch(() => undefined)
+    );
     store.startRecording(recorder);
     return recorder;
   }
 
   /** How far the recorder got; the same object until it changes. */
   get status(): RecordingWriterStats {
-    return this.snapshot;
+    return this.#status;
   }
 
   /** Hear about changes of {@link status}; returns the function that stops it. */
-  subscribe(listener: () => void): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  subscribe(listener: () => void): Unsubscribe {
+    return this.#changes.on('change', listener);
   }
 
   /** {@inheritDoc BlockBacking.write} */
   write(block: BlockData): Promise<void> {
-    return this.enqueue({ kind: 'block', block }, { ref: block.ref, length: block.time.length });
+    return this.#enqueue({ kind: 'block', block }, { ref: block.ref, length: block.time.length });
   }
 
   /** {@inheritDoc BlockBacking.read} */
   read(ref: BlockRef): Promise<BlockData> {
-    return this.blocks.read(ref);
+    return this.#blocks.read(ref);
   }
 
   /**
@@ -193,26 +121,26 @@ export class RecordingWriter implements BlockBacking {
    * @param store The store recording, which stops recording.
    */
   async stop(store: HistoryStore): Promise<void> {
-    if (this.stopped) {
+    if (this.#stopped) {
       return;
     }
 
     const finished = store.stopRecording();
-    this.detach?.();
-    this.detach = undefined;
-    this.stopped = true;
+    this.#detach?.();
+    this.#detach = undefined;
+    this.#stopped = true;
     await finished;
     await this.flush();
-    this.changed();
+    this.#changed();
   }
 
   /** Wait until every record queued so far was written, or its write failed. */
   async flush(): Promise<void> {
-    if (this.queue.length > 0) {
-      this.draining ??= this.drain();
+    if (this.#queue.length > 0) {
+      this.#draining ??= this.#drain();
     }
 
-    const draining = this.draining;
+    const draining = this.#draining;
 
     if (draining) {
       await draining;
@@ -220,27 +148,27 @@ export class RecordingWriter implements BlockBacking {
     }
   }
 
-  private enqueue(record: RecordingRecord, block?: Pending['block']): Promise<void> {
+  #enqueue(record: RecordingRecord, block?: Pending['block']): Promise<void> {
     const bytes = encodeRecordingRecord(record);
     return new Promise<void>((resolve, reject) => {
-      this.queue.push({ bytes, block, resolve, reject });
-      this.draining ??= this.drain();
+      this.#queue.push({ bytes, block, resolve, reject });
+      this.#draining ??= this.#drain();
     });
   }
 
-  private async drain(): Promise<void> {
-    const batch = this.queue;
-    this.queue = [];
-    const written = await this.writeBatch(batch);
+  async #drain(): Promise<void> {
+    const batch = this.#queue;
+    this.#queue = [];
+    const written = await this.#writeBatch(batch);
 
-    if (written && this.queue.length > 0) {
-      return this.drain();
+    if (written && this.#queue.length > 0) {
+      return this.#drain();
     }
 
-    this.draining = undefined;
+    this.#draining = undefined;
   }
 
-  private async writeBatch(batch: readonly Pending[]): Promise<boolean> {
+  async #writeBatch(batch: readonly Pending[]): Promise<boolean> {
     const size = batch.reduce((sum, item) => sum + item.bytes.byteLength, 0);
     const bytes = new Uint8Array(size);
     let at = 0;
@@ -251,50 +179,50 @@ export class RecordingWriter implements BlockBacking {
     }
 
     try {
-      await this.file.write(this.committed, bytes);
+      await this.#file.write(this.#committed, bytes);
     } catch (error) {
-      this.queue = [...batch.filter((item) => !item.block), ...this.queue];
+      this.#queue = [...batch.filter((item) => !item.block), ...this.#queue];
       batch.filter((item) => item.block).forEach((item) => item.reject(error));
-      this.failing = true;
-      this.onError(error);
-      this.changed();
+      this.#failing = true;
+      this.#onError(error);
+      this.#changed();
       return false;
     }
 
-    let offset = this.committed;
+    let offset = this.#committed;
 
     for (const item of batch) {
       if (item.block) {
-        this.blocks.place(item.block.ref, {
+        this.#blocks.place(item.block.ref, {
           offset: offset + RECORD_OVERHEAD,
           size: item.bytes.byteLength - RECORD_OVERHEAD,
         });
-        this.writtenBlocks++;
-        this.writtenSamples += item.block.length;
+        this.#writtenBlocks++;
+        this.#writtenSamples += item.block.length;
       }
 
       offset += item.bytes.byteLength;
       item.resolve();
     }
 
-    this.committed = offset;
-    this.failing = false;
-    this.changed();
+    this.#committed = offset;
+    this.#failing = false;
+    this.#changed();
     return true;
   }
 
-  private stats(): RecordingWriterStats {
+  #stats(): RecordingWriterStats {
     return {
-      bytes: this.committed,
-      blocks: this.writtenBlocks,
-      samples: this.writtenSamples,
-      failing: this.failing,
-      stopped: this.stopped,
+      bytes: this.#committed,
+      blocks: this.#writtenBlocks,
+      samples: this.#writtenSamples,
+      failing: this.#failing,
+      stopped: this.#stopped,
     };
   }
 
-  private changed(): void {
-    this.snapshot = this.stats();
-    [...this.listeners].forEach((listener) => listener());
+  #changed(): void {
+    this.#status = this.#stats();
+    this.#changes.emit('change', undefined);
   }
 }

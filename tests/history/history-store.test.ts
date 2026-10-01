@@ -2,11 +2,11 @@ import { describe, expect, test, vi } from 'vitest';
 
 import type { ValueType } from '@/core/variables';
 import { COLUMN_BREAKS, COLUMN_HAS_DATA } from '@/history/decimation';
-import { GAP_BYTES } from '@/history/stream-run';
-import { toLineSeries } from '@/history/series';
+import { GAP_BYTES } from '@/history/gap-log';
 import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store';
-import type { HistoryVariable, IngestionEvent, StoreWarning, VariableSpec } from '@/history/types';
+import type { HistoryVariable, RecordingRecord, StoreWarning, VariableSpec } from '@/history/types';
 import { ManualScheduler } from '@/history';
+import { toLineSeries } from '@/ui/windows/plot/line-series';
 
 const MS = 1000;
 const SECOND = 1_000_000;
@@ -90,7 +90,7 @@ describe('runs and gaps', () => {
   test('leaves a repeated time out of the history, and a time going back too, with an event', () => {
     const store = makeStore();
     const events: StoreWarning[] = [];
-    store.onEvent((event) => events.push(event));
+    store.onWarning((warning) => events.push(warning));
     single(store, 1);
     store.append(1, 0, [1]);
     store.append(1, MS, [2]);
@@ -190,8 +190,8 @@ describe('run lifecycle', () => {
 
   test('closes a run when its slot is disabled, once', () => {
     const store = makeStore();
-    const events: IngestionEvent[] = [];
-    store.onIngestion((event) => events.push(event));
+    const events: RecordingRecord[] = [];
+    store.follow((record) => events.push(record));
     single(store, 1);
     store.append(1, 0, [1]);
     store.closeRun(1);
@@ -199,7 +199,7 @@ describe('run lifecycle', () => {
 
     expect(() => store.append(1, MS, [1])).toThrow('closed');
     expect(() => store.closeRun(9)).toThrow('No run 9');
-    expect(events.map(({ type }) => type)).toEqual(['run-opened', 'run-closed']);
+    expect(events.map(({ kind }) => kind)).toEqual(['run', 'run-closed']);
   });
 
   test('closes the open run of a slot when the slot is defined again', () => {
@@ -245,7 +245,7 @@ describe('schema', () => {
     );
 
     expect(store.variable('battery')).toMatchObject({ storedSamples: 20, runs: 2 });
-    expect(store.variable(9)).toBe(store.variable('battery'));
+    expect(store.historyMark(9)).toBe(store.historyMark('battery'));
     expect(store.variable(4)).toBeUndefined();
     expect([...store.samples('battery', 0, SECOND)].map((run) => run.values[0])).toEqual([
       7.5, 7.25,
@@ -322,7 +322,7 @@ describe('schema', () => {
     single(store, 1, 5);
     store.append(1, 0, [1]);
 
-    expect(store.variable('#5')).toBe(store.variable(5));
+    expect(store.historyMark('#5')).toBe(store.historyMark(5));
   });
 });
 
@@ -381,7 +381,7 @@ describe('numeric types', () => {
   test('flags 64 bit integers beyond 2^53 once, and keeps their latest value exact', () => {
     const store = makeStore();
     const events: StoreWarning[] = [];
-    store.onEvent((event) => events.push(event));
+    store.onWarning((warning) => events.push(warning));
     store.openRun({ runId: 1, slot: 0, variables: variables.slice(6, 8) });
     store.append(1, 0, [2n ** 53n + 1n, -(2n ** 60n) - 3n]);
     store.append(1, MS, [2n ** 64n - 1n, 0n]);
@@ -519,20 +519,6 @@ describe('queries', () => {
     expect(store.timeRange(1)).not.toBe(range);
   });
 
-  test('describe a variable with the same object until it changes', () => {
-    const store = makeStore();
-    single(store, 1);
-    store.append(1, 0, [1]);
-    const info = store.variable(1);
-
-    expect(store.variable(1)).toBe(info);
-
-    store.append(1, MS, [1]);
-
-    expect(store.variable(1)).not.toBe(info);
-    expect(store.variable(1)?.storedSamples).toBe(2);
-  });
-
   test('find the sample at or before a time, for synced cursors', () => {
     const store = makeStore();
     single(store, 1);
@@ -577,10 +563,10 @@ describe('queries', () => {
     store.markBoundary('reconnect', SECOND);
     single(store, 3, 1, 0);
     streamSingle(store, 3, 0, 10, (index) => 2 * SECOND + index * MS);
-    expect(store.generation).toBe(0);
+    expect(store.resetCount).toBe(0);
     store.reset();
 
-    expect(store.generation).toBe(1);
+    expect(store.resetCount).toBe(1);
     expect(store.variable(1)).toMatchObject({ storedSamples: 0, runs: 1 });
     expect(store.boundaries()).toEqual([]);
     expect(store.status().usedBytes).toBe(0);
@@ -593,11 +579,11 @@ describe('queries', () => {
   });
 });
 
-describe('ingestion events', () => {
-  test('tell a recorder about runs, final gaps, boundaries and values', () => {
+describe('what a recording follows', () => {
+  test('is the runs, final gaps, boundaries and values, so far and as they come', () => {
     const store = makeStore();
-    const events: IngestionEvent[] = [];
-    store.onIngestion((event) => events.push(event));
+    const events: RecordingRecord[] = [];
+    store.follow((record) => events.push(record));
     store.setSchema([
       { id: 0, name: 'speed', type: 'f32' },
       { id: 1, name: 'maze', type: 'bytes' },
@@ -608,14 +594,14 @@ describe('ingestion events', () => {
     store.append(1, 2 * MS, [1]);
     store.append(1, 3 * MS, [1], 2);
 
-    expect(events.filter(({ type }) => type === 'gap')).toHaveLength(2);
+    expect(events.filter(({ kind }) => kind === 'gap')).toHaveLength(2);
 
     store.setLatestValue(1, new Uint8Array([7]), 3 * MS);
     store.markBoundary('reboot', 4 * MS);
 
     expect(events).toEqual([
       {
-        type: 'run-opened',
+        kind: 'run',
         run: {
           runId: 1,
           slot: 0,
@@ -623,7 +609,7 @@ describe('ingestion events', () => {
         },
       },
       {
-        type: 'gap',
+        kind: 'gap',
         gap: {
           runId: 1,
           kind: 'dropped',
@@ -635,7 +621,7 @@ describe('ingestion events', () => {
         },
       },
       {
-        type: 'gap',
+        kind: 'gap',
         gap: {
           runId: 1,
           kind: 'dropped',
@@ -647,18 +633,18 @@ describe('ingestion events', () => {
         },
       },
       {
-        type: 'value',
+        kind: 'value',
         value: { variableId: 1, name: 'maze', timeUs: 3 * MS, value: new Uint8Array([7]) },
       },
-      { type: 'boundary', boundary: { kind: 'reboot', timeUs: 4 * MS } },
-      { type: 'run-closed', runId: 1 },
+      { kind: 'boundary', boundary: { kind: 'reboot', timeUs: 4 * MS } },
+      { kind: 'run-closed', runId: 1 },
     ]);
 
-    const replayed: IngestionEvent[] = [];
-    store.replayIngestion((event) => replayed.push(event));
+    const replayed: RecordingRecord[] = [];
+    store.follow((record) => replayed.push(record));
 
-    expect(replayed.map(({ type }) => type)).toEqual([
-      'run-opened',
+    expect(replayed.map(({ kind }) => kind)).toEqual([
+      'run',
       'gap',
       'gap',
       'run-closed',

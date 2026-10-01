@@ -9,12 +9,13 @@ import {
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
   type RecordingHeader,
-} from '@/recording/recording';
-import { RecordingReader } from '@/recording/recording-reader';
-import { RecordingBlocks, RecordingWriter } from '@/recording/recording-writer';
+} from '@/recording/codec';
+import { loadRecording } from '@/recording/load';
+import { RecordingBlocks, RecordingReader } from '@/recording/recording-reader';
+import { RecordingWriter } from '@/recording/recording-writer';
 import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store';
 import type { SampleValue, VariableSpec } from '@/history/types';
-import { serializeRecording } from '@tests/support/recording/recording-bytes';
+import { fileBytes, serializeRecording } from '@tests/support/recording/recording-bytes';
 import { ManualScheduler } from '@/history';
 
 const BLOCK_SIZE = 1024;
@@ -94,8 +95,8 @@ function everySample(store: HistoryStore, name: string): SampleValue[] {
 
 async function reopen(file: RecordingFile, options: Partial<HistoryStoreOptions> = {}) {
   const saved = await RecordingReader.read(file);
-  const { store, scheduler } = makeStore(options);
-  const skipped = saved.loadInto(store);
+  const scheduler = new ManualScheduler();
+  const { store, skipped } = saved.load({ scheduler, blockSize: BLOCK_SIZE, ...options });
   return { saved, store, scheduler, skipped };
 }
 
@@ -162,7 +163,7 @@ describe('recording a session', () => {
     expect(saved.summary.truncatedAt).toBeUndefined();
     expect(saved.summary.samples).toBe(1990);
     expect(recorder.status.samples).toBe(1990);
-    expect(recorder.status.bytes).toBe(file.contents().byteLength);
+    expect(recorder.status.bytes).toBe(await file.size());
     expect(everySample(reopened, 'pose/x')).toEqual(everySample(store, 'pose/x'));
     expect(everySample(reopened, 'localizer/accepted')).toEqual(
       everySample(store, 'localizer/accepted')
@@ -190,7 +191,7 @@ describe('recording a session', () => {
     });
 
     await recorder.flush();
-    const killed = new MemoryRecordingFile(file.contents());
+    const killed = new MemoryRecordingFile(await fileBytes(file));
     const { store: reopened } = await reopen(killed);
     const recovered = reopened.timeRange('pose/x');
 
@@ -210,11 +211,11 @@ describe('recording a session', () => {
     advance(5000);
     appendRange(store, 1, 500, 501);
     await recorder.flush();
-    const whole = file.contents().byteLength;
+    const whole = await file.size();
     advance(5000);
     appendRange(store, 1, 501, 900);
     await recorder.flush();
-    const cut = new MemoryRecordingFile(file.contents().slice(0, whole + 40));
+    const cut = new MemoryRecordingFile((await fileBytes(file)).slice(0, whole + 40));
 
     const { saved, store: reopened } = await reopen(cut);
 
@@ -235,11 +236,11 @@ describe('recording a session', () => {
       advance(5000);
       appendRange(store, 1, (part + 1) * 300, (part + 1) * 300 + 1);
       await recorder.flush();
-      marks.push(file.contents().byteLength);
+      marks.push(await file.size());
     });
 
     await recorder.stop(store);
-    const bytes = file.contents();
+    const bytes = await fileBytes(file);
     bytes[marks[0] + 40] ^= 0xff;
 
     const { saved, store: reopened } = await reopen(new MemoryRecordingFile(bytes));
@@ -397,21 +398,13 @@ describe('a saved session under the memory cap', () => {
 
   test('takes the blocks of a run in index order only, appending each one', async () => {
     const source = new MemoryRecordingFile();
+    const options = { scheduler: new ManualScheduler(), blockSize: BLOCK_SIZE };
 
-    expect(makeStore().store.load(orderedSession([0, 1, 2]), new RecordingBlocks(source))).toBe(0);
+    expect(
+      loadRecording(orderedSession([0, 1, 2]), new RecordingBlocks(source), options).skipped
+    ).toBe(0);
     expect(() =>
-      makeStore().store.load(orderedSession([0, 2, 1]), new RecordingBlocks(source))
+      loadRecording(orderedSession([0, 2, 1]), new RecordingBlocks(source), options)
     ).toThrow(/Block 1 of run 1 comes after block 2/);
-  });
-
-  test('refuses to load into a store that already holds a session', async () => {
-    const { store } = makeStore();
-    store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
-    const file = new MemoryRecordingFile();
-    const recorder = await RecordingWriter.start(file, HEADER, store);
-    await recorder.stop(store);
-    const saved = await RecordingReader.read(file);
-
-    expect(() => saved.loadInto(store)).toThrow(/empty store/);
   });
 });

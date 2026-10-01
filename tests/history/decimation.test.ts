@@ -15,10 +15,9 @@ import {
   seededRandom,
 } from '@tests/support/history/reference';
 import { FANOUT, LEAF_SIZE } from '@/history/min-max-pyramid';
-import { toBandSeries, toLineSeries } from '@/history/series';
 import { HistoryStore } from '@/history/history-store';
-import { historyWindow, liveWindow } from '@/history/window';
 import { ManualScheduler } from '@/history';
+import { toLineSeries } from '@/ui/windows/plot/line-series';
 
 const MS = 1000;
 
@@ -126,7 +125,6 @@ describe('decimation', () => {
     const decimation = fixture.store.decimate(1, nanTime - 50 * MS, nanTime + 50 * MS, 20);
     const column = decimation.columnOf(nanTime);
     const line = toLineSeries(decimation);
-    const band = toBandSeries(decimation);
 
     expect(decimation.flags[column]).toBe(COLUMN_HAS_DATA | COLUMN_HAS_NAN);
     expect(line.y.slice(3 * column, 3 * column + 3)).toEqual([
@@ -134,7 +132,6 @@ describe('decimation', () => {
       decimation.max[column],
       null,
     ]);
-    expect(band.min.slice(2 * column, 2 * column + 2)).toEqual([decimation.min[column], null]);
     expect(line.y.filter((value) => value === null)).toHaveLength(1);
   });
 
@@ -256,7 +253,7 @@ describe('live decimation', () => {
       }
     };
     push(0, 30_000);
-    const window = historyWindow({ startUs: 0, endUs: 30_000 * MS }, 800);
+    const window = { startUs: 0, endUs: 800 * 65_536 };
     const cached = store.decimate(1, window.startUs, window.endUs, 800);
 
     for (let frame = 0; frame < 20; frame++) {
@@ -285,20 +282,6 @@ describe('live decimation', () => {
     store.decimate(1, 0, 8192 * MS, 64, { into: cached });
 
     expect(breaksOf(cached)).toEqual([0]);
-  });
-
-  test('windows keep their grid as time goes on', () => {
-    const first = liveWindow(10_003_000, 10_000_000, 1000);
-    const later = liveWindow(10_004_500, 10_000_000, 1000);
-    const history = historyWindow({ startUs: 3000, endUs: 1_000_000 }, 1000);
-    const grown = historyWindow({ startUs: 3000, endUs: 1_020_000 }, 1000);
-
-    expect(first.endUs - first.startUs).toBe(10_000_000);
-    expect(first.endUs).toBeGreaterThan(10_003_000);
-    expect((later.startUs - first.startUs) % 10_000).toBe(0);
-    expect(history).toEqual(grown);
-    expect(history.startUs).toBeLessThanOrEqual(3000);
-    expect(history.endUs).toBeGreaterThan(1_020_000);
   });
 });
 

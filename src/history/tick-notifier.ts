@@ -17,6 +17,20 @@ export class ChangeSignal {
 
   /** Who hears about changes. */
   readonly subscriptions = new Set<Subscription>();
+
+  readonly #notifier: TickNotifier;
+
+  /**
+   * @param notifier Tells the subscribers about changes.
+   */
+  constructor(notifier: TickNotifier) {
+    this.#notifier = notifier;
+  }
+
+  /** Record a change; the subscribers hear about it on the next tick. */
+  touch(): void {
+    this.#notifier.touch(this);
+  }
 }
 
 /**
@@ -26,13 +40,16 @@ export class ChangeSignal {
  * during a tick is not called in it.
  */
 export class TickNotifier {
-  private dirty: ChangeSignal[] = [];
-  private scheduled = false;
+  readonly #scheduler: Scheduler;
+  #dirty: ChangeSignal[] = [];
+  #scheduled = false;
 
   /**
    * @param scheduler Decides when a tick happens.
    */
-  constructor(private readonly scheduler: Scheduler) {}
+  constructor(scheduler: Scheduler) {
+    this.#scheduler = scheduler;
+  }
 
   /**
    * Record a change of a channel; its subscribers hear about it on the next tick.
@@ -45,11 +62,11 @@ export class TickNotifier {
     }
 
     channel.dirty = true;
-    this.dirty.push(channel);
+    this.#dirty.push(channel);
 
-    if (!this.scheduled) {
-      this.scheduled = true;
-      this.scheduler.schedule(() => this.flush());
+    if (!this.#scheduled) {
+      this.#scheduled = true;
+      this.#scheduler.schedule(() => this.#flush());
     }
   }
 
@@ -76,10 +93,10 @@ export class TickNotifier {
     };
   }
 
-  private flush(): void {
-    const channels = this.dirty;
-    this.dirty = [];
-    this.scheduled = false;
+  #flush(): void {
+    const channels = this.#dirty;
+    this.#dirty = [];
+    this.#scheduled = false;
     const due = new Set<Subscription>();
 
     for (const channel of channels) {

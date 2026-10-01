@@ -1,4 +1,7 @@
+import type { HistoryProblem } from '@/core/monitor';
 import type { Value, ValueType, Variable } from '@/core/variables';
+
+import type { BlockData } from './block-backing';
 
 /**
  * A column of stored values: 32 bit floats for the narrow types, 64 bit floats for the rest.
@@ -16,35 +19,6 @@ export type HistoryVariable = Pick<Variable, 'id' | 'name' | 'type'>;
  * history; or by name and type, for the history it had with that type.
  */
 export type VariableRef = string | number | { readonly name: string; readonly type: ValueType };
-
-/**
- * One variable of a stream, in the order its values arrive in each sample.
- */
-export interface VariableSpec {
-  /** The variable's id in the schema. */
-  readonly id: number;
-
-  /** Its type, as the schema states it. */
-  readonly type: ValueType;
-
-  /** Its name; taken from the schema when left out. */
-  readonly name?: string;
-}
-
-/**
- * A stream the source opened: a layout of variables sampled together, from the moment the robot
- * starts sending it until it stops.
- */
-export interface StreamRunSpec {
-  /** Unique for the whole session; the session picks it. */
-  readonly runId: number;
-
-  /** Where the robot keeps the stream; a new stream in a slot replaces the one there. */
-  readonly slot: number;
-
-  /** The variables in each sample, in wire order. */
-  readonly variables: readonly VariableSpec[];
-}
 
 /**
  * Why no line is drawn across a moment: the link lost the robot, or a variable changed type.
@@ -172,30 +146,46 @@ export interface RecordedRun {
 }
 
 /**
- * Samples missing inside a run, as a recording remembers them.
+ * One variable of a stream, in the order its values arrive in each sample; its name is taken from
+ * the schema when left out.
  */
-export interface RecordedGap {
-  /** The run. */
-  readonly runId: number;
+export type VariableSpec = Omit<HistoryVariable, 'name'> & { readonly name?: string };
 
-  /** Whether the samples never arrived or were not kept. */
+/**
+ * A stream the source opened: a layout of variables sampled together, from the moment the robot
+ * starts sending it until it stops. Its run id is unique for the whole session.
+ */
+export type StreamRunSpec = Omit<RecordedRun, 'variables'> & {
+  readonly variables: readonly VariableSpec[];
+};
+
+/**
+ * Samples missing inside a run, before the sample stored at {@link RunGap.index}.
+ */
+export interface RunGap {
+  /** Whether they never arrived or were not kept. */
   readonly kind: 'dropped' | 'not-stored';
 
   /** The run sample index of the first stored sample after the gap. */
-  readonly index: number;
+  index: number;
 
   /** How many samples are missing. */
-  readonly count: number;
+  count: number;
 
-  /** Where the gap starts. */
+  /** Where the gap starts: the last sample before it, or the first sample not kept. */
   readonly startUs: number;
 
-  /** The time of the last sample kept before the gap, or NaN. */
+  /** The time of the last sample kept before the gap, or NaN if there is none. */
   readonly afterUs: number;
 
-  /** The time of the first sample kept after the gap, or NaN. */
-  readonly untilUs: number;
+  /** The time of the first sample kept after the gap, or NaN until it arrives. */
+  untilUs: number;
 }
+
+/**
+ * A gap as a recording remembers it, with its run.
+ */
+export type RecordedGap = Readonly<RunGap> & { readonly runId: number };
 
 /**
  * A value that is not part of a stored stream, such as a READ answer or a blob, as a recording
@@ -216,17 +206,20 @@ export interface RecordedValue {
 }
 
 /**
- * What a recorder needs to know besides the blocks, each told once it is final.
+ * One record of a recording: a block of samples, or what a recorder writes besides the blocks,
+ * each written once it is final.
  */
-export type IngestionEvent =
-  | { readonly type: 'run-opened'; readonly run: RecordedRun }
-  | { readonly type: 'run-closed'; readonly runId: number }
-  | { readonly type: 'gap'; readonly gap: RecordedGap }
-  | { readonly type: 'boundary'; readonly boundary: Boundary }
-  | { readonly type: 'value'; readonly value: RecordedValue };
+export type RecordingRecord =
+  | { readonly kind: 'run'; readonly run: RecordedRun }
+  | { readonly kind: 'run-closed'; readonly runId: number }
+  | { readonly kind: 'block'; readonly block: BlockData }
+  | { readonly kind: 'gap'; readonly gap: RecordedGap }
+  | { readonly kind: 'boundary'; readonly boundary: Boundary }
+  | { readonly kind: 'value'; readonly value: RecordedValue };
 
 /**
- * Something the application should tell the user about.
+ * Something the application should tell the user about: what the memory cap did, which the
+ * recordings show, and the problems the monitor logs.
  */
 export type StoreWarning =
   | { readonly type: 'memory-warning'; readonly usedBytes: number; readonly capBytes: number }
@@ -238,15 +231,7 @@ export type StoreWarning =
     }
   | { readonly type: 'history-stopped'; readonly usedBytes: number; readonly capBytes: number }
   | { readonly type: 'history-resumed' }
-  | { readonly type: 'precision-loss'; readonly name: string }
-  | { readonly type: 'persistence-error'; readonly error: unknown }
-  | { readonly type: 'persistence-recovered' }
-  | {
-      readonly type: 'time-backwards';
-      readonly runId: number;
-      readonly timeUs: number;
-      readonly lastUs: number;
-    };
+  | HistoryProblem;
 
 /**
  * The store as a whole, for the memory gauge and the recording indicator.

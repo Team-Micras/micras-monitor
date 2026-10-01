@@ -6,6 +6,7 @@ import {
   followWindow,
   latestEnd,
   layoutAxes,
+  liveWindow,
   MAX_PLOT_COLUMNS,
   PlotData,
   visibleGaps,
@@ -123,5 +124,14 @@ describe('the live window', () => {
     expect(end).toBeGreaterThan(19_000);
     expect(window?.endUs).toBe(20_000);
     expect(window?.startUs).toBe(10_000);
+  });
+
+  test('keeps its grid as time goes on', () => {
+    const first = liveWindow(10_003_000, 10_000_000, 1000);
+    const later = liveWindow(10_004_500, 10_000_000, 1000);
+
+    expect(first.endUs - first.startUs).toBe(10_000_000);
+    expect(first.endUs).toBeGreaterThan(10_003_000);
+    expect((later.startUs - first.startUs) % 10_000).toBe(0);
   });
 });

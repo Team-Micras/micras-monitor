@@ -15,32 +15,23 @@ export {
   type Decimation,
   type DecimationStats,
 } from './decimation';
-export type {
-  BlockBacking,
-  BlockRef,
-  BlockData,
-  ColumnData,
-  StoredRun,
-  StoredRecording,
+export {
+  blockKey,
+  type BlockBacking,
+  type BlockRef,
+  type BlockData,
+  type ColumnData,
 } from './block-backing';
 export { ManualScheduler, type Scheduler } from './scheduler';
-export {
-  toBandSeries,
-  toLineSeries,
-  type BandSeries,
-  type LineSeries,
-  type PlotValue,
-} from './series';
-export type { ColumnKind } from './columns';
+export { nextUp, type ColumnKind } from './columns';
 export {
   DEFAULT_BLOCK_SIZE,
   DEFAULT_FLUSH_INTERVAL_MS,
   DEFAULT_MEMORY_CAP_BYTES,
   HistoryStore,
-  type DecimateOptions,
   type HistoryStoreOptions,
-  type VariableInfo,
 } from './history-store';
+export type { DecimateOptions, VariableInfo } from './queries';
 export type {
   Boundary,
   BoundaryKind,
@@ -48,12 +39,13 @@ export type {
   Gap,
   GapKind,
   HistoryMark,
-  IngestionEvent,
   LatestValue,
   NumericColumn,
   RecordedRun,
   RecordedGap,
   RecordedValue,
+  RecordingRecord,
+  RunGap,
   SampleRun,
   SampleValue,
   HistoryVariable,
@@ -63,4 +55,3 @@ export type {
   VariableRef,
   VariableSpec,
 } from './types';
-export { historyWindow, liveWindow, nextUp } from './window';

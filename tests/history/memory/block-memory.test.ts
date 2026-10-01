@@ -30,7 +30,7 @@ function cappedStore(blocks: number, options: Partial<HistoryStoreOptions> = {})
     ...options,
   });
   const events: StoreWarning[] = [];
-  store.onEvent((event) => events.push(event));
+  store.onWarning((warning) => events.push(warning));
   store.openRun({ runId: 1, slot: 0, variables: VARIABLES });
   return { scheduler, store, events };
 }
@@ -117,9 +117,9 @@ describe('memory cap without recording', () => {
   test('closes the gap left by dropping the newest block once the next sample is kept', () => {
     const { store } = cappedStore(1.5);
     const finalGaps: unknown[] = [];
-    store.onIngestion((event) => {
-      if (event.type === 'gap') {
-        finalGaps.push(event.gap);
+    store.follow((record) => {
+      if (record.kind === 'gap') {
+        finalGaps.push(record.gap);
       }
     });
     appendRange(store, 0, 3000);
@@ -433,7 +433,6 @@ describe('writing while recording', () => {
     const after = store.variable(1);
 
     expect(after?.droppedSamples).toBe((before?.droppedSamples ?? 0) + BLOCK_SIZE);
-    expect(store.variable(1)).toBe(after);
   });
 
   test('tells about failing writes once, backs off, and recovers', async () => {

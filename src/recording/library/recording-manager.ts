@@ -11,8 +11,9 @@
  * @module
  */
 
+import { Emitter, type Unsubscribe } from '@/core/emitter';
 import type { Variable } from '@/core/variables';
-import { HistoryStore, type Scheduler, type StoreWarning } from '@/history';
+import type { HistoryStore, Scheduler, StoreWarning } from '@/history';
 
 import {
   decodeRecordingHeader,
@@ -217,7 +218,7 @@ export class RecordingManager {
   readonly #options: RecordingManagerOptions;
   readonly #now: () => number;
   readonly #clock: () => number;
-  readonly #listeners = new Set<() => void>();
+  readonly #changes = new Emitter<{ change: undefined }>();
   #state: RecordingsState;
   #recording: ActiveRecording | null = null;
   #sources: Source[] = [];
@@ -242,7 +243,7 @@ export class RecordingManager {
       memory: null,
       storage: null,
     };
-    options.store.onEvent((event) => this.#onStoreEvent(event));
+    options.store.onWarning((warning) => this.#onStoreWarning(warning));
   }
 
   /** The live store, which REC records. */
@@ -256,9 +257,8 @@ export class RecordingManager {
   }
 
   /** Calls `listener` after the state changes; returns the function that stops it. */
-  subscribe(listener: () => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+  subscribe(listener: () => void): Unsubscribe {
+    return this.#changes.on('change', listener);
   }
 
   /**
@@ -429,11 +429,10 @@ export class RecordingManager {
     try {
       file = await this.#options.library.open(id);
       const saved = await RecordingReader.read(file);
-      const store = new HistoryStore({
+      const { store } = saved.load({
         scheduler: this.#options.scheduler,
         memoryCapBytes: this.#options.viewCapBytes ?? this.#sharedCap(),
       });
-      saved.loadInto(store);
 
       if (request !== this.#openRequest) {
         await file.close();
@@ -575,7 +574,7 @@ export class RecordingManager {
     this.#set({ memory: null });
   }
 
-  #onStoreEvent(event: StoreWarning): void {
+  #onStoreWarning(event: StoreWarning): void {
     switch (event.type) {
       case 'memory-warning':
         this.#set({ memory: { kind: 'warning', ...pick(event) } });
@@ -671,6 +670,6 @@ export class RecordingManager {
 
   #set(change: Partial<RecordingsState>): void {
     this.#state = { ...this.#state, ...change };
-    [...this.#listeners].forEach((listener) => listener());
+    this.#changes.emit('change', undefined);
   }
 }

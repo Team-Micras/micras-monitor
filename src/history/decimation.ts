@@ -1,7 +1,6 @@
 import type { Block } from './block';
 import { LEAF_SIZE, MinMaxAccumulator } from './min-max-pyramid';
-import type { RunGap } from './stream-run';
-import type { Boundary, HistoryMark } from './types';
+import type { Boundary, HistoryMark, RunGap } from './types';
 import type { Segment } from './variable-history';
 
 /** The column holds at least one number. */

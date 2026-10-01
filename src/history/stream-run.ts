@@ -1,10 +1,13 @@
 import { isWide, type Value } from '@/core/variables';
 
-import type { Block, BlockLayout } from './block';
+import { fitsColumns, type Block } from './block';
 import type { BlockData } from './block-backing';
-import { type ColumnKind, columnKindOf, kindOfColumn, toNumber } from './columns';
+import { type ColumnKind, columnKindOf, toNumber } from './columns';
+import { GapLog } from './gap-log';
+import type { BlockMemory } from './memory/block-memory';
 import { LEAF_SIZE } from './min-max-pyramid';
-import type { RecordedRun, RecordedGap, HistoryVariable } from './types';
+import type { HistoryVariable, RecordedGap, RecordedRun, RunGap } from './types';
+import type { VariableHistory } from './variable-history';
 
 /**
  * How many samples the first block of a run holds. Each block that fills makes the next one
@@ -13,9 +16,6 @@ import type { RecordedRun, RecordedGap, HistoryVariable } from './types';
  */
 export const FIRST_BLOCK_SIZE = 1024;
 
-/** What one gap record is counted as against the memory cap. */
-export const GAP_BYTES = 64;
-
 /** {@link StreamRun.receive}: the sample's time is before the previous one's. */
 export const RECEIVED_BACKWARDS = -2;
 
@@ -23,51 +23,13 @@ export const RECEIVED_BACKWARDS = -2;
 export const RECEIVED_DUPLICATE = -1;
 
 /**
- * Samples missing inside a run, before the sample stored at {@link RunGap.index}.
- */
-export interface RunGap {
-  /** Whether they never arrived or were not kept. */
-  readonly kind: 'dropped' | 'not-stored';
-
-  /** The run sample index of the first stored sample after the gap. */
-  index: number;
-
-  /** How many samples are missing. */
-  count: number;
-
-  /** Where the gap starts: the last sample before it, or the first sample not kept. */
-  readonly startUs: number;
-
-  /** The time of the last sample kept before the gap, or NaN if there is none. */
-  readonly afterUs: number;
-
-  /** The time of the first sample kept after the gap, or NaN until it arrives. */
-  untilUs: number;
-}
-
-/**
- * What a run needs from the store around it.
- */
-export interface StreamRunHost {
-  /** A new block, or undefined if the memory cap does not allow one. */
-  allocate(layout: BlockLayout): Block | undefined;
-
-  /** A block will take no more samples. */
-  seal(block: Block): void;
-
-  /** A gap will not change any more. */
-  gapFinal(run: StreamRun, gap: RunGap): void;
-
-  /** Memory outside the blocks was taken, or given back when negative. */
-  account(bytes: number): void;
-}
-
-/**
  * The samples of one run of a stream, from when it opened to when it ended.
  *
  * The source tells how many samples it lost before each one that arrives, which makes a gap of
  * dropped samples, different from the time outside any run, when the variable was not streamed
  * at all. Time never goes back inside a run, so a sample is a duplicate when its time repeats.
+ * Its blocks come from the block memory, which tells the run when one of them leaves memory,
+ * comes back or is let go of.
  */
 export class StreamRun {
   /** The session's id for the run. */
@@ -79,6 +41,9 @@ export class StreamRun {
   /** The variables of each sample, in wire order, with their names. */
   readonly variables: readonly HistoryVariable[];
 
+  /** The history of each variable, in wire order. */
+  readonly records: readonly VariableHistory[];
+
   /** For each variable, its column among the numeric ones, or -1 for a blob. */
   readonly columnOf: readonly number[];
 
@@ -87,9 +52,6 @@ export class StreamRun {
 
   /** The blocks in memory or in the persistence layer, oldest first. */
   readonly blocks: Block[] = [];
-
-  /** Dropped and unstored samples, in sample order. */
-  readonly gaps: RunGap[] = [];
 
   /** The time of the first sample ever stored, or NaN. */
   firstStoredUs = Number.NaN;
@@ -106,31 +68,37 @@ export class StreamRun {
   /** How many samples the source lost. */
   droppedCount = 0;
 
-  private readonly numericIds: readonly number[];
-  private readonly kinds: readonly ColumnKind[];
-  private readonly row: Float64Array;
-  private readonly pending: RunGap[] = [];
-  private capacity: number;
-  private nextBlockIndex = 0;
-  private pendingUnstored = 0;
-  private unstoredFromUs = Number.NaN;
-  private lastSeenUs = Number.NEGATIVE_INFINITY;
-  private isClosed = false;
+  readonly #blockSize: number;
+  readonly #memory: BlockMemory;
+  readonly #gapLog: GapLog;
+  readonly #numericIds: readonly number[];
+  readonly #kinds: readonly ColumnKind[];
+  readonly #row: Float64Array;
+  #capacity: number;
+  #nextBlockIndex = 0;
+  #lastSeenUs = Number.NEGATIVE_INFINITY;
+  #closed = false;
 
   /**
    * @param spec The stream's layout, with names.
+   * @param records The history of each of its variables, in its order.
    * @param blockSize How many samples a block holds at most.
-   * @param host Where blocks come from and where changes go.
+   * @param memory Where blocks come from.
    */
   constructor(
     spec: RecordedRun,
-    private readonly blockSize: number,
-    private readonly host: StreamRunHost
+    records: readonly VariableHistory[],
+    blockSize: number,
+    memory: BlockMemory
   ) {
     this.id = spec.runId;
     this.slot = spec.slot;
     this.variables = [...spec.variables];
-    this.capacity = Math.min(blockSize, FIRST_BLOCK_SIZE);
+    this.records = records;
+    this.#blockSize = blockSize;
+    this.#memory = memory;
+    this.#gapLog = new GapLog(memory);
+    this.#capacity = Math.min(blockSize, FIRST_BLOCK_SIZE);
 
     const numericIds: number[] = [];
     const kinds: ColumnKind[] = [];
@@ -146,16 +114,21 @@ export class StreamRun {
       }
     }
 
-    this.numericIds = numericIds;
-    this.kinds = kinds;
+    this.#numericIds = numericIds;
+    this.#kinds = kinds;
     this.columnOf = columnOf;
     this.wide = this.variables.map((variable) => isWide(variable.type));
-    this.row = new Float64Array(numericIds.length);
+    this.#row = new Float64Array(numericIds.length);
   }
 
   /** Whether the run takes no more samples. */
   get closed(): boolean {
-    return this.isClosed;
+    return this.#closed;
+  }
+
+  /** Dropped and unstored samples, in sample order. */
+  get gaps(): readonly RunGap[] {
+    return this.#gapLog.gaps;
   }
 
   /** The time of the first sample still kept, or NaN. */
@@ -170,12 +143,12 @@ export class StreamRun {
 
   /** How many samples arrived since the last stored one without being kept. */
   get unstoredRun(): number {
-    return this.pendingUnstored;
+    return this.#gapLog.unstoredRun;
   }
 
   /** The time of the first sample of the current unstored run, or NaN. */
   get unstoredFrom(): number {
-    return this.unstoredFromUs;
+    return this.#gapLog.unstoredFrom;
   }
 
   /** The run as a recording remembers it. */
@@ -194,15 +167,15 @@ export class StreamRun {
    *   {@link RECEIVED_BACKWARDS} for a sample to leave out of the history.
    */
   receive(timeUs: number, missedBefore: number): number {
-    if (timeUs <= this.lastSeenUs) {
-      return timeUs < this.lastSeenUs ? RECEIVED_BACKWARDS : RECEIVED_DUPLICATE;
+    if (timeUs <= this.#lastSeenUs) {
+      return timeUs < this.#lastSeenUs ? RECEIVED_BACKWARDS : RECEIVED_DUPLICATE;
     }
 
-    this.lastSeenUs = timeUs;
+    this.#lastSeenUs = timeUs;
 
     if (missedBefore > 0) {
       this.droppedCount += missedBefore;
-      this.addGap('dropped', missedBefore, this.lastTimeUs, true);
+      this.#gapLog.addDropped(missedBefore, this.storedCount, this.lastTimeUs);
     }
 
     return missedBefore;
@@ -216,28 +189,24 @@ export class StreamRun {
    * @returns Whether it was stored.
    */
   store(timeUs: number, values: ArrayLike<Value>): boolean {
-    const block = this.writableBlock();
+    const block = this.#writableBlock();
 
     if (!block) {
-      if (this.pendingUnstored === 0) {
-        this.unstoredFromUs = timeUs;
-      }
-
-      this.pendingUnstored++;
+      this.#gapLog.noteUnstored(timeUs);
       return false;
     }
 
-    this.endUnstoredRun(timeUs);
+    this.#gapLog.endUnstoredRun(timeUs, this.storedCount, this.lastTimeUs);
 
     for (let variable = 0; variable < this.columnOf.length; variable++) {
       const column = this.columnOf[variable];
 
       if (column >= 0) {
-        this.row[column] = toNumber(values[variable]);
+        this.#row[column] = toNumber(values[variable]);
       }
     }
 
-    block.append(timeUs, this.row);
+    block.append(timeUs, this.#row);
 
     if (this.storedCount === 0) {
       this.firstStoredUs = timeUs;
@@ -245,40 +214,38 @@ export class StreamRun {
 
     this.storedCount++;
     this.lastTimeUs = timeUs;
-    this.resolvePending(timeUs);
+    this.#gapLog.resolvePending(timeUs);
 
     if (block.full) {
-      this.capacity = Math.min(this.blockSize, this.capacity * 2);
-      this.host.seal(block);
+      this.#capacity = Math.min(this.#blockSize, this.#capacity * 2);
+      this.#memory.seal(block);
     }
 
     return true;
   }
 
-  /**
-   * Seal the block being filled, if it holds anything, so that it can be written away now. The
-   * next sample starts a new block.
-   */
-  sealOpenBlock(): void {
-    const last = this.blocks.at(-1);
-
-    if (last && !last.sealed && last.length > 0) {
-      this.host.seal(last);
-    }
+  /** The gaps that became final since the last call, for the recording. */
+  takeFinalGaps(): readonly RunGap[] {
+    return this.#gapLog.takeFinal();
   }
 
   /**
    * Take no more samples: seal the last block, and make the gaps still open final.
    */
   close(): void {
-    if (this.isClosed) {
+    if (this.#closed) {
       return;
     }
 
-    this.isClosed = true;
-    this.sealOpenBlock();
-    this.endUnstoredRun(Number.NaN);
-    this.resolvePending(Number.NaN);
+    this.#closed = true;
+    const last = this.blocks.at(-1);
+
+    if (last && !last.sealed && last.length > 0) {
+      this.#memory.seal(last);
+    }
+
+    this.#gapLog.endUnstoredRun(Number.NaN, this.storedCount, this.lastTimeUs);
+    this.#gapLog.resolvePending(Number.NaN);
   }
 
   /**
@@ -294,38 +261,14 @@ export class StreamRun {
 
     this.blocks.splice(position, 1);
     this.trimmedCount += block.length;
-    const start = block.startSample;
-    const end = start + block.length;
-    const inside = this.gaps.filter((gap) => gap.index > start && gap.index < end);
+    this.#gapLog.dropStretch(block, this.blocks[position - 1], this.blocks[position], this.#closed);
+    this.rewritten();
+  }
 
-    for (const gap of inside) {
-      this.gaps.splice(this.gaps.indexOf(gap), 1);
-      this.host.account(-GAP_BYTES);
-    }
-
-    const next = this.blocks[position];
-    const previous = this.gaps.find((gap) => gap.kind === 'not-stored' && gap.index === start);
-
-    const gap: RunGap = previous ?? {
-      kind: 'not-stored',
-      index: end,
-      count: 0,
-      startUs: block.firstTimeUs,
-      afterUs: this.blocks[position - 1]?.lastTimeUs ?? Number.NaN,
-      untilUs: Number.NaN,
-    };
-    gap.index = end;
-    gap.count += block.length;
-    gap.untilUs = next?.firstTimeUs ?? Number.NaN;
-
-    if (!previous) {
-      const after = this.gaps.findIndex((other) => other.index > end);
-      this.gaps.splice(after < 0 ? this.gaps.length : after, 0, gap);
-      this.host.account(GAP_BYTES);
-    }
-
-    if (!next && !this.isClosed && !this.pending.includes(gap)) {
-      this.pending.push(gap);
+  /** Tell the readers of every variable of the run that its history changed in the middle. */
+  rewritten(): void {
+    for (const record of this.records) {
+      record.rewritten();
     }
   }
 
@@ -333,18 +276,14 @@ export class StreamRun {
    * Forget every sample and gap, so that an open run carries on from nothing.
    */
   clearHistory(): void {
-    this.host.account(-GAP_BYTES * this.gaps.length);
+    this.#gapLog.clear();
     this.blocks.length = 0;
-    this.gaps.length = 0;
-    this.pending.length = 0;
     this.firstStoredUs = Number.NaN;
     this.lastTimeUs = Number.NaN;
     this.storedCount = 0;
     this.trimmedCount = 0;
     this.droppedCount = 0;
-    this.pendingUnstored = 0;
-    this.unstoredFromUs = Number.NaN;
-    this.capacity = Math.min(this.blockSize, FIRST_BLOCK_SIZE);
+    this.#capacity = Math.min(this.#blockSize, FIRST_BLOCK_SIZE);
   }
 
   /** A gap as a recording remembers it. */
@@ -361,16 +300,8 @@ export class StreamRun {
    */
   restoreBlock(persisted: BlockData): Block | undefined {
     const length = persisted.time.length;
-    const matches =
-      persisted.columns.length === this.numericIds.length &&
-      persisted.columns.every(
-        (column, index) =>
-          column.variableId === this.numericIds[index] &&
-          kindOfColumn(column.values) === this.kinds[index] &&
-          column.values.length === length
-      );
 
-    if (!matches) {
+    if (!fitsColumns(persisted, this.#numericIds, this.#kinds)) {
       throw new Error(`Block ${persisted.ref.index} does not fit the columns of run ${this.id}`);
     }
 
@@ -382,12 +313,12 @@ export class StreamRun {
       );
     }
 
-    const block = this.host.allocate({
+    const block = this.#memory.allocate({
       ref: persisted.ref,
       startSample: persisted.startSample,
       capacity: Math.max(LEAF_SIZE, 2 ** Math.ceil(Math.log2(Math.max(1, length)))),
-      variableIds: this.numericIds,
-      kinds: this.kinds,
+      variableIds: this.#numericIds,
+      kinds: this.#kinds,
     });
 
     if (!block) {
@@ -395,54 +326,29 @@ export class StreamRun {
     }
 
     for (let sample = 0; sample < length; sample++) {
-      for (let column = 0; column < this.row.length; column++) {
-        this.row[column] = persisted.columns[column].values[sample];
+      for (let column = 0; column < this.#row.length; column++) {
+        this.#row[column] = persisted.columns[column].values[sample];
       }
 
-      block.append(persisted.time[sample], this.row);
+      block.append(persisted.time[sample], this.#row);
     }
 
-    this.host.seal(block);
+    this.#memory.seal(block);
     this.blocks.push(block);
     this.storedCount = Math.max(this.storedCount, persisted.startSample + length);
-    this.nextBlockIndex = Math.max(this.nextBlockIndex, persisted.ref.index + 1);
+    this.#nextBlockIndex = Math.max(this.#nextBlockIndex, persisted.ref.index + 1);
     return block;
   }
 
   /**
-   * Take back a gap of a recording. A gap with the start of one taken before replaces it, since
-   * a recorder writes a gap again when it grows.
+   * End a restore: take the run's gaps, take no more samples, and work the counts out from the
+   * blocks and gaps taken back.
+   *
+   * @param gaps One gap per start, ordered by index.
    */
-  restoreGap(recorded: RecordedGap): void {
-    const gap: RunGap = {
-      kind: recorded.kind,
-      index: recorded.index,
-      count: recorded.count,
-      startUs: recorded.startUs,
-      afterUs: recorded.afterUs,
-      untilUs: recorded.untilUs,
-    };
-    const same = this.gaps.findIndex(
-      (other) =>
-        other.startUs === gap.startUs || (Number.isNaN(other.startUs) && Number.isNaN(gap.startUs))
-    );
-
-    if (same >= 0) {
-      this.gaps.splice(same, 1);
-    } else {
-      this.host.account(GAP_BYTES);
-    }
-
-    const after = this.gaps.findIndex((other) => other.index > gap.index);
-    this.gaps.splice(after < 0 ? this.gaps.length : after, 0, gap);
-  }
-
-  /**
-   * End a restore: the run takes no more samples, and its counts follow from the blocks and
-   * gaps taken back.
-   */
-  finishRestore(): void {
-    this.isClosed = true;
+  finishRestore(gaps: readonly RecordedGap[]): void {
+    this.#gapLog.restore(gaps);
+    this.#closed = true;
     let kept = 0;
 
     for (const block of this.blocks) {
@@ -467,84 +373,29 @@ export class StreamRun {
     this.trimmedCount = this.storedCount - kept;
     this.firstStoredUs = firstUs;
     this.lastTimeUs = this.blocks.at(-1)?.lastTimeUs ?? Number.NaN;
-    this.lastSeenUs = Number.isNaN(this.lastTimeUs) ? this.lastSeenUs : this.lastTimeUs;
+    this.#lastSeenUs = Number.isNaN(this.lastTimeUs) ? this.#lastSeenUs : this.lastTimeUs;
   }
 
-  private writableBlock(): Block | undefined {
+  #writableBlock(): Block | undefined {
     const last = this.blocks.at(-1);
 
     if (last && !last.sealed) {
       return last;
     }
 
-    const block = this.host.allocate({
-      ref: { runId: this.id, index: this.nextBlockIndex },
+    const block = this.#memory.allocate({
+      ref: { runId: this.id, index: this.#nextBlockIndex },
       startSample: this.storedCount,
-      capacity: this.capacity,
-      variableIds: this.numericIds,
-      kinds: this.kinds,
+      capacity: this.#capacity,
+      variableIds: this.#numericIds,
+      kinds: this.#kinds,
     });
 
     if (block) {
-      this.nextBlockIndex++;
+      this.#nextBlockIndex++;
       this.blocks.push(block);
     }
 
     return block;
-  }
-
-  private endUnstoredRun(untilUs: number): void {
-    if (this.pendingUnstored === 0) {
-      return;
-    }
-
-    const gap = this.addGap('not-stored', this.pendingUnstored, this.unstoredFromUs, false);
-    gap.untilUs = untilUs;
-    this.pendingUnstored = 0;
-    this.unstoredFromUs = Number.NaN;
-
-    if (!this.pending.includes(gap)) {
-      this.host.gapFinal(this, gap);
-    }
-  }
-
-  private resolvePending(untilUs: number): void {
-    for (const gap of this.pending) {
-      gap.untilUs = untilUs;
-      this.host.gapFinal(this, gap);
-    }
-
-    this.pending.length = 0;
-  }
-
-  private addGap(kind: RunGap['kind'], count: number, startUs: number, pending: boolean): RunGap {
-    const last = this.gaps.at(-1);
-
-    if (
-      last &&
-      last.kind === kind &&
-      last.index === this.storedCount &&
-      this.pending.includes(last)
-    ) {
-      last.count += count;
-      return last;
-    }
-
-    const gap: RunGap = {
-      kind,
-      index: this.storedCount,
-      count,
-      startUs,
-      afterUs: this.lastTimeUs,
-      untilUs: Number.NaN,
-    };
-    this.gaps.push(gap);
-    this.host.account(GAP_BYTES);
-
-    if (pending) {
-      this.pending.push(gap);
-    }
-
-    return gap;
   }
 }

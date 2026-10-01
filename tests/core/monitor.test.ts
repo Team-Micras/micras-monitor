@@ -103,6 +103,42 @@ describe('Monitor fed by a source', () => {
     expect(monitor.history.latest('maze')?.value).toEqual(new Uint8Array([1, 2]));
   });
 
+  test('logs the problems of the history, one line for a problem that repeats', async () => {
+    const { monitor, link } = setup();
+    link.sink.variables([...VARIABLES, { id: 3, name: 'ticks', type: 'u64', access: ACCESS }]);
+    link.sink.streamOpened({ id: 7, slot: 0, variableIds: [1, 3], clock: 3 });
+    link.sink.sample(7, 2_000_000, [0.5, 2n ** 60n], 0);
+    link.sink.sample(7, 2_000_000 + 1, [0.5, 2n ** 61n], 0);
+    link.sink.sample(7, 1_000_000, [0.5, 1n], 0);
+    link.sink.sample(7, 1_500_000, [0.5, 1n], 0);
+    monitor.history.startRecording({
+      write: () => Promise.reject(new Error('disk full')),
+      read: () => Promise.reject(new Error('never written')),
+    });
+    await monitor.history.stopRecording();
+    const lines = monitor.state.log
+      .filter((entry) => entry.text.includes('history') || entry.text.includes('recording'))
+      .map(({ severity, text, count }) => ({ severity, text, count }));
+
+    expect(lines).toEqual([
+      {
+        severity: 'warning',
+        text: 'ticks holds integers past 2^53; the history keeps them rounded',
+        count: undefined,
+      },
+      {
+        severity: 'warning',
+        text: 'run 1 sent samples back in time; the history leaves them out',
+        count: 2,
+      },
+      {
+        severity: 'warning',
+        text: 'the recording failed to write or read blocks: disk full',
+        count: undefined,
+      },
+    ]);
+  });
+
   test('places the robot log on the timeline of its samples, and the link log on none', () => {
     const { monitor, link } = setup();
     link.sink.streamOpened({ id: 1, slot: 0, variableIds: [0], clock: 0 });

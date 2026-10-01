@@ -1,11 +1,4 @@
-import type {
-  Boundary,
-  NumericColumn,
-  RecordedRun,
-  RecordedGap,
-  RecordedValue,
-  HistoryVariable,
-} from './types';
+import type { NumericColumn } from './types';
 
 /**
  * Which block a persisted block is: its run, and its position in the run.
@@ -16,6 +9,13 @@ export interface BlockRef {
 
   /** The block's position among the run's blocks, from 0. */
   readonly index: number;
+}
+
+/**
+ * The key of a block reference in a map.
+ */
+export function blockKey(ref: BlockRef): string {
+  return `${ref.runId}:${ref.index}`;
 }
 
 /**
@@ -68,35 +68,4 @@ export interface BlockBacking {
    * @throws If no block with that reference was written.
    */
   read(ref: BlockRef): Promise<BlockData>;
-}
-
-/**
- * A run of a saved session, as `HistoryStore.load` takes it.
- */
-export interface StoredRun {
-  /** The run, with the names its variables had. */
-  readonly run: RecordedRun;
-
-  /** Its gaps, in the order they were written; a later one with the same start replaces one before. */
-  readonly gaps: readonly RecordedGap[];
-
-  /** Its blocks, in index order; decoded one at a time as they are taken. */
-  readonly blocks: Iterable<BlockData>;
-}
-
-/**
- * A saved session, as `HistoryStore.load` takes it.
- */
-export interface StoredRecording {
-  /** The robot's schema when the session was recorded. */
-  readonly schema: readonly HistoryVariable[];
-
-  /** Every run, in the order they opened. */
-  readonly runs: readonly StoredRun[];
-
-  /** Every boundary. */
-  readonly boundaries: readonly Boundary[];
-
-  /** The values outside the stored streams, in the order they came. */
-  readonly values: readonly RecordedValue[];
 }

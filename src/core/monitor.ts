@@ -32,6 +32,25 @@ import { SessionTimeline } from './timeline';
 import type { Value, ValueType, Variable } from './variables';
 
 /**
+ * A problem of the history the monitor writes to its log, so that none goes unheard.
+ *
+ * - `precision-loss`: a 64 bit integer of a variable did not fit a float exactly.
+ * - `time-backwards`: a sample of a run came before the previous one and was left out.
+ * - `persistence-error`: a block could not be written to the recording, or read back from it.
+ * - `persistence-recovered`: writes to the recording work again.
+ */
+export type HistoryProblem =
+  | { readonly type: 'precision-loss'; readonly name: string }
+  | {
+      readonly type: 'time-backwards';
+      readonly runId: number;
+      readonly timeUs: number;
+      readonly lastUs: number;
+    }
+  | { readonly type: 'persistence-error'; readonly error: unknown }
+  | { readonly type: 'persistence-recovered' };
+
+/**
  * What the monitor writes into its history, as the history store takes it. Times are on the
  * session timeline.
  */
@@ -57,6 +76,11 @@ export interface HistoryWriter {
   markBoundary(kind: BoundaryKind, timeUs: number): void;
   /** Every moment marked so far, oldest first. */
   boundaries(): readonly { readonly kind: string; readonly timeUs: number }[];
+  /**
+   * Calls `listener` with each warning of the history as it happens; the monitor logs the
+   * {@link HistoryProblem}s among them.
+   */
+  onWarning(listener: (warning: { readonly type: string }) => void): Unsubscribe;
 }
 
 /** A variable the interface wants streamed, by name. */
@@ -100,12 +124,45 @@ interface OpenStream {
   readonly clock: number;
 }
 
+const LOGGED_PROBLEMS: ReadonlySet<string> = new Set<HistoryProblem['type']>([
+  'precision-loss',
+  'time-backwards',
+  'persistence-error',
+  'persistence-recovered',
+]);
+
 const RECORDING_ONLY = 'A saved session is on screen: go back to live to send commands.';
 const DISCONNECTED: SourceStatus = { kind: 'disconnected' };
 const NO_VARIABLES: readonly Variable[] = [];
 
 function describeTarget(target: Target): string {
   return target.transport === 'websocket' ? target.url : 'a Bluetooth robot';
+}
+
+function isHistoryProblem(warning: { readonly type: string }): warning is HistoryProblem {
+  return LOGGED_PROBLEMS.has(warning.type);
+}
+
+function problemLog(problem: HistoryProblem): SourceLog {
+  const severity = problem.type === 'persistence-recovered' ? 'info' : 'warning';
+  return { severity, source: 'link', text: problemText(problem) };
+}
+
+function problemText(problem: HistoryProblem): string {
+  if (problem.type === 'precision-loss') {
+    return `${problem.name} holds integers past 2^53; the history keeps them rounded`;
+  }
+
+  if (problem.type === 'time-backwards') {
+    return `run ${problem.runId} sent samples back in time; the history leaves them out`;
+  }
+
+  if (problem.type === 'persistence-error') {
+    const reason = problem.error instanceof Error ? problem.error.message : String(problem.error);
+    return `the recording failed to write or read blocks: ${reason}`;
+  }
+
+  return 'the recording writes blocks again';
 }
 
 /**
@@ -150,6 +207,11 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
       log: this.#log.entries,
       stats: NO_STATS,
     };
+    this.history.onWarning((warning) => {
+      if (isHistoryProblem(warning)) {
+        this.#addLog(problemLog(warning));
+      }
+    });
   }
 
   /**

@@ -1,12 +1,13 @@
 import {
+  decodeLocated,
   encodeRecordingHeader,
   encodeRecordingRecord,
   scanRecording,
   type RecordingDamage,
+  type RecordingFile,
   type RecordingHeader,
   type RecordingRecord,
 } from '@/recording';
-import { decodeLocated } from '@/recording/recording';
 
 /**
  * A whole recording.
@@ -62,4 +63,11 @@ export function deserializeRecording(bytes: Uint8Array): Recording {
     ...(scan.truncatedAt === undefined ? {} : { truncatedAt: scan.truncatedAt }),
     ...(scan.damaged === undefined ? {} : { damaged: scan.damaged }),
   };
+}
+
+/**
+ * Every byte a recording file holds.
+ */
+export async function fileBytes(file: RecordingFile): Promise<Uint8Array> {
+  return file.read(0, await file.size());
 }

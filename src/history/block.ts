@@ -24,6 +24,30 @@ export interface BlockLayout {
 }
 
 /**
+ * Whether the columns of a persisted block are the given ones, in order, each as long as its
+ * time column.
+ *
+ * @param data The persisted block.
+ * @param variableIds The id of each column.
+ * @param kinds How each column is stored.
+ */
+export function fitsColumns(
+  data: BlockData,
+  variableIds: readonly number[],
+  kinds: readonly ColumnKind[]
+): boolean {
+  return (
+    data.columns.length === variableIds.length &&
+    data.columns.every(
+      (column, index) =>
+        column.variableId === variableIds[index] &&
+        kindOfColumn(column.values) === kinds[index] &&
+        column.values.length === data.time.length
+    )
+  );
+}
+
+/**
  * A fixed-size chunk of a run: a time column, one value column per numeric variable, and a
  * min/max pyramid per column.
  *
@@ -59,17 +83,14 @@ export class Block {
   /** The time of its last sample, or NaN while empty. */
   lastTimeUs = Number.NaN;
 
-  /** Where a whole copy of the block can be read back from, once a write finished. */
+  /**
+   * The persistence layer the block was last written to, or the recording it was loaded from:
+   * where a whole copy of it can be read back from.
+   */
   copy: BlockBacking | undefined;
-
-  /** The persistence layer the block was last written to. */
-  recordedBy: BlockBacking | undefined;
 
   /** Whether a write to a persistence layer is under way. */
   writing = false;
-
-  /** Whether the last write failed. */
-  writeFailed = false;
 
   /** Whether a read from the persistence layer is under way. */
   loading = false;
@@ -77,11 +98,11 @@ export class Block {
   /** The last query tick that read the block's raw samples, for eviction. */
   lastUsed = 0;
 
-  private timeColumn: Float64Array | null;
-  private valueColumns: NumericColumn[] | null;
-  private leafTimeColumn: Float64Array;
-  private count = 0;
-  private isSealed = false;
+  #time: Float64Array | null;
+  #columns: NumericColumn[] | null;
+  #leafTimes: Float64Array;
+  #length = 0;
+  #sealed = false;
 
   /**
    * @param layout What the block holds.
@@ -92,10 +113,10 @@ export class Block {
     this.capacity = layout.capacity;
     this.variableIds = layout.variableIds;
     this.kinds = layout.kinds;
-    this.timeColumn = new Float64Array(layout.capacity);
-    this.valueColumns = layout.kinds.map((kind) => allocateColumn(kind, layout.capacity));
+    this.#time = new Float64Array(layout.capacity);
+    this.#columns = layout.kinds.map((kind) => allocateColumn(kind, layout.capacity));
     this.pyramids = layout.kinds.map((kind) => new MinMaxPyramid(kind, layout.capacity));
-    this.leafTimeColumn = new Float64Array(Math.ceil(layout.capacity / LEAF_SIZE));
+    this.#leafTimes = new Float64Array(Math.ceil(layout.capacity / LEAF_SIZE));
   }
 
   /**
@@ -114,48 +135,48 @@ export class Block {
 
   /** The time of the first sample of each pyramid leaf; stays in memory when the block is evicted. */
   get leafTimes(): Float64Array {
-    return this.leafTimeColumn;
+    return this.#leafTimes;
   }
 
   /** How many samples it holds. */
   get length(): number {
-    return this.count;
+    return this.#length;
   }
 
   /** Whether it holds as many samples as it can. */
   get full(): boolean {
-    return this.count === this.capacity;
+    return this.#length === this.capacity;
   }
 
   /** Whether no more samples will be added. */
   get sealed(): boolean {
-    return this.isSealed;
+    return this.#sealed;
   }
 
   /** Whether its raw samples are in memory. */
   get resident(): boolean {
-    return this.timeColumn !== null;
+    return this.#time !== null;
   }
 
   /** The time column while resident; its first {@link length} entries are samples. */
   get time(): Float64Array | null {
-    return this.timeColumn;
+    return this.#time;
   }
 
   /** The value columns while resident, in the order of {@link variableIds}. */
   get columns(): readonly NumericColumn[] | null {
-    return this.valueColumns;
+    return this.#columns;
   }
 
   /** The memory taken by the raw columns, which eviction gives back. */
   get rawByteLength(): number {
-    if (!this.timeColumn || !this.valueColumns) {
+    if (!this.#time || !this.#columns) {
       return 0;
     }
 
-    let bytes = this.timeColumn.byteLength;
+    let bytes = this.#time.byteLength;
 
-    for (const column of this.valueColumns) {
+    for (const column of this.#columns) {
       bytes += column.byteLength;
     }
 
@@ -164,10 +185,10 @@ export class Block {
 
   /** The memory the raw columns take once brought back, sized to the samples held. */
   get restoredByteLength(): number {
-    let bytes = 8 * this.count;
+    let bytes = 8 * this.#length;
 
     for (const kind of this.kinds) {
-      bytes += this.count * bytesPerValue(kind);
+      bytes += this.#length * bytesPerValue(kind);
     }
 
     return bytes;
@@ -175,7 +196,7 @@ export class Block {
 
   /** The memory taken by what never leaves: the pyramids and the leaf times. */
   get indexByteLength(): number {
-    let bytes = this.leafTimeColumn.byteLength;
+    let bytes = this.#leafTimes.byteLength;
 
     for (const pyramid of this.pyramids) {
       bytes += pyramid.byteLength;
@@ -191,18 +212,18 @@ export class Block {
    * @param row Its values, one per column.
    */
   append(timeUs: number, row: ArrayLike<number>): void {
-    const time = this.timeColumn;
-    const columns = this.valueColumns;
+    const time = this.#time;
+    const columns = this.#columns;
 
-    if (!time || !columns || this.isSealed || this.count === this.capacity) {
+    if (!time || !columns || this.#sealed || this.#length === this.capacity) {
       throw new Error(`Block ${this.ref.index} of run ${this.ref.runId} takes no samples`);
     }
 
-    const index = this.count++;
+    const index = this.#length++;
     time[index] = timeUs;
 
     if (index % LEAF_SIZE === 0) {
-      this.leafTimeColumn[index / LEAF_SIZE] = timeUs;
+      this.#leafTimes[index / LEAF_SIZE] = timeUs;
     }
 
     for (let column = 0; column < columns.length; column++) {
@@ -220,7 +241,7 @@ export class Block {
 
   /** Take no more samples, and complete the pyramids so they answer for the whole block. */
   seal(): void {
-    this.isSealed = true;
+    this.#sealed = true;
 
     for (const pyramid of this.pyramids) {
       pyramid.seal();
@@ -233,17 +254,14 @@ export class Block {
    * @returns The bytes given back.
    */
   compact(): number {
-    if (!this.isSealed || this.count === this.capacity) {
+    if (!this.#sealed || this.#length === this.capacity) {
       return 0;
     }
 
     const before = this.rawByteLength + this.indexByteLength;
-    this.timeColumn = this.timeColumn?.slice(0, this.count) ?? null;
-    this.valueColumns = this.valueColumns?.map((values) => values.slice(0, this.count)) ?? null;
-    this.leafTimeColumn = this.leafTimeColumn.slice(
-      0,
-      Math.max(1, Math.ceil(this.count / LEAF_SIZE))
-    );
+    this.#time = this.#time?.slice(0, this.#length) ?? null;
+    this.#columns = this.#columns?.map((values) => values.slice(0, this.#length)) ?? null;
+    this.#leafTimes = this.#leafTimes.slice(0, Math.max(1, Math.ceil(this.#length / LEAF_SIZE)));
 
     for (const pyramid of this.pyramids) {
       pyramid.compact();
@@ -256,8 +274,8 @@ export class Block {
    * The raw samples, as views, for a persistence layer.
    */
   toPersisted(): BlockData {
-    const time = this.timeColumn;
-    const columns = this.valueColumns;
+    const time = this.#time;
+    const columns = this.#columns;
 
     if (!time || !columns) {
       throw new Error(`Block ${this.ref.index} of run ${this.ref.runId} is not in memory`);
@@ -266,10 +284,10 @@ export class Block {
     return {
       ref: this.ref,
       startSample: this.startSample,
-      time: time.subarray(0, this.count),
+      time: time.subarray(0, this.#length),
       columns: columns.map((values, column) => ({
         variableId: this.variableIds[column],
-        values: values.subarray(0, this.count),
+        values: values.subarray(0, this.#length),
       })),
     };
   }
@@ -281,8 +299,8 @@ export class Block {
    */
   evict(): number {
     const bytes = this.rawByteLength;
-    this.timeColumn = null;
-    this.valueColumns = null;
+    this.#time = null;
+    this.#columns = null;
     return bytes;
   }
 
@@ -299,21 +317,15 @@ export class Block {
       persisted.ref.runId === this.ref.runId &&
       persisted.ref.index === this.ref.index &&
       persisted.startSample === this.startSample &&
-      persisted.time.length === this.count &&
-      persisted.columns.length === this.pyramids.length &&
-      persisted.columns.every(
-        (column, index) =>
-          column.variableId === this.variableIds[index] &&
-          column.values.length === this.count &&
-          kindOfColumn(column.values) === this.kinds[index]
-      );
+      persisted.time.length === this.#length &&
+      fitsColumns(persisted, this.variableIds, this.kinds);
 
     if (!matches) {
       throw new Error(`Persisted block ${this.ref.index} of run ${this.ref.runId} differs`);
     }
 
-    this.timeColumn = persisted.time;
-    this.valueColumns = persisted.columns.map((column) => column.values);
+    this.#time = persisted.time;
+    this.#columns = persisted.columns.map((column) => column.values);
     return this.rawByteLength;
   }
 }

@@ -96,7 +96,7 @@ store carry on underneath, REC keeps recording, and STOP still reaches the robot
 commands, writes and reads are off until **Live** goes back to the live session.
 
 Each session is a directory `micras-monitor/sessions/<id>/` with `session.json` and
-`recording.mmrec` (format version 2, `src/recording/recording.ts`). A dedicated worker
+`recording.mmrec` (format version 2, `src/recording/codec.ts`). A dedicated worker
 (`src/recording/library/opfs.worker.ts`) owns the files and appends through synchronous access handles,
 each write flushed before it is acknowledged. The tab recording a session holds a Web Lock on it; on
 start, a session still marked `recording` whose lock nobody holds was cut short: its damaged tail, if

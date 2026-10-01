@@ -169,7 +169,7 @@ describe('REC and the sessions', () => {
     await screen.getByRole('button', { name: /Reset the live session/ }).click();
     await screen.getByRole('button', { name: 'Reset session' }).click();
 
-    await expect.poll(() => monitor.history.generation).toBe(1);
+    await expect.poll(() => monitor.history.resetCount).toBe(1);
   });
 });
 

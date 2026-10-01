@@ -28,12 +28,12 @@ export class TransitionTracker {
   #lastValue: number | undefined;
   #scannedUs = Number.NEGATIVE_INFINITY;
   #firstUs = Number.POSITIVE_INFINITY;
-  #generation: number;
+  #resetCount: number;
 
   constructor(history: HistoryStore, name: string) {
     this.#history = history;
     this.#name = name;
-    this.#generation = history.generation;
+    this.#resetCount = history.resetCount;
   }
 
   /**
@@ -45,8 +45,8 @@ export class TransitionTracker {
   update(): readonly Transition[] {
     const range = this.#history.timeRange(this.#name);
 
-    const reset = this.#history.generation !== this.#generation;
-    this.#generation = this.#history.generation;
+    const reset = this.#history.resetCount !== this.#resetCount;
+    this.#resetCount = this.#history.resetCount;
 
     if (
       reset ||

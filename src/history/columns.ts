@@ -81,3 +81,19 @@ export function losesPrecision(value: Value): boolean {
 
   return typeof value === 'number' && Math.abs(value) > Number.MAX_SAFE_INTEGER;
 }
+
+const floatBits = new DataView(new ArrayBuffer(8));
+
+/**
+ * The smallest float above a finite value, so that `[start, nextUp(last))` holds `last`.
+ */
+export function nextUp(value: number): number {
+  if (value === 0) {
+    return Number.MIN_VALUE;
+  }
+
+  floatBits.setFloat64(0, value);
+  const raw = floatBits.getBigUint64(0);
+  floatBits.setBigUint64(0, value > 0 ? raw + 1n : raw - 1n);
+  return floatBits.getFloat64(0);
+}

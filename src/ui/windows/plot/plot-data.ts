@@ -5,9 +5,9 @@
  * @module
  */
 
-import { liveWindow, toLineSeries, type LineSeries, type PlotValue } from '@/history';
-
 import type { Decimation, HistoryStore, TimeRange } from '@/history';
+
+import { toLineSeries, type LineSeries, type PlotValue } from './line-series';
 
 /** A variable of a plot, as it is drawn. */
 export interface PlotVariable {
@@ -92,6 +92,20 @@ export function latestEnd(history: HistoryStore, names: readonly string[]): numb
   }
 
   return end;
+}
+
+/**
+ * The live window ending at the latest sample, moved in whole columns, so that the columns do not
+ * shimmer as the window slides: each sample stays in the same column until it scrolls out.
+ *
+ * @param latestUs The time of the latest sample; the window holds it.
+ * @param spanUs How long the window is.
+ * @param pixels How many columns it is split into.
+ */
+export function liveWindow(latestUs: number, spanUs: number, pixels: number): TimeRange {
+  const width = spanUs / pixels;
+  const endUs = (Math.floor(latestUs / width) + 1) * width;
+  return { startUs: endUs - pixels * width, endUs };
 }
 
 /**

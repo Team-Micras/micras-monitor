@@ -13,14 +13,25 @@
 
 import {
   type Decimation,
-  historyWindow,
   HistoryStore,
+  type TimeRange,
   type VariableSpec,
   ManualScheduler,
 } from '../src/history';
 
 const MB = 1024 * 1024;
 const PIXELS = 1600;
+
+/**
+ * A window holding a whole history on a grid of columns a power of two wide, so that the grid
+ * stays put while the history grows and only the trailing columns change.
+ */
+function historyWindow(range: TimeRange, pixels: number): TimeRange {
+  const span = Math.max(range.endUs - range.startUs, Number.MIN_VALUE);
+  const width = 2 ** Math.ceil(Math.log2(span / Math.max(1, pixels - 1)));
+  const startUs = Math.floor(range.startUs / width) * width;
+  return { startUs, endUs: startUs + pixels * width };
+}
 
 function variables(first: number, count: number): VariableSpec[] {
   return Array.from({ length: count }, (_, index) => ({ id: first + index, type: 'f32' }));

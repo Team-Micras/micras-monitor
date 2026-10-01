@@ -1,21 +1,87 @@
 import type { Access, Variable } from '@/core/variables';
-import type { BlockData, StoredRun, StoredRecording } from '@/history/block-backing';
-import type { HistoryStore } from '@/history/history-store';
-import type { Boundary, RecordedRun, RecordedGap, RecordedValue, TimeRange } from '@/history/types';
-import { nextUp } from '@/history/window';
-
 import {
-  decodeBlock,
+  blockKey,
+  type BlockBacking,
+  type BlockData,
+  type BlockRef,
+} from '@/history/block-backing';
+import { nextUp } from '@/history/columns';
+import type { HistoryStoreOptions } from '@/history/history-store';
+import type { Boundary, RecordedRun, RecordedGap, RecordedValue, TimeRange } from '@/history/types';
+
+import { decodeBlock, peekBlock, type RecordingHeader } from './codec';
+import { loadRecording, type LoadedRecording, type StoredRecording, type StoredRun } from './load';
+import type { RecordingFile } from './recording-file';
+import {
   decodeLocated,
-  peekBlock,
   RECORD_OVERHEAD,
   scanRecording,
   type LocatedRecord,
   type RecordingDamage,
-  type RecordingHeader,
-} from './recording';
-import type { RecordingFile } from './recording-file';
-import { RecordingBlocks } from './recording-writer';
+} from './scan';
+
+/**
+ * Where a block's record sits in a recording file.
+ */
+export interface BlockLocation {
+  /** Where its payload starts. */
+  readonly offset: number;
+
+  /** How many bytes its payload takes. */
+  readonly size: number;
+}
+
+/**
+ * The blocks of a recording file, read back by where their records are: the persistence layer
+ * of a store loaded from the file, and of a store recording into it.
+ */
+export class RecordingBlocks implements BlockBacking {
+  readonly #file: RecordingFile;
+  readonly #locations = new Map<string, BlockLocation>();
+  #reads = 0;
+
+  /**
+   * @param file The recording.
+   */
+  constructor(file: RecordingFile) {
+    this.#file = file;
+  }
+
+  /** How many blocks were read back from the file. */
+  get reads(): number {
+    return this.#reads;
+  }
+
+  /** Note where a block's record is. */
+  place(ref: BlockRef, location: BlockLocation): void {
+    this.#locations.set(blockKey(ref), location);
+  }
+
+  /** Whether a block's record is known. */
+  has(ref: BlockRef): boolean {
+    return this.#locations.has(blockKey(ref));
+  }
+
+  /** {@inheritDoc BlockBacking.write} */
+  write(block: BlockData): Promise<void> {
+    return Promise.reject(
+      new Error(`Block ${block.ref.index} of run ${block.ref.runId}: the file is read only`)
+    );
+  }
+
+  /** {@inheritDoc BlockBacking.read} */
+  async read(ref: BlockRef): Promise<BlockData> {
+    const location = this.#locations.get(blockKey(ref));
+
+    if (!location) {
+      throw new Error(`No block ${ref.index} of run ${ref.runId} in the recording`);
+    }
+
+    const block = decodeBlock(await this.#file.read(location.offset, location.size));
+    this.#reads++;
+    return block;
+  }
+}
 
 /**
  * What a recording file held when it was read.
@@ -66,16 +132,23 @@ interface RunParts {
  * are then read back from the file as needed.
  */
 export class RecordingReader {
-  /**
-   * @param summary What the file holds.
-   * @param blocks Where its blocks are.
-   * @param session What a store loads.
-   */
+  /** What the file holds. */
+  readonly summary: RecordingSummary;
+
+  /** Where its blocks are. */
+  readonly blocks: RecordingBlocks;
+
+  #recording: StoredRecording | undefined;
+
   private constructor(
-    readonly summary: RecordingSummary,
-    readonly blocks: RecordingBlocks,
-    private session: StoredRecording | undefined
-  ) {}
+    summary: RecordingSummary,
+    blocks: RecordingBlocks,
+    recording: StoredRecording
+  ) {
+    this.summary = summary;
+    this.blocks = blocks;
+    this.#recording = recording;
+  }
 
   /**
    * Read a recording file whole. A tail cut short or a damaged record does not stop it: the
@@ -162,31 +235,31 @@ export class RecordingReader {
       range: firstUs <= lastUs ? { startUs: firstUs, endUs: nextUp(lastUs) } : undefined,
       schema: mergedSchema(scan.header.schema, runs, values),
     };
-    const session: StoredRecording = {
+    const recording: StoredRecording = {
       schema: scan.header.schema.map(({ id, name, type }) => ({ id, name, type })),
       runs: [...runs.values()].map((parts) => storedRun(parts)),
       boundaries,
       values,
     };
-    return new RecordingReader(summary, blocks, session);
+    return new RecordingReader(summary, blocks, recording);
   }
 
   /**
-   * Fill an empty store with the recording, whose blocks then come back from the file when the
+   * Fill a new store with the recording, whose blocks then come back from the file when the
    * store needs them. It lets go of the bytes read, so it can be done once.
    *
-   * @returns How many blocks did not fit under the store's memory cap.
-   * @throws If it was done before.
+   * @param options How to set up the store.
+   * @throws If it was done before, or the recording does not load.
    */
-  loadInto(store: HistoryStore): number {
-    const session = this.session;
+  load(options: HistoryStoreOptions): LoadedRecording {
+    const recording = this.#recording;
 
-    if (!session) {
+    if (!recording) {
       throw new Error('The recording was loaded already');
     }
 
-    this.session = undefined;
-    return store.load(session, this.blocks);
+    this.#recording = undefined;
+    return loadRecording(recording, this.blocks, options);
   }
 }
 

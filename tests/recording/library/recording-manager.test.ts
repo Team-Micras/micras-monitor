@@ -24,7 +24,8 @@ import {
   RecordingManager,
   type RecordingsState,
 } from '@/recording/library/recording-manager';
-import { deserializeRecording } from '@tests/support/recording/recording-bytes';
+import { seedRecording } from '@tests/support/recording/library/memory-library';
+import { deserializeRecording, fileBytes } from '@tests/support/recording/recording-bytes';
 
 const SAMPLE_US = 10_000;
 const VARIABLES: readonly Variable[] = [
@@ -215,7 +216,7 @@ describe('recording the live session', () => {
   });
 
   test('keeps the sessions the live store reads from until the live session is reset', async () => {
-    const { store, manager, library, stream } = rig();
+    const { store, manager, stream } = rig();
     await manager.start();
     await manager.startRecording();
     await stream(2);
@@ -229,7 +230,6 @@ describe('recording the live session', () => {
     await manager.resetLive();
     expect(store.timeRange()).toBeUndefined();
     expect(manager.state.liveSources).toEqual([]);
-    expect(library instanceof MemoryRecordingLibrary && library.openings(saved.id)).toBe(0);
     await manager.remove(saved.id);
     expect(manager.state.sessions).toEqual([]);
   });
@@ -300,7 +300,8 @@ describe('opening a saved session', () => {
 
   test('says why a session that is not a recording does not open', async () => {
     const library = new MemoryRecordingLibrary();
-    library.seed(
+    await seedRecording(
+      library,
       {
         id: 'broken',
         name: 'broken',
@@ -320,7 +321,7 @@ describe('opening a saved session', () => {
 
     expect(manager.state.viewing).toBeNull();
     expect(manager.state.error).toMatch(/Could not open the session: Not a monitor recording/);
-    expect(library.openings('broken')).toBe(0);
+    await expect(library.remove('broken')).resolves.toBeUndefined();
   });
 
   test('says that a recording of another format version does not open', async () => {
@@ -345,7 +346,8 @@ describe('opening a saved session', () => {
     new DataView(bytes.buffer).setUint32(8, json.byteLength, true);
     bytes.set(json, 12);
     const library = new MemoryRecordingLibrary();
-    library.seed(
+    await seedRecording(
+      library,
       {
         id: 'old',
         name: 'old',
@@ -498,7 +500,10 @@ describe('recovering after the tab died', () => {
     const { id } = recordingState(saver.manager.state).session;
     const dead = new MemoryRecordingLibrary(() => 5);
     const [info] = await source.list();
-    dead.seed(info, source.contents(id));
+    const opened = await source.open(id);
+    const bytes = await fileBytes(opened);
+    await opened.close();
+    await seedRecording(dead, info, bytes);
 
     const open = dead.open.bind(dead);
     let openings = 0;
@@ -532,7 +537,8 @@ describe('recovering after the tab died', () => {
 
   test('drops a session whose tab died before its header was written', async () => {
     const library = new MemoryRecordingLibrary();
-    library.seed(
+    await seedRecording(
+      library,
       {
         id: 'empty',
         name: 'empty',
