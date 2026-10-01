@@ -99,6 +99,30 @@
               {
                 "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
                 "message": "Nothing in src/ imports a robot package; robots register through the app."
+              },
+              {
+                "regex": "^(@/(protocol|link)|(\\.\\./)+(protocol|link))(/|$)",
+                "message": "Only src/app/live speaks micras_comm; the rest of the app uses the model of src/core."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/app/live/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
+                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
+                "message": "Nothing in src/ imports a robot package; robots register through the app."
               }
             ]
           }
@@ -130,6 +154,30 @@
       }
     },
     {
+      "files": ["src/core/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@/|@robots(/|$)|(\\.\\./)+)",
+                "message": "src/core imports nothing else in the monitor."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/protocol/**"],
       "rules": {
         "no-restricted-imports": [
@@ -145,7 +193,7 @@
                 "message": "Only src/app may use React; keep this layer framework free."
               },
               {
-                "regex": "^(@/(link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(link|telemetry|tiling|robot-kit|app|robots))(/|$)",
+                "regex": "^(@/(core|link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(core|link|telemetry|tiling|robot-kit|app|robots))(/|$)",
                 "message": "src/protocol depends on nothing else in the monitor."
               }
             ]
@@ -171,7 +219,7 @@
               },
               {
                 "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(telemetry|tiling|robot-kit|app|robots|scripts))(/|$)",
-                "message": "src/link depends only on src/protocol."
+                "message": "src/link depends only on src/protocol and src/core."
               }
             ]
           }
@@ -194,14 +242,8 @@
                 "message": "Only src/app may use React; keep this layer framework free."
               },
               {
-                "regex": "^(@/(link|tiling|robot-kit|app)|@robots|(\\.\\./)+(link|tiling|robot-kit|app|robots))(/|$)",
-                "message": "src/telemetry depends only on the types of src/protocol."
-              },
-              {
-                "regex": "^(@/protocol|(\\.\\./)+protocol)(/|$)",
-                "allowTypeImports": true,
-                "allowImportNames": ["TypeCode"],
-                "message": "src/telemetry takes only types, and the TypeCode enum, from src/protocol."
+                "regex": "^(@/(protocol|link|tiling|robot-kit|app)|@robots|(\\.\\./)+(protocol|link|tiling|robot-kit|app|robots))(/|$)",
+                "message": "src/telemetry depends only on src/core."
               }
             ]
           }
@@ -224,7 +266,7 @@
                 "message": "Only src/app may use React; keep this layer framework free."
               },
               {
-                "regex": "^(@/(protocol|link|telemetry|robot-kit|app)|@robots|(\\.\\./)+(protocol|link|telemetry|robot-kit|app|robots))(/|$)",
+                "regex": "^(@/(core|protocol|link|telemetry|robot-kit|app)|@robots|(\\.\\./)+(core|protocol|link|telemetry|robot-kit|app|robots))(/|$)",
                 "message": "src/tiling depends on nothing else in the monitor."
               }
             ]
@@ -248,8 +290,8 @@
                 "message": "Only src/app may use React; keep this layer framework free."
               },
               {
-                "regex": "^(@/(link|telemetry|tiling|app)|@robots|(\\.\\./)+(link|telemetry|tiling|app|robots))(/|$)",
-                "message": "src/robot-kit depends only on src/protocol."
+                "regex": "^(@/(protocol|link|telemetry|tiling|app)|@robots|(\\.\\./)+(protocol|link|telemetry|tiling|app|robots))(/|$)",
+                "message": "src/robot-kit depends only on src/core."
               }
             ]
           }
@@ -268,8 +310,8 @@
                 "message": "Shipped code never imports tests or scripts."
               },
               {
-                "regex": "^(@/(link|telemetry|tiling|app)|(\\.\\./)+(src/(link|telemetry|tiling|app)))(/|$)",
-                "message": "Robot packages depend only on src/robot-kit, src/protocol and React."
+                "regex": "^(@/(protocol|link|telemetry|tiling|app)|(\\.\\./)+(src/(protocol|link|telemetry|tiling|app)))(/|$)",
+                "message": "Robot packages depend only on src/robot-kit, src/core and React."
               }
             ]
           }
@@ -422,8 +464,8 @@
                 "message": "Scripts never import tests."
               },
               {
-                "regex": "^(@/(link|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|tiling|robot-kit|app)|robots))(/|$)",
-                "message": "The telemetry benchmark may only depend on src/protocol and src/telemetry."
+                "regex": "^(@/(protocol|link|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(protocol|link|tiling|robot-kit|app)|robots))(/|$)",
+                "message": "The telemetry benchmark may only depend on src/core and src/telemetry."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
