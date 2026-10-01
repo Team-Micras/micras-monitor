@@ -26,28 +26,23 @@ import {
 import type { Variable } from '@/core/variables';
 
 import { connectionStatus, isLinkUp, sameStatus } from './connection-status';
-import {
-  BluetoothTransport,
-  MemorySchemaCache,
-  RobotLink,
-  StreamPlanner,
-  WebSocketTransport,
-  type BluetoothLike,
-  type Epoch,
-  type EpochEndEvent,
-  type RateRequest,
-  type SampleEvent,
-  type SchemaCache,
-  type SchemaEntry,
-  type LinkState,
-  type LinkTiming,
-  type StreamPlannerOptions,
-  type TimelineEvent,
-  type Transport,
-  type TransportState,
-  type WebSocketFactory,
-  variableOf,
-} from './link';
+import { BluetoothTransport } from './transports/bluetooth/bluetooth-transport';
+import { MemorySchemaCache, type SchemaCache, type SchemaEntry } from './link/schema';
+import { RobotLink } from './link/robot-link';
+import { StreamPlanner, type StreamPlannerOptions } from './streaming/stream-planner';
+import { WebSocketTransport, type WebSocketFactory } from './transports/websocket-transport';
+import type { BluetoothLike } from './transports/bluetooth/bluetooth-types';
+import type { Epoch } from './link/epochs';
+import type {
+  EpochEndEvent,
+  SampleEvent,
+  LinkState,
+  LinkTiming,
+  TimelineEvent,
+} from './link/link-events';
+import type { RateRequest } from './streaming/fit-groups';
+import type { Transport, TransportState } from './transports/transport';
+import { variableOf } from './value-types';
 import { asError } from './link/errors';
 import { CommandResult, Severity, WriteStatus } from './wire';
 

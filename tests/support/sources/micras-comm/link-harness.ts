@@ -6,22 +6,21 @@
  * @module
  */
 
-import {
-  RobotLink,
-  WebSocketTransport,
-  type Epoch,
-  type GroupRequest,
-  type HandshakeReason,
-  type LogEvent,
-  type ProtocolErrorEvent,
-  type SampleEvent,
-  type SchemaReady,
-  type RobotLinkOptions,
-  type LinkState,
-  type LinkTiming,
-  type TimelineEvent,
-  type WriteEvent,
-} from '@/sources/micras-comm/link';
+import { RobotLink, type RobotLinkOptions } from '@/sources/micras-comm/link/robot-link';
+import { WebSocketTransport } from '@/sources/micras-comm/transports/websocket-transport';
+import type { Epoch } from '@/sources/micras-comm/link/epochs';
+import type { GroupRequest } from '@/sources/micras-comm/link/group-configurator';
+import type {
+  HandshakeReason,
+  LogEvent,
+  ProtocolErrorEvent,
+  SampleEvent,
+  SchemaReady,
+  LinkState,
+  LinkTiming,
+  TimelineEvent,
+  WriteEvent,
+} from '@/sources/micras-comm/link/link-events';
 import {
   startInMemoryRobot,
   type InMemoryRobot,

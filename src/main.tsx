@@ -8,7 +8,7 @@ import { HistoryStore, type Scheduler } from '@/history';
 import type { RecordingManager } from '@/recording/library/recording-manager';
 import { startStorageWorker } from '@/recording/library/storage-worker';
 import { micras } from '@/robots/micras';
-import type { BluetoothLike } from '@/sources/micras-comm/link';
+import type { BluetoothLike } from '@/sources/micras-comm/transports/bluetooth/bluetooth-types';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
 import { App } from '@/ui/app';

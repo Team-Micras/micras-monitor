@@ -10,7 +10,10 @@
  * @module
  */
 
-import type { WebSocketFactory, WebSocketLike } from '@/sources/micras-comm/link';
+import type {
+  WebSocketFactory,
+  WebSocketLike,
+} from '@/sources/micras-comm/transports/websocket-transport';
 import {
   TAKEN_OVER_CLOSE_CODE,
   TAKEN_OVER_REASON,

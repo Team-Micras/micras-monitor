@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { SchemaEntry } from '@/sources/micras-comm/link';
+import type { SchemaEntry } from '@/sources/micras-comm/link/schema';
 import { decodeAccess, TypeCode } from '@/sources/micras-comm/wire';
 
 import { MemoryStorage } from '@tests/support/ui/layouts/memory-storage';

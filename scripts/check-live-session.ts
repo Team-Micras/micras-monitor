@@ -16,14 +16,11 @@
 import { parseArgs } from 'node:util';
 
 import { TypeCode } from '../src/sources/micras-comm/wire';
-import {
-  RobotLink,
-  WebSocketTransport,
-  type Epoch,
-  type HandshakeReason,
-  type LinkCounters,
-  type SchemaEntry,
-} from '../src/sources/micras-comm/link';
+import { RobotLink } from '../src/sources/micras-comm/link/robot-link';
+import { WebSocketTransport } from '../src/sources/micras-comm/transports/websocket-transport';
+import type { Epoch } from '../src/sources/micras-comm/link/epochs';
+import type { HandshakeReason, LinkCounters } from '../src/sources/micras-comm/link/link-events';
+import type { SchemaEntry } from '../src/sources/micras-comm/link/schema';
 
 const { values: args } = parseArgs({
   options: {

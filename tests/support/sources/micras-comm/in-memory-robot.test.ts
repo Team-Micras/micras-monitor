@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import type { WebSocketLike } from '@/sources/micras-comm/link';
+import type { WebSocketLike } from '@/sources/micras-comm/transports/websocket-transport';
 import { startInMemoryRobot } from '@tests/support/sources/micras-comm/in-memory-robot';
 
 function listen(socket: WebSocketLike): string[] {

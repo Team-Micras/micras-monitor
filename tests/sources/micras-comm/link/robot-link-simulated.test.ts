@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { CommandResult, TypeCode, WriteStatus } from '@/sources/micras-comm/wire';
-import { MemorySchemaCache, LinkError } from '@/sources/micras-comm/link';
+import { MemorySchemaCache } from '@/sources/micras-comm/link/schema';
+import { LinkError } from '@/sources/micras-comm/link/errors';
 import {
   applyGroups,
   connect,

@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { SchemaCache, SchemaEntry } from './link';
+import type { SchemaCache, SchemaEntry } from './link/schema';
 import { decodeAccess, encodeAccess, TypeCode } from './wire';
 
 /** The part of `localStorage` the cache uses. */

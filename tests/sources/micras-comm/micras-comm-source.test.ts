@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { Monitor, type VariableDemand } from '@/core/monitor';
-import type { WebSocketLike } from '@/sources/micras-comm/link';
+import type { WebSocketLike } from '@/sources/micras-comm/transports/websocket-transport';
 import { MicrasCommSource, type MicrasCommOptions } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
 import { HistoryStore } from '@/history';

@@ -1,7 +1,8 @@
 import { expect, inject, test } from 'vitest';
 
 import { Monitor } from '@/core/monitor';
-import type { BandwidthEstimatorOptions, WebSocketLike } from '@/sources/micras-comm/link';
+import type { BandwidthEstimatorOptions } from '@/sources/micras-comm/streaming/bandwidth-estimator';
+import type { WebSocketLike } from '@/sources/micras-comm/transports/websocket-transport';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { HistoryStore } from '@/history';
 import { percentile, reportBench } from '@tests/support/ui/bench';
