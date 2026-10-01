@@ -1,15 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Variable } from '@/core/variables';
+import { ManualScheduler, TelemetryStore } from '@/history';
 import {
   encodeRecordingHeader,
-  ManualScheduler,
   MemoryRecordingFile,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
   SavedRecording,
-  TelemetryStore,
-} from '@/telemetry';
+} from '@/recording';
 
 import { DirectTransport, FakeDirectory, FakeFile } from '@tests/support/app/sessions/fake-opfs';
 import { MemorySessionLibrary } from '@/app/sessions/memory-library';
@@ -21,7 +20,7 @@ import {
   SessionManager,
   type SessionsState,
 } from '@/app/sessions/session-manager';
-import { deserializeRecording } from '@tests/support/telemetry/recording-bytes';
+import { deserializeRecording } from '@tests/support/recording/recording-bytes';
 
 const SAMPLE_US = 10_000;
 const VARIABLES: readonly Variable[] = [

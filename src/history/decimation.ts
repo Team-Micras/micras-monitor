@@ -1,8 +1,8 @@
 import type { Block } from './block';
-import type { EpochGap } from './epoch';
-import { LEAF_SIZE, MinMaxAccumulator } from './pyramid';
+import { LEAF_SIZE, MinMaxAccumulator } from './min-max-pyramid';
+import type { EpochGap } from './stream-run';
 import type { Boundary, HistoryMark } from './types';
-import type { Segment } from './variable';
+import type { Segment } from './variable-history';
 
 /** The column holds at least one number. */
 export const COLUMN_HAS_DATA = 1;

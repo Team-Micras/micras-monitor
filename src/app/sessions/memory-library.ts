@@ -5,7 +5,7 @@
  * @module
  */
 
-import { MemoryRecordingFile, type RecordingFile } from '@/telemetry';
+import { MemoryRecordingFile, type RecordingFile } from '@/recording';
 
 import {
   byNewest,

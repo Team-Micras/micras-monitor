@@ -1,7 +1,7 @@
 import type { Value, ValueType } from '@/core/variables';
 
-import type { Epoch } from './epoch';
-import type { Channel } from './notifier';
+import type { Epoch } from './stream-run';
+import type { Channel } from './tick-notifier';
 import type { HistoryMark, LatestValue } from './types';
 
 /**

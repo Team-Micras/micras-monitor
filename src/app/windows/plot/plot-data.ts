@@ -5,9 +5,9 @@
  * @module
  */
 
-import { liveWindow, toLineSeries, type LineSeries, type PlotValue } from '@/telemetry';
+import { liveWindow, toLineSeries, type LineSeries, type PlotValue } from '@/history';
 
-import type { Decimation, TelemetryStore, TimeRange } from '@/telemetry';
+import type { Decimation, TelemetryStore, TimeRange } from '@/history';
 
 /** A variable of a plot, as it is drawn. */
 export interface PlotVariable {

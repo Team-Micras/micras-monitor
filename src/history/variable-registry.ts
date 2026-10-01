@@ -1,8 +1,8 @@
 import type { ValueType } from '@/core/variables';
 
-import { Channel } from './notifier';
+import { Channel } from './tick-notifier';
 import type { HistoryVariable, VariableRef } from './types';
-import { VariableRecord } from './variable';
+import { VariableRecord } from './variable-history';
 
 /**
  * The records of every variable, keyed by name and type, and the current schema that maps the

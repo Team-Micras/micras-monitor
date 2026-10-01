@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { PackageChooser, subscribeThrottled } from '@/app/monitor-context';
 import type { Variable } from '@/core/variables';
 import { RobotRegistry } from '@/robot-kit';
-import { ManualScheduler, TelemetryStore } from '@/telemetry';
+import { ManualScheduler, TelemetryStore } from '@/history';
 import { mouse } from '@tests/support/robot-kit/packages';
 
 const ACCESS = { stream: true, write: false, writeNeedsIdle: false, persists: false };

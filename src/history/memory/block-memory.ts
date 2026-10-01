@@ -1,8 +1,8 @@
-import { Block, type BlockLayout } from './block';
-import type { BlockAccess } from './decimation';
-import type { BlockPersistence, PersistedBlock } from './persistence';
-import type { Scheduler } from './scheduler';
-import type { StoreStatus, TelemetryEvent } from './types';
+import { Block, type BlockLayout } from '../block';
+import type { BlockPersistence, PersistedBlock } from '../block-backing';
+import type { BlockAccess } from '../decimation';
+import type { Scheduler } from '../scheduler';
+import type { StoreStatus, TelemetryEvent } from '../types';
 
 const FIRST_BACKOFF_MS = 1000;
 const LAST_BACKOFF_MS = 60_000;

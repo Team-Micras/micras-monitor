@@ -1,7 +1,8 @@
 import type { Value, ValueType } from '@/core/variables';
 
 import type { Block } from './block';
-import { ChannelRegistry } from './channels';
+import type { BlockPersistence, PersistedBlock, StoredSession } from './block-backing';
+import { type ColumnKind, columnKindOf, losesPrecision } from './columns';
 import {
   type Decimation,
   DecimationBuilder,
@@ -11,13 +12,11 @@ import {
   lowerBound,
   upperBound,
 } from './decimation';
-import { Epoch, type EpochHost, RECEIVED_BACKWARDS } from './epoch';
-import { ChangeNotifier, Channel } from './notifier';
-import type { BlockPersistence, PersistedBlock, StoredSession } from './persistence';
-import { LEAF_SIZE } from './pyramid';
-import { BlockResidency } from './residency';
+import { BlockResidency } from './memory/block-memory';
+import { LEAF_SIZE } from './min-max-pyramid';
 import type { Scheduler } from './scheduler';
-import { type ColumnKind, columnKindOf, losesPrecision } from './storage';
+import { Epoch, type EpochHost, RECEIVED_BACKWARDS } from './stream-run';
+import { ChangeNotifier, Channel } from './tick-notifier';
 import type {
   Boundary,
   BoundaryKind,
@@ -35,7 +34,8 @@ import type {
   TimeRange,
   VariableRef,
 } from './types';
-import type { VariableRecord } from './variable';
+import type { VariableRecord } from './variable-history';
+import { ChannelRegistry } from './variable-registry';
 import { nextUp } from './window';
 
 /** How many samples a block holds at most unless told otherwise. */

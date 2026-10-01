@@ -12,6 +12,7 @@
  */
 
 import type { Variable } from '@/core/variables';
+import { TelemetryStore, type Scheduler, type TelemetryEvent } from '@/history';
 import {
   decodeRecordingHeader,
   encodeRecordingHeader,
@@ -19,15 +20,12 @@ import {
   RECORDING_FORMAT_VERSION,
   SavedRecording,
   SessionRecorder,
-  TelemetryStore,
   type RecorderStats,
   type RecordingBlocks,
   type RecordingFile,
   type RecordingHeader,
   type RecordingSummary,
-  type Scheduler,
-  type TelemetryEvent,
-} from '@/telemetry';
+} from '@/recording';
 
 import {
   sessionId,

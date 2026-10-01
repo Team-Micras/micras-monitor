@@ -1,17 +1,17 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import type { ValueType } from '@/core/variables';
-import { COLUMN_BREAKS, COLUMN_HAS_DATA } from '@/telemetry/decimation';
-import { GAP_BYTES } from '@/telemetry/epoch';
-import { toLineSeries } from '@/telemetry/series';
-import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
+import { COLUMN_BREAKS, COLUMN_HAS_DATA } from '@/history/decimation';
+import { GAP_BYTES } from '@/history/stream-run';
+import { toLineSeries } from '@/history/series';
+import { TelemetryStore, type TelemetryStoreOptions } from '@/history/history-store';
 import type {
   HistoryVariable,
   IngestionEvent,
   TelemetryEvent,
   VariableSpec,
-} from '@/telemetry/types';
-import { ManualScheduler } from '@/telemetry';
+} from '@/history/types';
+import { ManualScheduler } from '@/history';
 
 const MS = 1000;
 const SECOND = 1_000_000;

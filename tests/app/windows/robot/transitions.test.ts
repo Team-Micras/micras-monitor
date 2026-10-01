@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { TelemetryStore, ManualScheduler } from '@/telemetry';
+import { TelemetryStore, ManualScheduler } from '@/history';
 
 import { TransitionTracker } from '@/app/windows/robot/transitions';
 

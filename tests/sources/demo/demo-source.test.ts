@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Monitor } from '@/core/monitor';
 import { DEMO_ROBOT } from '@/sources/demo/demo-robot';
 import { DemoSource, type DemoOptions, type DemoRobot } from '@/sources/demo/demo-source';
-import { ManualScheduler, TelemetryStore } from '@/telemetry';
+import { ManualScheduler, TelemetryStore } from '@/history';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
 const STOP = 5;

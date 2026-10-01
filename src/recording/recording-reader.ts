@@ -1,7 +1,15 @@
 import type { Access, Variable } from '@/core/variables';
+import type { PersistedBlock, StoredEpoch, StoredSession } from '@/history/block-backing';
+import type { TelemetryStore } from '@/history/history-store';
+import type {
+  Boundary,
+  RecordedEpoch,
+  RecordedGap,
+  RecordedValue,
+  TimeRange,
+} from '@/history/types';
+import { nextUp } from '@/history/window';
 
-import type { PersistedBlock, StoredEpoch, StoredSession } from './persistence';
-import { RecordingBlocks } from './recorder';
 import {
   decodeBlock,
   decodeLocated,
@@ -13,9 +21,7 @@ import {
   type RecordingHeader,
 } from './recording';
 import type { RecordingFile } from './recording-file';
-import type { TelemetryStore } from './store';
-import type { Boundary, RecordedEpoch, RecordedGap, RecordedValue, TimeRange } from './types';
-import { nextUp } from './window';
+import { RecordingBlocks } from './recording-writer';
 
 /**
  * What a recording file held when it was read.

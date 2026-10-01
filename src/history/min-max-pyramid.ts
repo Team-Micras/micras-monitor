@@ -1,4 +1,4 @@
-import { allocateColumn, bytesPerValue, type ColumnKind } from './storage';
+import { allocateColumn, bytesPerValue, type ColumnKind } from './columns';
 import type { NumericColumn } from './types';
 
 const LEAF_SHIFT = 4;

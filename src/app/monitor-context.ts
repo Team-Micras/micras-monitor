@@ -11,8 +11,8 @@ import { createContext, use, useSyncExternalStore, type ReactNode } from 'react'
 import type { Monitor, MonitorState } from '@/core/monitor';
 import type { SourceStatus, WriteValue } from '@/core/source';
 import type { Variable } from '@/core/variables';
+import type { LatestValue, TelemetryStore } from '@/history';
 import type { PackageSelection, RobotPackage, RobotRegistry } from '@/robot-kit';
-import type { LatestValue, TelemetryStore } from '@/telemetry';
 
 /** A monitor as the app holds it, over a history store. */
 export type AppMonitor = Monitor<TelemetryStore>;

@@ -1,4 +1,6 @@
-import type { BlockPersistence, BlockRef, PersistedBlock } from './persistence';
+import type { BlockPersistence, BlockRef, PersistedBlock } from '@/history/block-backing';
+import type { TelemetryStore } from '@/history/history-store';
+
 import {
   decodeBlock,
   encodeRecordingHeader,
@@ -9,7 +11,6 @@ import {
   type RecordingRecord,
 } from './recording';
 import type { RecordingFile } from './recording-file';
-import type { TelemetryStore } from './store';
 
 /**
  * Where a block's record sits in a recording file.

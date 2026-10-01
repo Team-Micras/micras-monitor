@@ -11,7 +11,7 @@ import { Monitor } from '@/core/monitor';
 import { RobotRegistry, type RobotPackage } from '@/robot-kit';
 import { DEMO_ROBOT } from '@/sources/demo/demo-robot';
 import { DemoSource, type DemoOptions, type DemoRobot } from '@/sources/demo/demo-source';
-import { TelemetryStore, type Scheduler } from '@/telemetry';
+import { TelemetryStore, type Scheduler } from '@/history';
 
 import { scripted, type Script } from './scripted-source';
 

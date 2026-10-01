@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import type { Variable } from '@/core/variables';
-import { TelemetryStore, ManualScheduler } from '@/telemetry';
+import { TelemetryStore, ManualScheduler } from '@/history';
 
 import { MessageTransport, OpfsSessionLibrary } from '@/app/sessions/opfs-library';
 import { MemoryLocks, WebLocks } from '@/app/sessions/session-library';

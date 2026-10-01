@@ -5,8 +5,8 @@ import {
   type RecordingDamage,
   type RecordingHeader,
   type RecordingRecord,
-} from '@/telemetry';
-import { decodeLocated } from '@/telemetry/recording';
+} from '@/recording';
+import { decodeLocated } from '@/recording/recording';
 
 /**
  * A whole recording.

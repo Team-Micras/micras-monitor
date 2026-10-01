@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { TelemetryStore, TimeRange } from '@/telemetry';
+import type { TelemetryStore, TimeRange } from '@/history';
 
 /** The shortest window a plot zooms in to: a millisecond. */
 export const MIN_SPAN_US = 1000;

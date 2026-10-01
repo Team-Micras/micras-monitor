@@ -7,7 +7,7 @@
 
 import uPlot from 'uplot';
 
-import type { HistoryMark, TelemetryStore, TimeRange } from '@/telemetry';
+import type { HistoryMark, TelemetryStore, TimeRange } from '@/history';
 
 import { formatClock } from '../../lib/format';
 import {

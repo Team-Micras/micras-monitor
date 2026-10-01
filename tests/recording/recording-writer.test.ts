@@ -1,21 +1,21 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Access, Variable } from '@/core/variables';
-import { Block } from '@/telemetry/block';
-import { COLUMN_HAS_DATA } from '@/telemetry/decimation';
-import type { RecordingFile } from '@/telemetry/recording-file';
-import { MemoryRecordingFile } from '@/telemetry/recording-file';
+import { Block } from '@/history/block';
+import { COLUMN_HAS_DATA } from '@/history/decimation';
+import type { RecordingFile } from '@/recording/recording-file';
+import { MemoryRecordingFile } from '@/recording/recording-file';
 import {
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
   type RecordingHeader,
-} from '@/telemetry/recording';
-import { SavedRecording } from '@/telemetry/recording-reader';
-import { RecordingBlocks, SessionRecorder } from '@/telemetry/recorder';
-import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
-import type { SampleValue, VariableSpec } from '@/telemetry/types';
-import { serializeRecording } from '@tests/support/telemetry/recording-bytes';
-import { ManualScheduler } from '@/telemetry';
+} from '@/recording/recording';
+import { SavedRecording } from '@/recording/recording-reader';
+import { RecordingBlocks, SessionRecorder } from '@/recording/recording-writer';
+import { TelemetryStore, type TelemetryStoreOptions } from '@/history/history-store';
+import type { SampleValue, VariableSpec } from '@/history/types';
+import { serializeRecording } from '@tests/support/recording/recording-bytes';
+import { ManualScheduler } from '@/history';
 
 const BLOCK_SIZE = 1024;
 const VARIABLES: readonly VariableSpec[] = [

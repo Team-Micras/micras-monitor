@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { Monitor } from '@/core/monitor';
 import type { SourceStats } from '@/core/source';
 import type { Variable } from '@/core/variables';
-import { ManualScheduler, TelemetryStore } from '@/telemetry';
+import { ManualScheduler, TelemetryStore } from '@/history';
 import { ScriptedSource } from '@tests/support/sources/scripted-source';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;

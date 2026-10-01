@@ -17,7 +17,7 @@ import {
   TelemetryStore,
   type VariableSpec,
   ManualScheduler,
-} from '../src/telemetry';
+} from '../src/history';
 
 const MB = 1024 * 1024;
 const PIXELS = 1600;

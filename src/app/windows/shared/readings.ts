@@ -7,8 +7,8 @@
 
 import { bitSet } from '@/core/integers';
 import type { Value, ValueType } from '@/core/variables';
+import type { LatestValue } from '@/history';
 import { enumLabel, type BitmaskType, type EnumType } from '@/robot-kit';
-import type { LatestValue } from '@/telemetry';
 
 import { formatValue } from '../../lib/format';
 

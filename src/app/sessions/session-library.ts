@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { RecordingFile } from '@/telemetry';
+import type { RecordingFile } from '@/recording';
 
 /** Whether a session is being recorded, or its recording ended. */
 export type SessionState = 'recording' | 'saved';

@@ -1,12 +1,12 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { Block } from '@/telemetry/block';
-import { referenceDecimation, type ReferenceSample } from '@tests/support/telemetry/reference';
-import type { BlockPersistence, BlockRef, PersistedBlock } from '@/telemetry/persistence';
-import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
-import type { TelemetryEvent, VariableSpec } from '@/telemetry/types';
-import { MemoryBlockPersistence } from '@tests/support/telemetry/memory-persistence';
-import { ManualScheduler } from '@/telemetry';
+import { Block } from '@/history/block';
+import { referenceDecimation, type ReferenceSample } from '@tests/support/history/reference';
+import type { BlockPersistence, BlockRef, PersistedBlock } from '@/history/block-backing';
+import { TelemetryStore, type TelemetryStoreOptions } from '@/history/history-store';
+import type { TelemetryEvent, VariableSpec } from '@/history/types';
+import { MemoryBlockPersistence } from '@tests/support/history/memory-backing';
+import { ManualScheduler } from '@/history';
 
 const BLOCK_SIZE = 1024;
 const VARIABLES: readonly VariableSpec[] = [

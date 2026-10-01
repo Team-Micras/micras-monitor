@@ -2,8 +2,8 @@ import { BatteryMediumIcon } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 
 import type { LogEntry } from '@/core/log';
+import type { TelemetryStore } from '@/history';
 import { enumLabel, roleVariable, type EnumType } from '@/robot-kit';
-import type { TelemetryStore } from '@/telemetry';
 
 import { formatClock, formatValue } from '../../lib/format';
 import { cn } from '../../lib/utils';

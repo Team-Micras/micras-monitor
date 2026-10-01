@@ -1,8 +1,6 @@
 import { isValueType, type Access, type Value, type Variable } from '@/core/variables';
-
-import { crc32 } from './crc32';
-import type { BlockRef, PersistedBlock, PersistedColumn } from './persistence';
-import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from './storage';
+import type { BlockRef, PersistedBlock, PersistedColumn } from '@/history/block-backing';
+import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from '@/history/columns';
 import type {
   Boundary,
   BoundaryKind,
@@ -10,7 +8,9 @@ import type {
   RecordedEpoch,
   RecordedGap,
   RecordedValue,
-} from './types';
+} from '@/history/types';
+
+import { crc32 } from './crc32';
 
 /**
  * Recording format, version 2.

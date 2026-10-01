@@ -9,7 +9,7 @@ import { expect } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { RobotRegistry } from '@/robot-kit';
-import type { Scheduler } from '@/telemetry';
+import type { Scheduler } from '@/history';
 import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/tiling';
 
 import { App } from '@/app/app';

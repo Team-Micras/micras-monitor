@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { RecordingFile } from '@/telemetry';
+import type { RecordingFile } from '@/recording';
 
 import type { HostRequest, HostResponse, HostValue } from './opfs-host';
 import type {

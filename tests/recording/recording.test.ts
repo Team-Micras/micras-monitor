@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { crc32 } from '@/telemetry/crc32';
+import { crc32 } from '@/recording/crc32';
 import {
   decodeBlock,
   encodeBlock,
@@ -13,13 +13,13 @@ import {
   scanRecording,
   type RecordingHeader,
   type RecordingRecord,
-} from '@/telemetry/recording';
-import { MemoryBlockPersistence } from '@tests/support/telemetry/memory-persistence';
+} from '@/recording/recording';
+import { MemoryBlockPersistence } from '@tests/support/history/memory-backing';
 import {
   deserializeRecording,
   serializeRecording,
   type Recording,
-} from '@tests/support/telemetry/recording-bytes';
+} from '@tests/support/recording/recording-bytes';
 
 const RECORD_KIND_BOUNDARY = 4;
 

@@ -2,7 +2,7 @@ import { ChevronDownIcon, Undo2Icon } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import 'uplot/dist/uPlot.min.css';
 
-import type { TelemetryStore } from '@/telemetry';
+import type { TelemetryStore } from '@/history';
 
 import { Button } from '../../components/ui/button';
 import {

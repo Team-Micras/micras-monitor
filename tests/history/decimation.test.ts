@@ -6,19 +6,19 @@ import {
   COLUMN_HAS_NAN,
   type Decimation,
   type DecimationStats,
-} from '@/telemetry/decimation';
+} from '@/history/decimation';
 import {
   referenceColumn,
   referenceDecimation,
   type ReferenceColumns,
   type ReferenceSample,
   seededRandom,
-} from '@tests/support/telemetry/reference';
-import { FANOUT, LEAF_SIZE } from '@/telemetry/pyramid';
-import { toBandSeries, toLineSeries } from '@/telemetry/series';
-import { TelemetryStore } from '@/telemetry/store';
-import { historyWindow, liveWindow } from '@/telemetry/window';
-import { ManualScheduler } from '@/telemetry';
+} from '@tests/support/history/reference';
+import { FANOUT, LEAF_SIZE } from '@/history/min-max-pyramid';
+import { toBandSeries, toLineSeries } from '@/history/series';
+import { TelemetryStore } from '@/history/history-store';
+import { historyWindow, liveWindow } from '@/history/window';
+import { ManualScheduler } from '@/history';
 
 const MS = 1000;
 

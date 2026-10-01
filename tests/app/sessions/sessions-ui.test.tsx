@@ -14,7 +14,7 @@ import { describeRobot } from '@/app/sessions/browser-sessions';
 import { MemorySessionLibrary } from '@/app/sessions/memory-library';
 import { MemoryLocks } from '@/app/sessions/session-library';
 import { SessionManager } from '@/app/sessions/session-manager';
-import { ManualScheduler } from '@/telemetry';
+import { ManualScheduler } from '@/history';
 import { recordCommandOutcomes } from '@tests/support/app/command-outcomes';
 import { demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 

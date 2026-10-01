@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { TelemetryStore } from '@/telemetry/store';
-import { ManualScheduler } from '@/telemetry';
+import { TelemetryStore } from '@/history/history-store';
+import { ManualScheduler } from '@/history';
 
 function twoVariables() {
   const scheduler = new ManualScheduler();

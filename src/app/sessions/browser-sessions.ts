@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { Scheduler } from '@/telemetry';
+import type { Scheduler } from '@/history';
 
 import type { AppMonitor } from '../monitor-context';
 import { MemorySessionLibrary } from './memory-library';

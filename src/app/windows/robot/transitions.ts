@@ -5,9 +5,9 @@
  * @module
  */
 
-import { nextUp } from '@/telemetry';
+import { nextUp } from '@/history';
 
-import type { TelemetryStore } from '@/telemetry';
+import type { TelemetryStore } from '@/history';
 
 /** A moment the value changed. */
 export interface Transition {

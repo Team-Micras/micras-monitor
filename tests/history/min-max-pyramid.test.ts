@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { seededRandom } from '@tests/support/telemetry/reference';
-import { FANOUT, LEAF_SIZE, MinMaxAccumulator, MinMaxPyramid } from '@/telemetry/pyramid';
+import { seededRandom } from '@tests/support/history/reference';
+import { FANOUT, LEAF_SIZE, MinMaxAccumulator, MinMaxPyramid } from '@/history/min-max-pyramid';
 
 function filled(values: readonly number[], capacity: number): MinMaxPyramid {
   const pyramid = new MinMaxPyramid('f64', capacity);

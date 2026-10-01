@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import type { Scheduler } from '@/telemetry';
+import type { Scheduler } from '@/history';
 
 import { percentile, reportBench } from '@tests/support/app/bench';
 import { PLOTS, renderEightPlots } from '@tests/support/app/eight-plots';

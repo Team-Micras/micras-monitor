@@ -1,5 +1,5 @@
-import type { BlockPersistence, BlockRef, PersistedBlock } from '@/telemetry/persistence';
-import { decodeBlock, encodeBlock } from '@/telemetry/recording';
+import type { BlockPersistence, BlockRef, PersistedBlock } from '@/history/block-backing';
+import { decodeBlock, encodeBlock } from '@/recording/recording';
 
 function keyOf(ref: BlockRef): string {
   return `${ref.epochId}:${ref.index}`;

@@ -1,9 +1,9 @@
 import { isWide, type Value } from '@/core/variables';
 
 import type { Block, BlockLayout } from './block';
-import type { PersistedBlock } from './persistence';
-import { LEAF_SIZE } from './pyramid';
-import { type ColumnKind, columnKindOf, kindOfColumn, toNumber } from './storage';
+import type { PersistedBlock } from './block-backing';
+import { type ColumnKind, columnKindOf, kindOfColumn, toNumber } from './columns';
+import { LEAF_SIZE } from './min-max-pyramid';
 import type { RecordedEpoch, RecordedGap, HistoryVariable } from './types';
 
 /**

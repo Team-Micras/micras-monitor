@@ -1,6 +1,6 @@
-import type { BlockPersistence, BlockRef, PersistedBlock } from './persistence';
-import { LEAF_SIZE, MinMaxPyramid } from './pyramid';
-import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from './storage';
+import type { BlockPersistence, BlockRef, PersistedBlock } from './block-backing';
+import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from './columns';
+import { LEAF_SIZE, MinMaxPyramid } from './min-max-pyramid';
 import type { NumericColumn } from './types';
 
 /**

@@ -6,7 +6,7 @@
 
 import { createContext, use, useSyncExternalStore } from 'react';
 
-import type { StoreStatus, TelemetryStore } from '@/telemetry';
+import type { StoreStatus, TelemetryStore } from '@/history';
 
 import type { SessionManager, SessionsState } from './session-manager';
 

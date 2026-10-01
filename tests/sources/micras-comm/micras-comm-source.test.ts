@@ -4,7 +4,7 @@ import { Monitor, type VariableDemand } from '@/core/monitor';
 import type { WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource, type MicrasCommOptions } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
-import { TelemetryStore } from '@/telemetry';
+import { TelemetryStore } from '@/history';
 import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
 import {
   startInMemoryRobot,
