@@ -6,7 +6,7 @@
  */
 
 import { usableBounds } from '@/tiling/geometry';
-import { LayoutError } from '@/tiling/layout-error';
+import { LayoutError } from '@/tiling/errors';
 import { layoutTree, layoutWorkspace, minimumSize } from '@/tiling/layout';
 import type { Desktop, LayoutMetrics, Orientation, Rect, TileNode } from '@/tiling/types';
 import { validateDesktop } from '@/tiling/validate';

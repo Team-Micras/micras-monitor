@@ -2,113 +2,136 @@ import { describe, expect, test } from 'vitest';
 
 import { METRICS, desktopOf, overview } from '@tests/support/tiling/desktops';
 import {
+  addWorkspace,
   createWorkspace,
   focusedWindow,
-  focusWindow,
   leaf,
   leafIds,
-  moveToWorkspace,
-  moveWindow,
-  placeFloating,
+  moveWorkspace,
+  neighborWorkspace,
+  removeWorkspace,
+  renameWorkspace,
   split,
-  swapWindows,
   switchWorkspace,
   toggleFloating,
-  toggleMaximize,
-  workspaceOf,
+  type Desktop,
 } from '@/tiling';
 
-describe('moving between workspaces', () => {
-  test('keeps the window id and record, and focuses it on arrival', () => {
-    const before = focusWindow(focusWindow(overview(), 'robot'), 'maze');
-    const after = moveToWorkspace(before, 'maze', 1, METRICS);
-    expect(after.windows.get('maze')).toBe(before.windows.get('maze'));
-    expect(workspaceOf(after, 'maze')).toBe(1);
-    expect(focusedWindow(after.workspaces[1])).toBe('maze');
-    expect(focusedWindow(after.workspaces[0])).toBe('robot');
-  });
+function names(desktop: Desktop): string[] {
+  return desktop.workspaces.map((workspace) => workspace.name);
+}
 
-  test('can stay on the current workspace', () => {
-    const d = moveToWorkspace(overview(), 'maze', 1, METRICS, false);
+function four(active: number): Desktop<string> {
+  return desktopOf(
+    [
+      createWorkspace('A', leaf('a')),
+      createWorkspace('B', split('row', 0.5, leaf('b1'), leaf('b2'))),
+      createWorkspace('C', leaf('c')),
+      createWorkspace('D'),
+    ],
+    active
+  );
+}
+
+describe('adding workspaces', () => {
+  test('appends by default without showing the new one', () => {
+    const d = addWorkspace(overview(), 'Sensors');
+    expect(names(d)).toEqual(['Overview', 'Tracking', 'Sensors']);
     expect(d.active).toBe(0);
-    expect(d.workspaces[1].root).toEqual(leaf('maze'));
+    expect(d.workspaces[2]).toEqual(createWorkspace('Sensors'));
   });
 
-  test('places the window by the dwindle rule on the destination', () => {
-    const d = moveToWorkspace(
-      desktopOf([createWorkspace('A', leaf('a')), createWorkspace('B', leaf('b'))]),
-      'a',
-      1,
-      METRICS
+  test('inserting before the active workspace keeps it shown', () => {
+    const d = addWorkspace(switchWorkspace(overview(), 1), 'First', 0);
+    expect(names(d)).toEqual(['First', 'Overview', 'Tracking']);
+    expect(d.active).toBe(2);
+  });
+
+  test('rejects an empty name', () => {
+    expect(() => addWorkspace(overview(), '')).toThrow('name must be a non-empty string');
+  });
+});
+
+describe('renaming and reordering', () => {
+  test('rename changes only the name', () => {
+    const before = overview();
+    const d = renameWorkspace(before, 1, 'Plots');
+    expect(names(d)).toEqual(['Overview', 'Plots']);
+    expect(d.workspaces[0]).toBe(before.workspaces[0]);
+    expect(renameWorkspace(before, 5, 'Nowhere')).toBe(before);
+  });
+
+  test('moving keeps the shown workspace shown, wherever it ends up', () => {
+    expect(moveWorkspace(four(0), 0, 3)).toMatchObject({ active: 3 });
+    expect(names(moveWorkspace(four(0), 0, 3))).toEqual(['B', 'C', 'D', 'A']);
+    expect(moveWorkspace(four(2), 0, 3).active).toBe(1);
+    expect(moveWorkspace(four(2), 3, 0).active).toBe(3);
+    expect(moveWorkspace(four(1), 3, 2).active).toBe(1);
+    const d = four(0);
+    expect(moveWorkspace(d, 1, 9)).toBe(d);
+  });
+});
+
+describe('removing workspaces', () => {
+  test('closing the windows drops them from the desktop', () => {
+    const d = removeWorkspace(four(3), 1, 'closeWindows', METRICS);
+    expect(names(d)).toEqual(['A', 'C', 'D']);
+    expect([...d.windows.keys()]).toEqual(['a', 'c']);
+    expect(d.active).toBe(2);
+  });
+
+  test('merging moves the windows into the neighbor before it by the dwindle rule', () => {
+    const d = removeWorkspace(four(0), 1, 'mergeIntoNeighbor', METRICS);
+    expect(names(d)).toEqual(['A', 'C', 'D']);
+    expect(d.workspaces[0].root).toEqual(
+      split('row', 0.5, leaf('a'), split('column', 0.5, leaf('b1'), leaf('b2')))
     );
-    expect(d.workspaces[0].root).toBeNull();
-    expect(d.workspaces[1].root).toEqual(split('row', 0.5, leaf('b'), leaf('a')));
+    expect(d.workspaces[0].focus).toEqual(['a', 'b1', 'b2']);
+    expect(focusedWindow(d.workspaces[0])).toBe('a');
+    expect(d.windows.size).toBe(4);
   });
 
-  test('clears a maximize the moved window held', () => {
-    const d = moveToWorkspace(toggleMaximize(overview()), 'track', 1, METRICS);
-    expect(d.workspaces[0].maximized).toBeNull();
+  test('the first workspace merges into the one after it, which is then shown', () => {
+    const d = removeWorkspace(four(0), 0, 'mergeIntoNeighbor', METRICS);
+    expect(names(d)).toEqual(['B', 'C', 'D']);
+    expect(d.active).toBe(0);
+    expect(leafIds(d.workspaces[0].root)).toEqual(['b1', 'a', 'b2']);
   });
 
-  test('does nothing for the same workspace, an unknown window or a missing workspace', () => {
-    const d = overview();
-    expect(moveToWorkspace(d, 'maze', 0, METRICS)).toBe(d);
-    expect(moveToWorkspace(d, 'nobody', 1, METRICS)).toBe(d);
-    expect(moveToWorkspace(d, 'maze', 7, METRICS)).toBe(d);
-  });
-});
-
-describe('moving to the edge of another window', () => {
-  test('keeps the id and can cross workspaces', () => {
-    const before = desktopOf([
-      createWorkspace('A', split('row', 0.5, leaf('a'), leaf('x'))),
-      createWorkspace('B', leaf('b')),
-    ]);
-    const after = moveWindow(before, 'x', { target: 'b', side: 'top' });
-    expect(after.windows.get('x')).toBe(before.windows.get('x'));
-    expect(after.active).toBe(1);
-    expect(after.workspaces[0].root).toEqual(leaf('a'));
-    expect(after.workspaces[1].root).toEqual(split('column', 0.5, leaf('x'), leaf('b')));
-  });
-
-  test('does nothing onto itself or onto a window that is not tiled', () => {
-    const d = overview();
-    expect(moveWindow(d, 'maze', { target: 'maze', side: 'left' })).toBe(d);
-    expect(moveWindow(d, 'maze', { target: 'nobody', side: 'left' })).toBe(d);
-  });
-});
-
-describe('switching workspaces', () => {
-  test('shows another workspace and ignores indices that name none', () => {
-    const d = overview();
-    expect(switchWorkspace(d, 1).active).toBe(1);
-    expect(switchWorkspace(d, 2)).toBe(d);
-    expect(switchWorkspace(d, -1)).toBe(d);
-  });
-
-  test('focusing a window on another workspace shows that workspace', () => {
-    const d = focusWindow(moveToWorkspace(overview(), 'maze', 1, METRICS, false), 'maze');
+  test('floating windows merge with their rects', () => {
+    let d = toggleFloating(four(2), 'c', METRICS);
+    const { rect } = d.workspaces[2].floating[0];
+    d = removeWorkspace(d, 2, 'mergeIntoNeighbor', METRICS);
+    expect(d.workspaces[1].floating).toEqual([{ id: 'c', rect, dock: null }]);
     expect(d.active).toBe(1);
-    expect(leafIds(d.workspaces[1].root)).toEqual(['maze']);
-  });
-});
-
-describe('no-ops keep the same desktop', () => {
-  test('swapping a window with itself', () => {
-    const d = overview();
-    expect(swapWindows(d, 'maze', 'maze')).toBe(d);
   });
 
-  test('placing a floating window where it already is', () => {
-    const d = toggleFloating(overview(), 'maze', METRICS);
-    const { rect } = d.workspaces[0].floating[0];
-    expect(placeFloating(d, 'maze', rect, METRICS)).toBe(d);
+  test('merging into a chosen workspace moves the windows there and shows it', () => {
+    const d = removeWorkspace(four(1), 1, { mergeInto: 2 }, METRICS);
+    expect(names(d)).toEqual(['A', 'C', 'D']);
+    expect(leafIds(d.workspaces[1].root)).toEqual(['c', 'b1', 'b2']);
+    expect(d.active).toBe(1);
+    const shown = removeWorkspace(four(3), 0, { mergeInto: 3 }, METRICS);
+    expect(names(shown)).toEqual(['B', 'C', 'D']);
+    expect(leafIds(shown.workspaces[2].root)).toEqual(['a']);
+    expect(shown.active).toBe(2);
   });
 
-  test('moving a window back to its place is equal, though not the same', () => {
-    const d = overview();
-    const back = moveWindow(d, 'robot', { target: 'track', side: 'bottom', share: 0.4 });
-    expect(back).not.toBe(d);
-    expect(back).toEqual(focusWindow(d, 'robot'));
+  test('merging into itself or into no workspace changes nothing', () => {
+    const d = four(0);
+    expect(removeWorkspace(d, 1, { mergeInto: 1 }, METRICS)).toBe(d);
+    expect(removeWorkspace(d, 1, { mergeInto: 7 }, METRICS)).toBe(d);
+  });
+
+  test('the neighbor is the workspace before, or the one after the first', () => {
+    expect(neighborWorkspace(0)).toBe(1);
+    expect(neighborWorkspace(3)).toBe(2);
+  });
+
+  test('the last workspace and unknown indices stay', () => {
+    const single = desktopOf([createWorkspace('Only', leaf('x'))]);
+    expect(removeWorkspace(single, 0, 'closeWindows', METRICS)).toBe(single);
+    const d = four(0);
+    expect(removeWorkspace(d, 4, 'closeWindows', METRICS)).toBe(d);
   });
 });

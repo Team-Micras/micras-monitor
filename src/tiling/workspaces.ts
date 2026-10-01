@@ -5,8 +5,8 @@
  * @module
  */
 
+import { LayoutError } from './errors';
 import { clamp } from './geometry';
-import { LayoutError } from './layout-error';
 import type { Desktop, LayoutMetrics, TilingWindow, WindowId } from './types';
 import { absorb, createWorkspace, windowIds } from './workspace';
 

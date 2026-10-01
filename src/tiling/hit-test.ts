@@ -5,9 +5,9 @@
  */
 
 import { activeWorkspace, focusWindow, moveToWorkspace, moveWindow, swapWindows } from './desktop';
+import { unreachable } from './errors';
 import { containsPoint } from './geometry';
 import { layoutTree, layoutWorkspace } from './layout';
-import { unreachable } from './layout-error';
 import type { Desktop, EdgePlacement, LayoutMetrics, Point, Rect, Side, WindowId } from './types';
 import { detach, isTiled, tileBeside } from './workspace';
 

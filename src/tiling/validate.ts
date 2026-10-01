@@ -4,7 +4,7 @@
  * @module
  */
 
-import { LayoutError } from './layout-error';
+import { LayoutError } from './errors';
 import { leafIds } from './tree';
 import type {
   Desktop,

@@ -8,10 +8,10 @@
  * @module
  */
 
+import { LayoutError } from './errors';
 import { findNeighbor, readingOrder } from './focus';
 import { clamp, openRatio } from './geometry';
 import { fitFloating, layoutTree, layoutWorkspace } from './layout';
-import { LayoutError } from './layout-error';
 import { nodeAt, pathOf, setRatioAt, swapLeaves } from './tree';
 import type {
   Desktop,

@@ -5,7 +5,7 @@
  * @module
  */
 
-import { LayoutError } from './layout-error';
+import { LayoutError } from './errors';
 import type {
   Desktop,
   DockMemory,

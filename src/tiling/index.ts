@@ -9,7 +9,7 @@
  */
 
 export type * from './types';
-export { LayoutError } from './layout-error';
+export { LayoutError } from './errors';
 export { containsLeaf, firstLeafId, leaf, leafIds, nodeAt, pathOf, split } from './tree';
 export { centerOf, checkMetrics, containsPoint, MIN_RATIO, usableBounds } from './geometry';
 export {
@@ -66,7 +66,7 @@ export {
   removeWorkspace,
   renameWorkspace,
   type RemovePolicy,
-} from './lifecycle';
+} from './workspaces';
 export { applyDrop, hitTest, type DropTarget } from './hit-test';
 export {
   CORNERS,

@@ -21,14 +21,7 @@ import {
   toggleFloating,
   toggleMaximize,
 } from './desktop';
-import { unreachable } from './layout-error';
-import {
-  addWorkspace,
-  moveWorkspace,
-  removeWorkspace,
-  renameWorkspace,
-  type RemovePolicy,
-} from './lifecycle';
+import { unreachable } from './errors';
 import type {
   Desktop,
   Direction,
@@ -39,6 +32,13 @@ import type {
   WindowId,
 } from './types';
 import { focusedWindow } from './workspace';
+import {
+  addWorkspace,
+  moveWorkspace,
+  removeWorkspace,
+  renameWorkspace,
+  type RemovePolicy,
+} from './workspaces';
 
 /**
  * An action. Commands that act on a window take the focused window of the active workspace

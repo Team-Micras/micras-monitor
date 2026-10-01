@@ -4,7 +4,7 @@
  * @module
  */
 
-import { LayoutError } from './layout-error';
+import { LayoutError } from './errors';
 import type { LayoutMetrics, Orientation, Point, Rect } from './types';
 
 /** The smallest share a split may store for either child; ratios live strictly inside (0, 1). */
