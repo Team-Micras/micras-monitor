@@ -1,18 +1,11 @@
-import {
-  EllipsisIcon,
-  MaximizeIcon,
-  MinusCircleIcon,
-  PauseIcon,
-  PictureInPicture2Icon,
-  PlayIcon,
-  XIcon,
-} from 'lucide-react';
+import { PauseIcon, PlayIcon } from 'lucide-react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
 import type { DesktopWindow, Rect } from '@/tiling';
 
-import { formatChord } from '@/core/chords';
 import { useShownMonitor } from '../monitor-context';
+import { Button } from '../primitives/button';
+import { cn } from '../primitives/utils';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowKind, windowTitle } from '../windows/registry';
 import { useLinkLive } from '../windows/shared/session-end';
@@ -21,21 +14,7 @@ import { windowElementId } from './keyboard-order';
 import { startPointerDrag, surroundingsAt } from './pointer-drag';
 import { SeriesChips } from './series-chips';
 import { WindowErrorBoundary } from './window-error-boundary';
-
-import type { KeyAction } from '../keyboard/keymap';
-import { Button } from '../primitives/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from '../primitives/dropdown-menu';
-import { cn } from '../primitives/utils';
+import { WindowMenu } from './window-menu';
 
 /** How a window sits in the tiling. */
 export interface WindowFrameProps {
@@ -59,8 +38,6 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
     (state) => state.drag?.subject.kind === 'window' && state.drag.subject.id === window.id
   );
   const animate = useShell((state) => !state.resizing && state.drag === null);
-  const workspaces = useShell((state) => state.desktop.workspaces);
-  const bindings = useShell((state) => state.bindings);
   const live = useLinkLive(useShownMonitor());
   const kind = windowKind(window.kind);
   const View = kind.component;
@@ -68,13 +45,6 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
   const title = windowTitle(window);
   const { rect, floating, visible } = placed;
   const { variables } = window.payload;
-
-  const shortcut = (action: KeyAction) => {
-    const chord = bindings.get(action)?.[0];
-    return chord === undefined ? null : (
-      <DropdownMenuShortcut>{formatChord(chord).join('+')}</DropdownMenuShortcut>
-    );
-  };
 
   const focus = () => {
     if (!focused) {
@@ -181,77 +151,13 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
         >
           {paused ? <PlayIcon /> : <PauseIcon />}
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={`${title} menu`}>
-              <EllipsisIcon />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem
-              disabled={floating}
-              onSelect={() => store.getState().run({ type: 'toggleMaximize', id: window.id })}
-            >
-              <MaximizeIcon />
-              {maximized ? 'Restore' : 'Maximize'}
-              {shortcut('window.maximize')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => store.getState().run({ type: 'toggleFloating', id: window.id })}
-            >
-              <PictureInPicture2Icon />
-              {floating ? 'Tile' : 'Float'}
-              {shortcut('window.float')}
-            </DropdownMenuItem>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Move to workspace</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                {workspaces.map((workspace, index) =>
-                  index === placed.workspace ? null : (
-                    <DropdownMenuItem
-                      key={workspace.name}
-                      onSelect={() =>
-                        store
-                          .getState()
-                          .run({ type: 'moveToWorkspace', index, id: window.id, follow: false })
-                      }
-                    >
-                      {workspace.name}
-                    </DropdownMenuItem>
-                  )
-                )}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            {variables.length > 0 ? (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <MinusCircleIcon />
-                  Remove variable
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  {variables.map((name) => (
-                    <DropdownMenuItem
-                      key={name}
-                      className="font-mono text-xs"
-                      onSelect={() => store.getState().removeVariable(window.id, name)}
-                    >
-                      {name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            ) : null}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => store.getState().run({ type: 'close', id: window.id })}
-            >
-              <XIcon />
-              Close
-              {shortcut('window.close')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <WindowMenu
+          window={window}
+          title={title}
+          workspaceIndex={placed.workspace}
+          floating={floating}
+          maximized={maximized}
+        />
       </header>
       <div className="min-h-0 flex-1">
         <WindowErrorBoundary title={title}>
