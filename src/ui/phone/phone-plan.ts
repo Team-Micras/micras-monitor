@@ -84,7 +84,7 @@ export function phonePlan(pkg: RobotPackage | null, variables: readonly Variable
     .slice(0, PHONE_SETTING_COUNT);
 
   return {
-    maze: map === null || !exists(map) ? null : win('phone-maze', 'type-view', [map], 'Maze'),
+    maze: map === null || !exists(map) ? null : win('phone-maze', 'blob-view', [map], 'Maze'),
     values: shown.length === 0 ? null : win('phone-values', 'readouts', shown, 'Values'),
     commands: win('phone-commands', 'commands', []),
     plot: plotted.length === 0 ? null : win('phone-plot', 'plot', plotted, 'Plot'),

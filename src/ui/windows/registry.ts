@@ -77,7 +77,7 @@ function followedRoles(pkg: RobotPackage | null, blob: string): readonly Role[] 
   return pkg?.types.find((type) => type.tag === tag)?.follows ?? [];
 }
 
-function typeViewDemand(window: ShellWindow, pkg: RobotPackage | null): readonly VariableDemand[] {
+function blobViewDemand(window: ShellWindow, pkg: RobotPackage | null): readonly VariableDemand[] {
   const [blob] = window.payload.variables;
 
   if (blob === undefined) {
@@ -130,7 +130,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
     demand: (window) => rate(window, EDITOR_RATE_HZ),
   },
   {
-    id: 'type-view',
+    id: 'blob-view',
     title: 'Type view',
     description: 'A serializable value, such as the maze',
     icon: MapIcon,
@@ -138,7 +138,7 @@ export const WINDOW_KINDS: readonly WindowKind[] = [
       import('./blob-view/blob-view-window').then((module) => ({ default: module.BlobViewWindow }))
     ).Component,
     acceptsVariables: false,
-    demand: typeViewDemand,
+    demand: blobViewDemand,
   },
   {
     id: 'robot',

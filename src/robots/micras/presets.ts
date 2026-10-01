@@ -24,7 +24,7 @@ function column(ratio: number, first: PresetNode, second: PresetNode): PresetNod
   return { split: 'column', ratio, first, second };
 }
 
-const maze = window('type-view', 'Maze', ['maze']);
+const maze = window('blob-view', 'Maze', ['maze']);
 const speed = window('plot', 'Tracking', ['pose/linear_speed', 'reference/linear_speed']);
 
 /** Overview, Tracking, Sensors and Maze run. */

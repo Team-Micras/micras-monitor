@@ -66,7 +66,7 @@ describe('the automatic layout', () => {
       { name: 'Pose', windows: ['plot:Pose:pose/x,pose/y', 'readouts::pose/steps'] },
       {
         name: 'General',
-        windows: ['plot:General:gain', 'readouts::state', 'editor::gain', 'type-view:maze:maze'],
+        windows: ['plot:General:gain', 'readouts::state', 'editor::gain', 'blob-view:maze:maze'],
       },
     ]);
   });
@@ -84,7 +84,7 @@ describe('the automatic layout', () => {
         'plot:General:battery',
         'readouts::state',
         'editor::objective',
-        'type-view:maze:maze',
+        'blob-view:maze:maze',
       ],
     });
   });

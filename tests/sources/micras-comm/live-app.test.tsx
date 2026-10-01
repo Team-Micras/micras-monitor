@@ -65,7 +65,7 @@ test('shows live values of the simulated robot over a WebSocket', async () => {
 test('reads the blob of a type view once the schema of the simulated robot has it', async () => {
   monitor = liveMonitor(new MicrasCommSource({ planner: { debounceMs: 20 } }));
   const store = createShellStore({ theme: 'dark' });
-  store.getState().openWindow('type-view', ['maze']);
+  store.getState().openWindow('blob-view', ['maze']);
   await render(<App monitor={monitor} robots={new RobotRegistry([MICRAS])} store={store} />);
 
   monitor.connect({

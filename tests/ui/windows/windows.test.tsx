@@ -455,7 +455,7 @@ describe('Editor of a float', () => {
 describe('Type view', () => {
   test('reads the blob again only when the value of its revision changes', async () => {
     const { readsOf } = await open({
-      windows: [win('maze', 'type-view', ['maze'])],
+      windows: [win('maze', 'blob-view', ['maze'])],
       root: leaf('maze'),
       robot: {
         variables: [
@@ -491,7 +491,7 @@ describe('A variable missing from the schema', () => {
         win('numbers', 'readouts', ['battery_voltage', 'ghost']),
         win('plot', 'plot', ['battery_voltage', 'ghost']),
         win('edit', 'editor', ['ghost']),
-        win('blob', 'type-view', ['ghost']),
+        win('blob', 'blob-view', ['ghost']),
       ],
       root: split(
         'row',
@@ -618,7 +618,7 @@ describe('Robot, Log, Link and Type view', () => {
         win('robot', 'robot'),
         win('log', 'log'),
         win('link', 'link'),
-        win('maze', 'type-view', ['maze']),
+        win('maze', 'blob-view', ['maze']),
       ],
       root: split(
         'row',

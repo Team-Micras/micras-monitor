@@ -16,7 +16,7 @@ function win(id: string, kind: string, variables: readonly string[] = [], title?
 
 const WINDOWS: readonly ShellWindow[] = [
   win('tracking', 'plot', ['pose/linear_speed', 'reference/linear_speed'], 'Tracking'),
-  win('maze', 'type-view', ['maze'], 'Maze'),
+  win('maze', 'blob-view', ['maze'], 'Maze'),
   win('robot', 'robot', ['state', 'battery_voltage']),
   win('commands', 'commands'),
   win('angular', 'plot', ['pose/angular_speed', 'reference/angular_speed'], 'Angular speed'),
@@ -28,7 +28,7 @@ const WINDOWS: readonly ShellWindow[] = [
   ),
   win('walls', 'plot', ['wall/0', 'wall/1', 'wall/2', 'wall/3'], 'Walls'),
   win('imu', 'readouts', ['imu/gyro_z', 'imu/accel_x', 'imu/accel_y'], 'IMU'),
-  win('maze-run', 'type-view', ['maze'], 'Maze'),
+  win('maze-run', 'blob-view', ['maze'], 'Maze'),
   win('run-profile', 'editor', ['run_profile'], 'Run profile'),
   win('log', 'log'),
 ];

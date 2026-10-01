@@ -21,7 +21,7 @@ afterEach(() => {
 
 const MAZE_WINDOW: ShellWindow = {
   id: 'maze',
-  kind: 'type-view',
+  kind: 'blob-view',
   payload: { variables: ['maze'] },
 };
 

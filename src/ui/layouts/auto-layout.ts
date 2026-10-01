@@ -105,7 +105,7 @@ function panelsOf({ title, variables }: Group): Panel[] {
       variables: namesOf(members),
     })),
     ...variables.filter(isBlob).map(({ name }) => ({
-      kind: 'type-view',
+      kind: 'blob-view',
       title: name,
       variables: [name],
     })),

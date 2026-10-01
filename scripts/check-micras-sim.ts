@@ -79,13 +79,13 @@ const SNAPSHOT_SCRIPT = `(() => {
     [...document.querySelectorAll(selector)].find((element) => element.checkVisibility({ visibilityProperty: true }));
   const number = (value) => (value === undefined || value === '' ? null : Number(value));
   const maze = visible('[data-maze]');
-  const typeView = maze?.closest('[data-revision]') ?? null;
+  const blobView = maze?.closest('[data-revision]') ?? null;
   const answers = [...document.querySelectorAll('[data-answer]')].map((element) =>
     Number(element.dataset.answer)
   );
   return {
     state: visible('[data-robot-state]')?.textContent ?? '',
-    revision: number(typeView?.dataset.revision),
+    revision: number(blobView?.dataset.revision),
     walls: number(maze?.dataset.walls),
     explored: number(maze?.dataset.explored),
     robotCell: maze?.dataset.robotCell ?? null,

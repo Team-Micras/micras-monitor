@@ -8,7 +8,7 @@
  */
 
 /** What a view of a serializable value receives. */
-export interface TypeViewProps<T> {
+export interface BlobViewProps<T> {
   readonly value: T;
   /**
    * The latest values of the robot's numeric roles the app follows for the view, such as the pose
@@ -43,7 +43,7 @@ export interface SerializableType<T = unknown, Node = unknown> {
    * package can list types of different values together as `SerializableType<unknown>`, and
    * without `this`, so that the app renders it as a component.
    */
-  View(this: void, props: TypeViewProps<T>): Node;
+  View(this: void, props: BlobViewProps<T>): Node;
 }
 
 /** One value of an enum. */

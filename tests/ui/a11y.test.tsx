@@ -488,7 +488,7 @@ describe('axe', () => {
     { id: 'plot', kind: 'plot', payload: { title: 'Speed', variables: ['imu/gyro_z'] } },
     { id: 'readouts', kind: 'readouts', payload: { variables: ['imu/gyro_z', 'battery_voltage'] } },
     { id: 'editor', kind: 'editor', payload: { variables: ['run_profile'] } },
-    { id: 'maze', kind: 'type-view', payload: { variables: ['maze'] } },
+    { id: 'maze', kind: 'blob-view', payload: { variables: ['maze'] } },
     { id: 'robot', kind: 'robot', payload: { variables: [] } },
     { id: 'commands', kind: 'commands', payload: { variables: [] } },
     { id: 'log', kind: 'log', payload: { variables: [] } },

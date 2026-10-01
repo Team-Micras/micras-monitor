@@ -44,7 +44,7 @@ describe('phonePlan', () => {
     expect(plan.settings?.payload.variables).toEqual(['objective', 'run_profile']);
     expect(plan.commands.kind).toBe('commands');
     expect(planWindows(plan).map((window) => window.kind)).toEqual([
-      'type-view',
+      'blob-view',
       'readouts',
       'commands',
       'plot',

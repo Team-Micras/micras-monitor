@@ -31,10 +31,10 @@ describe('windowDemand', () => {
   });
 
   test('asks a type view for the revision of the map, not the blob', () => {
-    expect(windowDemand(win('type-view', ['maze']), PACKAGE)).toEqual([
+    expect(windowDemand(win('blob-view', ['maze']), PACKAGE)).toEqual([
       { variable: 'maze/revision', rateHz: REVISION_RATE_HZ },
     ]);
-    expect(windowDemand(win('type-view', ['grid']), PACKAGE)).toEqual([]);
+    expect(windowDemand(win('blob-view', ['grid']), PACKAGE)).toEqual([]);
   });
 
   test('asks a type view for the roles its type follows', () => {
@@ -48,11 +48,11 @@ describe('windowDemand', () => {
       { variable: 'y', rateHz: FOLLOW_RATE_HZ },
     ];
 
-    expect(windowDemand(win('type-view', ['maze']), posed)).toEqual([
+    expect(windowDemand(win('blob-view', ['maze']), posed)).toEqual([
       { variable: 'maze/revision', rateHz: REVISION_RATE_HZ },
       ...pose,
     ]);
-    expect(windowDemand(win('type-view', ['grid']), posed)).toEqual(pose);
+    expect(windowDemand(win('blob-view', ['grid']), posed)).toEqual(pose);
   });
 
   test('asks for the variables of the other kinds, and for none of the views without any', () => {

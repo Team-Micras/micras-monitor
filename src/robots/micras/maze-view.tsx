@@ -1,6 +1,6 @@
 import { useId } from 'react';
 
-import type { TypeViewProps } from '@/core/robot';
+import type { BlobViewProps } from '@/core/robot';
 
 import { MAZE_CELL_SIZE_M, Side, WallState, type Maze } from './maze';
 
@@ -25,7 +25,7 @@ interface GridPose {
   readonly heading: number;
 }
 
-function gridPose(roles: TypeViewProps<Maze>['roles']): GridPose | null {
+function gridPose(roles: BlobViewProps<Maze>['roles']): GridPose | null {
   const x = roles?.['pose.x'];
   const y = roles?.['pose.y'];
 
@@ -129,7 +129,7 @@ function labelled(index: number, last: number, current: number | null): boolean 
  * walls are known shaded, the goal outlined and the robot at its pose when the pose is streamed.
  * It keeps its cells square and fills the window.
  */
-export function MazeView({ value: maze, roles }: TypeViewProps<Maze>) {
+export function MazeView({ value: maze, roles }: BlobViewProps<Maze>) {
   const titleId = useId();
   const paths = mazePaths(maze);
   const pose = gridPose(roles);
