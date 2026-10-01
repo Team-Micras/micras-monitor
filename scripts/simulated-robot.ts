@@ -9,6 +9,9 @@
  * --port <n>                 port to listen on
  * --throughput <bytes/s>     cap what the radio carries
  * --latency <ms>             delay each direction
+ * --jitter <ms>              delay each delivery up to this much more, in order
+ * --stall <ms>               hold the link both ways this long every --stall-every ms
+ * --stall-every <ms>         how often the link stalls (1000)
  * --radio-buffer <bytes>     what the radio holds before it drops (512)
  * --drop-schema-page <n>     lose schema page n (from 0), once
  * --drop-credits <n>         ignore n CREDIT frames once samples flow
@@ -32,6 +35,9 @@ const FLAGS: readonly (readonly [flag: string, option: NumericOption])[] = [
   ['port', 'port'],
   ['throughput', 'throughputBytesPerSecond'],
   ['latency', 'latencyMs'],
+  ['jitter', 'jitterMs'],
+  ['stall', 'stallMs'],
+  ['stall-every', 'stallEveryMs'],
   ['radio-buffer', 'radioBufferBytes'],
   ['drop-schema-page', 'dropSchemaPage'],
   ['drop-credits', 'dropCredits'],

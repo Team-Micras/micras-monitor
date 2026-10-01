@@ -13,6 +13,21 @@ export interface FaultOptions {
   latencyMs: number;
 
   /**
+   * Up to this much more, in milliseconds, picked at random for every delivery in each direction,
+   * as a relayed or radio link adds; bytes still arrive in the order they were sent.
+   */
+  jitterMs: number;
+
+  /**
+   * How long, in milliseconds, the link holds whatever it carries both ways once every
+   * `stallEveryMs`, as a busy browser or a relay that stalls does; never when 0.
+   */
+  stallMs: number;
+
+  /** How often, in milliseconds, the link stalls for `stallMs`. */
+  stallEveryMs: number;
+
+  /**
    * The bytes the robot's radio holds waiting for air time, past which it drops what the robot
    * sends without telling it, as the HM-19 does. Only a link with a throughput limit fills it.
    */
@@ -44,6 +59,9 @@ export const DEFAULT_RADIO_BUFFER_BYTES = 512;
 export const NO_FAULTS: FaultOptions = {
   throughputBytesPerSecond: 0,
   latencyMs: 0,
+  jitterMs: 0,
+  stallMs: 0,
+  stallEveryMs: 1000,
   radioBufferBytes: DEFAULT_RADIO_BUFFER_BYTES,
   dropSchemaPage: null,
   dropCredits: 0,

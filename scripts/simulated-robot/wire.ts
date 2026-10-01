@@ -10,7 +10,7 @@ interface InFlight {
 
 /**
  * The radio between the robot and the monitor: it carries bytes both ways with the configured
- * throughput and latency, and corrupts outgoing frames at the configured rate.
+ * throughput, latency, jitter and stalls, and corrupts outgoing frames at the configured rate.
  *
  * Without limits it hands bytes over at once. With them, bytes wait in a queue that stands in for
  * the radio module's buffer and leave when the air time before them is spent; a frame that finds
@@ -18,9 +18,13 @@ interface InFlight {
  */
 export class Wire {
   private readonly random: () => number;
+  private readonly jitter: () => number;
   private readonly outgoing: InFlight[] = [];
   private readonly incoming: InFlight[] = [];
   private busyUntil = 0;
+  private outgoingDue = 0;
+  private incomingDue = 0;
+  private readonly startedAt = performance.now();
 
   /**
    * @param faults What to do to the bytes.
@@ -35,6 +39,7 @@ export class Wire {
     private readonly toRobot: (bytes: Uint8Array) => void
   ) {
     this.random = seededRandom(faults.seed);
+    this.jitter = seededRandom(faults.seed + 1);
   }
 
   /** Send one frame from the robot. */
@@ -59,22 +64,20 @@ export class Wire {
         : 0;
 
     this.busyUntil = Math.max(now, this.busyUntil) + airTimeMs;
-    this.outgoing.push({
-      bytes,
-      airDoneAt: this.busyUntil,
-      dueAt: this.busyUntil + this.faults.latencyMs,
-    });
+    this.outgoingDue = Math.max(this.outgoingDue, this.afterStall(this.busyUntil + this.delay()));
+    this.outgoing.push({ bytes, airDoneAt: this.busyUntil, dueAt: this.outgoingDue });
   }
 
   /** Take bytes the monitor sent. */
   receive(bytes: Uint8Array): void {
-    if (this.faults.latencyMs === 0) {
+    if (!this.delays()) {
       this.toRobot(bytes);
       return;
     }
 
     const now = performance.now();
-    this.incoming.push({ bytes, airDoneAt: now, dueAt: now + this.faults.latencyMs });
+    this.incomingDue = Math.max(this.incomingDue, this.afterStall(now + this.delay()));
+    this.incoming.push({ bytes, airDoneAt: now, dueAt: this.incomingDue });
   }
 
   /** Deliver whatever is due by now, both ways. */
@@ -96,7 +99,31 @@ export class Wire {
   }
 
   private isShaped(): boolean {
-    return this.faults.throughputBytesPerSecond > 0 || this.faults.latencyMs > 0;
+    return this.faults.throughputBytesPerSecond > 0 || this.delays();
+  }
+
+  private delays(): boolean {
+    return this.faults.latencyMs > 0 || this.faults.jitterMs > 0 || this.stalls();
+  }
+
+  private stalls(): boolean {
+    return this.faults.stallMs > 0 && this.faults.stallEveryMs > 0;
+  }
+
+  /** When bytes due at a moment arrive, once the stall the moment falls in, if any, is over. */
+  private afterStall(at: number): number {
+    if (!this.stalls()) {
+      return at;
+    }
+
+    const into = (at - this.startedAt) % this.faults.stallEveryMs;
+    return into < this.faults.stallMs ? at + this.faults.stallMs - into : at;
+  }
+
+  private delay(): number {
+    return (
+      this.faults.latencyMs + (this.faults.jitterMs > 0 ? this.jitter() * this.faults.jitterMs : 0)
+    );
   }
 
   private maybeCorrupt(frame: Uint8Array, metered: boolean): Uint8Array {
