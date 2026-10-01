@@ -4,8 +4,8 @@ import { isIdleState, roleVariable } from '@/core/robot';
 
 import type { SourceStatus } from '@/core/source';
 
-import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../monitor-context';
-import { useRecordings } from '../recordings/recordings-context';
+import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../../monitor-context';
+import { useRecordings } from '../../recordings/recordings-context';
 
 /**
  * Why a reload would be unsafe: a recording is under way, the robot is not at rest, or the link is

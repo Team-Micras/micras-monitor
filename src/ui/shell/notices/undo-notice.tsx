@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 
-import { isTextField } from '../keyboard/use-keymap';
-import { Button } from '../primitives/button';
+import { isTextField } from '../../keyboard/use-keymap';
+import { Button } from '../../primitives/button';
 
 /** How long something removed can be brought back. */
 export const UNDO_MS = 6000;

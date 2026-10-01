@@ -17,5 +17,5 @@ export const LazyCloseWorkspaceDialog = lazyWithRetry(() =>
 
 /** The undo notices, loaded when something is first removed. */
 export const LazyUndoNotices = lazyWithRetry(() =>
-  import('./undo-notices').then((module) => ({ default: module.UndoNotices }))
+  import('./notices/undo-notices').then((module) => ({ default: module.UndoNotices }))
 ).Component;

@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
-import { Button } from '../primitives/button';
-import type { AppUpdates } from '../pwa/app-updates';
+import { Button } from '../../primitives/button';
+import type { AppUpdates } from '../../pwa/app-updates';
 import type { ReloadBlock } from './reload-guard';
 
 /** The event Vite fires on `window` when a code-split chunk or its dependencies fail to load. */

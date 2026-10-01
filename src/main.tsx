@@ -17,7 +17,7 @@ import { safeLocalStorage } from '@/ui/layouts/saved-layouts';
 import { importWhenIdle } from '@/ui/lazy/idle';
 import type { AppMonitor } from '@/ui/monitor-context';
 import { serviceWorkerUpdates } from '@/ui/pwa/app-updates';
-import { PRELOAD_ERROR_EVENT } from '@/ui/shell/update-notice';
+import { PRELOAD_ERROR_EVENT } from '@/ui/shell/notices/update-notice';
 import '@/ui/styles.css';
 import { registerSW } from 'virtual:pwa-register';
 

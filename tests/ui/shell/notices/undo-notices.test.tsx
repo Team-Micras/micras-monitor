@@ -4,7 +4,7 @@ import { render } from 'vitest-browser-react';
 
 import '@/ui/styles.css';
 import { createShellStore, ShellStoreContext, type ShellStore } from '@/ui/state/shell-store';
-import { DeletedNotice } from '@/ui/shell/deleted-notice';
+import { DeletedNotice } from '@/ui/shell/notices/undo-notices';
 
 const DURATION_MS = 1500;
 

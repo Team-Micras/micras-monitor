@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import type { AppUpdates } from '@/ui/pwa/app-updates';
-import { PRELOAD_ERROR_EVENT, UpdateNotice } from '@/ui/shell/update-notice';
+import { PRELOAD_ERROR_EVENT, UpdateNotice } from '@/ui/shell/notices/update-notice';
 
 describe('UpdateNotice', () => {
   test('says that part of the app could not load once a preload fails, with a reload button', async () => {

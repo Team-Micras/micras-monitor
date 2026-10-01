@@ -41,7 +41,7 @@ import {
   LazyUndoNotices,
   LazyVariableDrawer,
 } from './shell/lazy-shell';
-import { useReloadBlocked } from './shell/reload-guard';
+import { useReloadBlocked } from './shell/notices/reload-guard';
 import {
   CommandTrackerContext,
   SendCommandContext,
@@ -49,7 +49,7 @@ import {
 } from './shell/shell-contexts';
 import { StatusBar } from './shell/status-bar';
 import { TopBar } from './shell/top-bar';
-import { UpdateNotice } from './shell/update-notice';
+import { UpdateNotice } from './shell/notices/update-notice';
 import {
   createShellStore,
   ShellStoreContext,
