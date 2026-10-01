@@ -15,10 +15,12 @@ import { MemorySessionLibrary } from '@/app/sessions/memory-library';
 import { MemoryLocks } from '@/app/sessions/session-library';
 import { SessionManager } from '@/app/sessions/session-manager';
 import { ManualScheduler } from '@/telemetry';
-import { demoMonitor } from '@tests/support/sources/demo-monitor';
+import { recordCommandOutcomes } from '@tests/support/app/command-outcomes';
+import { demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 
 const MICRAS = mouse({ id: 'micras', displayName: 'Micras' });
 const PLOTTED = 'imu/gyro_z';
+const STOP = 5;
 
 let stop: (() => void) | undefined;
 
@@ -28,7 +30,8 @@ afterEach(() => {
 });
 
 async function setup(updates?: AppUpdates) {
-  const monitor = demoMonitor();
+  const sent: number[] = [];
+  const monitor = demoMonitor({ command: recordCommands(sent) });
   const library = new MemorySessionLibrary();
   const sessions = new SessionManager({
     store: monitor.history,
@@ -55,7 +58,7 @@ async function setup(updates?: AppUpdates) {
   await expect.element(screen.getByText('· connected')).toBeVisible();
   await userEvent.keyboard('{Escape}');
   stop = () => monitor.disconnect();
-  return { monitor, sessions, shell, screen, library };
+  return { monitor, sessions, shell, screen, library, sent };
 }
 
 function recButton(screen: Awaited<ReturnType<typeof render>>) {
@@ -105,6 +108,27 @@ describe('REC and the sessions', () => {
     await screen.getByRole('button', { name: 'Live', exact: true }).click();
     await expect.element(screen.getByTitle(`Saved session ${saved.name}`)).not.toBeInTheDocument();
     expect(sessions.state.viewing).toBeNull();
+  });
+
+  test('sends a pinned command to the live robot while a saved session is on screen', async () => {
+    const { sessions, screen, sent } = await setup();
+    const outcomes = recordCommandOutcomes(screen.getByRole('status', { name: 'Command outcome' }));
+    await sessions.startRecording();
+    await expect
+      .poll(() => sessions.state.recording?.stats.samples ?? 0, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    await sessions.stopRecording();
+    await sessions.open(sessions.state.sessions[0].id);
+    await expect.poll(() => sessions.state.viewing).not.toBeNull();
+
+    await screen.getByRole('banner').getByRole('button', { name: /^Stop/ }).click();
+    await userEvent.keyboard(' ');
+
+    expect(sent).toEqual([STOP, STOP]);
+    await expect.poll(outcomes).toContain('Stop accepted');
+    await expect
+      .element(screen.getByRole('main').getByRole('button', { name: 'Go' }).first())
+      .toBeDisabled();
   });
 
   test('holds back an app update while recording, and lets it through once stopped', async () => {

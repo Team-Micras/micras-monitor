@@ -4,7 +4,6 @@ import { GRID, mouse, variable } from '@tests/support/robot-kit/packages';
 import {
   acceptedIn,
   activeFlags,
-  emergencyCommand,
   enumLabel,
   hasBit,
   isIdleState,
@@ -95,12 +94,6 @@ describe('roles and commands', () => {
     expect(roleVariable(pkg, 'battery')).toBe('battery');
     expect(roleVariable(pkg, 'map')).toBeNull();
     expect(roleVariable(null, 'state')).toBeNull();
-  });
-
-  test('the emergency command is found, and raw mode has none', () => {
-    expect(emergencyCommand(pkg)?.name).toBe('STOP');
-    expect(emergencyCommand(mouse({ commands: [] }))).toBeNull();
-    expect(emergencyCommand(null)).toBeNull();
   });
 
   test('acceptance follows the table, and is unknown without a state', () => {

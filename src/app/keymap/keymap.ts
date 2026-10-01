@@ -1,15 +1,20 @@
 /**
- * The keymap: every keyboard action of the app, its default chords, and the user's overrides.
+ * The keymap: every keyboard action of the app, the keys of the robot package's commands, their
+ * default chords, and the user's overrides.
  *
  * @module
  */
 
+import type { CommandSpec } from '@/robot-kit';
 import type { Direction } from '@/tiling';
 
 import { matchesChord, matchesChordHeld, parseChord, type Chord, type KeyInput } from './chords';
 
 /** A workspace number a chord can name. */
 export type WorkspaceDigit = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+
+/** The action that sends a command of the robot package, by the command's name. */
+export type CommandAction = `command.${string}`;
 
 /** Something the keyboard can do. */
 export type KeyAction =
@@ -26,7 +31,7 @@ export type KeyAction =
   | 'window.pause'
   | 'launcher'
   | 'drawer'
-  | 'stop';
+  | CommandAction;
 
 /** How a group of actions is titled in the keys legend. */
 export type ActionGroup = 'Windows' | 'Workspaces' | 'Robot' | 'App';
@@ -39,6 +44,8 @@ export interface ActionSpec {
   readonly defaults: readonly string[];
   /** Whether it also acts while typing in a text field. */
   readonly inText: boolean;
+  /** Whether its chords also match with more modifiers held, as a dangerous command's do. */
+  readonly loose?: boolean;
 }
 
 /** The chords bound to each action. */
@@ -111,32 +118,80 @@ export const ACTIONS: readonly ActionSpec[] = [
     defaults: ['Alt+Shift+W'],
     inText: true,
   },
-  { id: 'stop', label: 'Stop the robot', group: 'Robot', defaults: ['Space'], inText: false },
   { id: 'launcher', label: 'Launcher', group: 'App', defaults: ['Ctrl+K', 'Meta+K'], inText: true },
   { id: 'drawer', label: 'Variables', group: 'App', defaults: ['/'], inText: false },
 ];
 
 const SPECS: ReadonlyMap<KeyAction, ActionSpec> = new Map(ACTIONS.map((spec) => [spec.id, spec]));
+const COMMAND_PREFIX = 'command.';
 
-/** The spec of an action. */
-export function actionSpec(action: KeyAction): ActionSpec {
-  const spec = SPECS.get(action);
+/** The action that sends a command. */
+export function commandAction(command: Pick<CommandSpec, 'name'>): CommandAction {
+  return `${COMMAND_PREFIX}${command.name}`;
+}
 
-  if (spec === undefined) {
-    throw new Error(`"${action}" is not an action of the keymap`);
-  }
-
-  return spec;
+/** The name of the command an action sends, or null for an action of the app. */
+export function commandOf(action: KeyAction): string | null {
+  return action.startsWith(COMMAND_PREFIX) ? action.slice(COMMAND_PREFIX.length) : null;
 }
 
 /**
- * The chords of every action: the user's where they chose some, the defaults elsewhere. Stored
- * overrides that no longer parse, or name no action, are skipped, so a bad entry only costs its
- * own binding.
+ * The actions of the commands that have a key: they act wherever the focus is but in a text
+ * field, and a dangerous one's chords also match with more modifiers held.
  */
-export function resolveBindings(overrides: KeyOverrides = {}): KeyBindings {
+export function commandActions(commands: readonly CommandSpec[]): readonly ActionSpec[] {
+  return commands.flatMap((command) =>
+    command.key === undefined
+      ? []
+      : [
+          {
+            id: commandAction(command),
+            label: command.label,
+            group: 'Robot',
+            defaults: [command.key],
+            inText: false,
+            loose: command.tone === 'danger',
+          },
+        ]
+  );
+}
+
+/** The spec of an action; a command's when it is one. */
+export function actionSpec(action: KeyAction): ActionSpec {
+  const spec = SPECS.get(action);
+  const command = commandOf(action);
+
+  if (spec !== undefined) {
+    return spec;
+  }
+
+  if (command !== null) {
+    return { id: action, label: command, group: 'Robot', defaults: [], inText: false };
+  }
+
+  throw new Error(`"${action}" is not an action of the keymap`);
+}
+
+/**
+ * The chords of every action and command key: the user's where they chose some, the defaults
+ * elsewhere. Stored overrides that no longer parse, or name no action, are skipped, so a bad
+ * entry only costs its own binding.
+ *
+ * @param overrides The chords the user chose, by action.
+ * @param commands The robot package's commands; those with a key get an action.
+ */
+export function resolveBindings(
+  overrides: KeyOverrides = {},
+  commands: readonly CommandSpec[] = []
+): KeyBindings {
   return new Map(
-    ACTIONS.map((spec) => [spec.id, parseAll(overrides[spec.id]) ?? parseAll(spec.defaults) ?? []])
+    [...ACTIONS, ...commandActions(commands)].map((spec) => {
+      const chords = parseAll(overrides[spec.id]) ?? parseAll(spec.defaults) ?? [];
+      return [
+        spec.id,
+        spec.loose === true ? chords.map((chord) => ({ ...chord, loose: true })) : chords,
+      ];
+    })
   );
 }
 
@@ -156,8 +211,8 @@ function parseAll(texts: readonly string[] | undefined): readonly Chord[] | unde
 }
 
 /**
- * The action an event triggers, or null. When two actions share a chord, the first one wins.
- * STOP also matches with more modifiers held than its chord has, unless another action has
+ * The action an event triggers, or null. When two actions share a chord, the first one wins. A
+ * loose chord also matches with more modifiers held than it has, unless another action has
  * exactly that chord.
  */
 export function actionFor(bindings: KeyBindings, event: KeyInput): KeyAction | null {
@@ -167,9 +222,13 @@ export function actionFor(bindings: KeyBindings, event: KeyInput): KeyAction | n
     }
   }
 
-  return bindings.get('stop')?.some((chord) => matchesChordHeld(chord, event)) === true
-    ? 'stop'
-    : null;
+  for (const [action, chords] of bindings) {
+    if (chords.some((chord) => chord.loose === true && matchesChordHeld(chord, event))) {
+      return action;
+    }
+  }
+
+  return null;
 }
 
 /** The workspace index, from 0, that a workspace action names. */

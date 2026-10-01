@@ -1,11 +1,11 @@
 import { expect, onTestFinished, test } from 'vitest';
 import { page } from 'vitest/browser';
 
-import { recordStopOutcomes } from '@tests/support/app/stop-outcomes';
+import { recordCommandOutcomes } from '@tests/support/app/command-outcomes';
 
-function stopOutcome(): HTMLOutputElement {
+function commandOutcome(): HTMLOutputElement {
   const output = document.createElement('output');
-  output.setAttribute('aria-label', 'Stop outcome');
+  output.setAttribute('aria-label', 'Command outcome');
   document.body.append(output);
   return output;
 }
@@ -15,10 +15,10 @@ function show(output: HTMLOutputElement, text: string): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-test('records every text the Stop outcome shows', async () => {
-  const output = stopOutcome();
+test('records every text the Command outcome shows', async () => {
+  const output = commandOutcome();
   onTestFinished(() => output.remove());
-  const shown = recordStopOutcomes(page.getByRole('status', { name: 'Stop outcome' }));
+  const shown = recordCommandOutcomes(page.getByRole('status', { name: 'Command outcome' }));
   await show(output, 'Stop accepted');
   await show(output, '');
   await show(output, 'Stop refused: not idle');
@@ -26,14 +26,14 @@ test('records every text the Stop outcome shows', async () => {
 });
 
 test('stops recording once its test finishes', async () => {
-  const output = stopOutcome();
+  const output = commandOutcome();
   let shown: (() => string) | undefined;
   onTestFinished(async () => {
-    await show(output, 'Nothing to stop');
+    await show(output, 'No robot to send Stop to');
     output.remove();
     expect(shown?.()).toBe('Stop accepted');
   });
-  shown = recordStopOutcomes(page.getByRole('status', { name: 'Stop outcome' }));
+  shown = recordCommandOutcomes(page.getByRole('status', { name: 'Command outcome' }));
   await show(output, 'Stop accepted');
   expect(shown()).toBe('Stop accepted');
 });

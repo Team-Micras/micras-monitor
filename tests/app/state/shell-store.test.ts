@@ -146,8 +146,22 @@ describe('viewport, theme and overlays', () => {
 
   test('setKeyOverrides rebinds', () => {
     const shell = store();
-    shell.getState().setKeyOverrides({ stop: ['Ctrl+Space'] });
-    expect(shell.getState().bindings.get('stop')?.[0]?.ctrl).toBe(true);
+    shell.getState().setKeyOverrides({ drawer: ['Ctrl+B'] });
+    expect(shell.getState().bindings.get('drawer')?.[0]?.ctrl).toBe(true);
+  });
+
+  test('binds the keys of the package commands, and a rebinding of them', () => {
+    const shell = store();
+    const stop = { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any', key: 'Space' } as const;
+    shell.getState().setKeyOverrides({ 'command.STOP': ['Ctrl+Space'] });
+    shell.getState().setCommands([stop]);
+    expect(shell.getState().commands).toEqual([stop]);
+    expect(shell.getState().bindings.get('command.STOP')?.[0]?.ctrl).toBe(true);
+    shell.getState().setKeyOverrides({});
+    expect(shell.getState().bindings.get('command.STOP')?.[0]).toMatchObject({
+      key: 'Space',
+      ctrl: false,
+    });
   });
 });
 
@@ -290,24 +304,24 @@ test('resizeSplit moves a split within its minimums', () => {
   expect(root?.type === 'split' && root.ratio > 0.1).toBe(true);
 });
 
-describe('stop notices', () => {
+describe('command notices', () => {
   test('a newer press replaces an older one, never the other way round', () => {
     const shell = store();
-    const { showStopNotice } = shell.getState();
-    showStopNotice({ id: 2, tone: 'pending', text: 'Stop sent…' });
-    showStopNotice({ id: 1, tone: 'ok', text: 'Stop accepted' });
-    expect(shell.getState().stopNotice?.id).toBe(2);
-    showStopNotice({ id: 2, tone: 'ok', text: 'Stop accepted' });
-    expect(shell.getState().stopNotice?.text).toBe('Stop accepted');
+    const { showCommandNotice } = shell.getState();
+    showCommandNotice({ id: 2, tone: 'pending', text: 'Stop sent…' });
+    showCommandNotice({ id: 1, tone: 'ok', text: 'Go accepted' });
+    expect(shell.getState().commandNotice?.id).toBe(2);
+    showCommandNotice({ id: 2, tone: 'ok', text: 'Stop accepted' });
+    expect(shell.getState().commandNotice?.text).toBe('Stop accepted');
   });
 
   test('clearing only hides the notice of that press', () => {
     const shell = store();
-    shell.getState().showStopNotice({ id: 3, tone: 'ok', text: 'Stop accepted' });
-    shell.getState().clearStopNotice(2);
-    expect(shell.getState().stopNotice?.id).toBe(3);
-    shell.getState().clearStopNotice(3);
-    expect(shell.getState().stopNotice).toBeNull();
+    shell.getState().showCommandNotice({ id: 3, tone: 'ok', text: 'Stop accepted' });
+    shell.getState().clearCommandNotice(2);
+    expect(shell.getState().commandNotice?.id).toBe(3);
+    shell.getState().clearCommandNotice(3);
+    expect(shell.getState().commandNotice).toBeNull();
   });
 });
 

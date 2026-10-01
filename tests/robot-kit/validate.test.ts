@@ -33,14 +33,19 @@ describe('validating a package', () => {
     ],
     ['a code out of a byte', { commands: [{ ...stop, code: 256 }] }, 'commands[0].code must be'],
     [
-      'two emergency commands',
+      'two commands with one key',
       {
         commands: [
-          { ...stop, emergency: true },
-          { ...stop, code: 6, name: 'HALT', emergency: true },
+          { ...stop, key: 'Space' },
+          { ...stop, code: 6, name: 'HALT', key: 'space' },
         ],
       },
-      'commands[1].emergency is already set on commands[0]',
+      'commands[1].key is already the key of commands[0]',
+    ],
+    [
+      'an empty key',
+      { commands: [{ ...stop, key: ' ' }] },
+      'commands[0].key must be a non-empty chord',
     ],
     ['a repeated type tag', { types: [GRID, GRID] }, 'types[1].tag repeats "grid"'],
     [

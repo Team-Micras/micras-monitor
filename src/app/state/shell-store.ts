@@ -9,7 +9,7 @@ import { createContext, use } from 'react';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
-import type { LayoutPreset } from '@/robot-kit';
+import type { CommandSpec, LayoutPreset } from '@/robot-kit';
 import {
   activeWorkspace,
   applyDrop,
@@ -36,7 +36,7 @@ import {
 
 import { resolveBindings, type KeyBindings, type KeyOverrides } from '../keymap/keymap';
 import { presetWorkspace, workspacePreset } from '../layouts/presets';
-import type { StopNotice } from '../lib/stop-outcome';
+import type { CommandNotice } from '../lib/command-outcome';
 import { PLOT_KIND, windowKind } from '../windows/registry';
 import type { WindowPayload } from '../windows/types';
 import { defaultDesktop } from './default-desktop';
@@ -138,6 +138,11 @@ export interface ShellState {
   readonly removedVariable: RemovedVariable | null;
   readonly paused: ReadonlySet<WindowId>;
   readonly keyOverrides: KeyOverrides;
+  /**
+   * The commands of the robot package seen last, which their keys and the pinned buttons stay
+   * bound to after the robot is gone, so that a press says there is no robot.
+   */
+  readonly commands: readonly CommandSpec[];
   readonly bindings: KeyBindings;
   readonly drag: DragState | null;
   /** The workspace whose closing waits for the user's choice, or null. */
@@ -146,8 +151,8 @@ export interface ShellState {
   readonly waitingCommands: ReadonlyMap<WindowId, number>;
   /** Whether a gap is being dragged, which turns off the windows' transitions. */
   readonly resizing: boolean;
-  /** What the last STOP came to, shown under the button until it times out. */
-  readonly stopNotice: StopNotice | null;
+  /** What the last command sent from the shell came to, shown until it times out. */
+  readonly commandNotice: CommandNotice | null;
 
   /** Carries out a tiling command. */
   readonly run: (command: Command<WindowPayload>) => void;
@@ -240,15 +245,17 @@ export interface ShellState {
   /** Forgets the deleted preset of a notice, if it is still the one kept. */
   readonly clearDeleted: (id: number) => void;
   readonly setKeyOverrides: (overrides: KeyOverrides) => void;
+  /** Binds the keys of a robot package's commands, replacing those of the package before. */
+  readonly setCommands: (commands: readonly CommandSpec[]) => void;
   readonly beginDrag: (subject: DragSubject, pointer: Point) => void;
   readonly moveDrag: (pointer: Point, surroundings: DragSurroundings) => void;
   /** Drops what is dragged on its target, if any. */
   readonly endDrag: () => void;
   readonly cancelDrag: () => void;
-  /** Shows a notice about STOP, unless a newer press already has one. */
-  readonly showStopNotice: (notice: StopNotice) => void;
+  /** Shows a notice about a command, unless a newer press already has one. */
+  readonly showCommandNotice: (notice: CommandNotice) => void;
   /** Hides the notice of a press, if it is still the one shown. */
-  readonly clearStopNotice: (id: number) => void;
+  readonly clearCommandNotice: (id: number) => void;
 }
 
 /** A store of the shell's state. */
@@ -360,12 +367,13 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       removedVariable: null,
       paused: new Set(),
       keyOverrides: options.keyOverrides ?? {},
+      commands: [],
       bindings: resolveBindings(options.keyOverrides),
       drag: null,
       closingWorkspace: null,
       waitingCommands: new Map(),
       resizing: false,
-      stopNotice: null,
+      commandNotice: null,
 
       run: (command) => update(execute(get().desktop, command, get().metrics)),
 
@@ -658,7 +666,10 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
       },
 
       setKeyOverrides: (keyOverrides) =>
-        set({ keyOverrides, bindings: resolveBindings(keyOverrides) }),
+        set({ keyOverrides, bindings: resolveBindings(keyOverrides, get().commands) }),
+
+      setCommands: (commands) =>
+        set({ commands, bindings: resolveBindings(get().keyOverrides, commands) }),
 
       beginDrag: (subject, pointer) => {
         const rect = subject.kind === 'window' ? floatingRect(subject.id) : null;
@@ -727,17 +738,17 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
 
       cancelDrag: () => set({ drag: null }),
 
-      showStopNotice: (notice) => {
-        const current = get().stopNotice;
+      showCommandNotice: (notice) => {
+        const current = get().commandNotice;
 
         if (current === null || notice.id >= current.id) {
-          set({ stopNotice: notice });
+          set({ commandNotice: notice });
         }
       },
 
-      clearStopNotice: (id) => {
-        if (get().stopNotice?.id === id) {
-          set({ stopNotice: null });
+      clearCommandNotice: (id) => {
+        if (get().commandNotice?.id === id) {
+          set({ commandNotice: null });
         }
       },
     };

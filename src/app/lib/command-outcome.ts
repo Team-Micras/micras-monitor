@@ -1,32 +1,31 @@
 /**
- * What the shell says after STOP: sent and waiting, the robot's answer, or that there was
- * nothing to stop.
+ * What the shell says after it sends a command, from a pinned button or a key: sent and waiting,
+ * the robot's answer, or that there is no robot to send it to.
  *
  * @module
  */
 
+import type { CommandOutcome } from '@/core/source';
 import { refusalReason, type CommandSpec, type RobotPackage } from '@/robot-kit';
 
-import type { CommandOutcome } from '@/core/source';
+/** How a notice about a command reads: fine, a warning, or an error. */
+export type CommandTone = 'pending' | 'ok' | 'warning' | 'error';
 
-/** How a notice about STOP reads: fine, a warning, or an error. */
-export type StopTone = 'pending' | 'ok' | 'warning' | 'error';
-
-/** A notice about STOP, as the top bar shows it under the button. */
-export interface StopNotice {
+/** A notice about a command, as the shell shows it under its pinned buttons. */
+export interface CommandNotice {
   /** Grows with every press, so a late answer does not replace a newer notice. */
   readonly id: number;
-  readonly tone: StopTone;
+  readonly tone: CommandTone;
   readonly text: string;
 }
 
-/** The notice for a press with no robot or no package naming an emergency command. */
-export function nothingToStop(id: number): StopNotice {
-  return { id, tone: 'warning', text: 'Nothing to stop' };
+/** The notice for a press of a command's key or button with no robot whose package has it. */
+export function noRobotFor(id: number, command: CommandSpec): CommandNotice {
+  return { id, tone: 'warning', text: `No robot to send ${command.label} to` };
 }
 
-/** The notice for a STOP sent and not answered yet. */
-export function stopSent(id: number, command: CommandSpec): StopNotice {
+/** The notice for a command sent and not answered yet. */
+export function commandSent(id: number, command: CommandSpec): CommandNotice {
   return { id, tone: 'pending', text: `${command.label} sent…` };
 }
 
@@ -39,15 +38,15 @@ function reasonText(pkg: RobotPackage | null, reason: number | null): string {
 }
 
 /**
- * The notice for the robot's answer to STOP, with the reason in the package's words when it
+ * The notice for the robot's answer to a command, with the reason in the package's words when it
  * deferred or refused.
  */
-export function stopAnswered(
+export function commandAnswered(
   id: number,
   command: CommandSpec,
   pkg: RobotPackage | null,
   outcome: CommandOutcome
-): StopNotice {
+): CommandNotice {
   const { label } = command;
 
   switch (outcome.status) {

@@ -2,11 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { whenIdle } from '@/lazy/idle';
 import { prefetchAll } from '@/lazy/lazy-with-retry';
-import type { RobotRegistry } from '@/robot-kit';
-import { emergencyCommand } from '@/robot-kit';
+import type { CommandSpec, RobotRegistry } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
-import { actionFor, type KeyAction } from './keymap/keymap';
+import { actionFor, commandOf, type KeyAction } from './keymap/keymap';
 import { tilingCommandFor } from './keymap/tiling-commands';
 import { useKeymap } from './keymap/use-keymap';
 import type { LayoutStorage } from './layouts/layout-book';
@@ -14,7 +13,7 @@ import { useLayouts } from './layouts/use-layouts';
 import { TooltipProvider } from './components/ui/tooltip';
 import { LazyPart } from './lib/lazy-part';
 import { useEver } from './lib/use-ever';
-import { nothingToStop, stopAnswered, stopSent } from './lib/stop-outcome';
+import { commandAnswered, commandSent, noRobotFor } from './lib/command-outcome';
 import {
   MonitorContext,
   PackageChooser,
@@ -42,7 +41,7 @@ import {
 } from './shell/lazy-shell';
 import { useReloadBlocked } from './shell/reload-guard';
 import { StatusBar } from './shell/status-bar';
-import { StopActionContext } from './shell/stop-action';
+import { SendCommandContext } from './shell/send-command';
 import { TopBar } from './shell/top-bar';
 import { UpdateNotice } from './shell/update-notice';
 import { useStreamDemand } from './stream-demand';
@@ -57,6 +56,7 @@ import { initialKeyOverrides, saveKeyOverrides } from './state/key-overrides';
 import { applyTheme, initialTheme } from './state/theme';
 import { DragGhost } from './tiling/drag-ghost';
 import { TilingView } from './tiling/tiling-view';
+import { LazyCommandConfirm } from './windows/commands/lazy-command-confirm';
 import { CommandTrackerContext } from './windows/shared/command-tracker';
 import type { WindowPayload } from './windows/types';
 
@@ -159,6 +159,9 @@ function Shell({
   const closing = useShell((state) => state.closingWorkspace !== null);
   const closingAsked = useEver(closing);
   const presses = useRef(0);
+  const [confirming, setConfirming] = useState<CommandSpec | null>(null);
+  const [asking, setAsking] = useState(false);
+  const askedOnce = useEver(asking);
   const phone = usePhone();
   const livePackage = useRobotPackage(live)?.package ?? null;
   const plan = phonePlan(livePackage, useVariables(live));
@@ -167,29 +170,55 @@ function Shell({
   useEffect(() => applyTheme(theme), [theme]);
   useEffect(() => whenIdle(() => void prefetchAll()), []);
   useEffect(() => saveKeyOverrides(keyOverrides), [keyOverrides]);
+  useEffect(() => {
+    if (livePackage !== null) {
+      store.getState().setCommands(livePackage.commands);
+    }
+  }, [store, livePackage]);
 
-  const stop = async () => {
+  const send = async (wanted: CommandSpec) => {
     presses.current += 1;
     const id = presses.current;
-    const { showStopNotice } = store.getState();
+    const { showCommandNotice } = store.getState();
     const pkg = livePackage;
-    const command = emergencyCommand(pkg);
+    const command = pkg?.commands.find((known) => known.name === wanted.name);
 
-    if (command === null) {
-      showStopNotice(nothingToStop(id));
+    if (pkg === null || command === undefined) {
+      showCommandNotice(noRobotFor(id, wanted));
       return;
     }
 
-    showStopNotice(stopSent(id, command));
-    const outcome = await live.command(command.code).catch((error: unknown) => ({
-      status: 'failed' as const,
-      message: error instanceof Error ? error.message : String(error),
-    }));
-    store.getState().showStopNotice(stopAnswered(id, command, pkg, outcome));
+    showCommandNotice(commandSent(id, command));
+    const outcome = await live.command(command.code, command.argument?.default);
+    store.getState().showCommandNotice(commandAnswered(id, command, pkg, outcome));
+  };
+
+  const sendCommand = (command: CommandSpec) => {
+    if (command.confirm === undefined) {
+      void send(command);
+    } else {
+      setConfirming(command);
+      setAsking(true);
+    }
+  };
+
+  const sendByName = (name: string) => {
+    const command = store.getState().commands.find((known) => known.name === name);
+
+    if (command !== undefined) {
+      sendCommand(command);
+    }
   };
 
   const onAction = (action: KeyAction) => {
     const state = store.getState();
+    const commandName = commandOf(action);
+
+    if (commandName !== null) {
+      sendByName(commandName);
+      return;
+    }
+
     const command = tilingCommandFor<WindowPayload>(
       action,
       state.desktop.workspaces.length,
@@ -227,9 +256,6 @@ function Shell({
       case 'drawer':
         state.setOverlay('drawer', true);
         return;
-      case 'stop':
-        void stop();
-        return;
       default:
         return;
     }
@@ -255,12 +281,12 @@ function Shell({
 
   return (
     <CommandTrackerContext value={store.getState().trackCommand}>
-      <StopActionContext value={() => void stop()}>
+      <SendCommandContext value={sendCommand}>
         {phone ? (
           <PhoneView plan={plan} />
         ) : (
           <div className="flex h-svh flex-col overflow-hidden bg-desktop text-foreground">
-            <TopBar onStop={() => void stop()} />
+            <TopBar />
             <SessionView>
               <main className="relative min-h-0 flex-1">
                 <TilingView />
@@ -292,7 +318,17 @@ function Shell({
           </LazyPart>
         ) : null}
         <UpdateNotice updates={updates} blockedBy={blockedBy} />
-      </StopActionContext>
+        {askedOnce ? (
+          <LazyPart fallback={null} resetKey={confirming}>
+            <LazyCommandConfirm
+              open={asking}
+              command={confirming}
+              onOpenChange={setAsking}
+              onConfirm={(command) => void send(command)}
+            />
+          </LazyPart>
+        ) : null}
+      </SendCommandContext>
     </CommandTrackerContext>
   );
 }

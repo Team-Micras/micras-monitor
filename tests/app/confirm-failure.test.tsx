@@ -24,7 +24,15 @@ const PACKAGE = mouse({
       confirm: 'Save the maze to the flash?',
       acceptedIn: 'any',
     },
-    { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any', emergency: true },
+    {
+      code: 5,
+      name: 'STOP',
+      label: 'Stop',
+      acceptedIn: 'any',
+      pinned: true,
+      key: 'Space',
+      tone: 'danger',
+    },
   ],
 });
 

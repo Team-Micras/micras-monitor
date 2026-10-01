@@ -15,7 +15,7 @@ import { createShellStore, type ShellStore } from '@/app/state/shell-store';
 import type { CommandOutcome } from '@/core/source';
 import type { DemoRobot } from '@/sources/demo/demo-source';
 import { settled } from '@tests/support/app/animations';
-import { recordStopOutcomes } from '@tests/support/app/stop-outcomes';
+import { recordCommandOutcomes } from '@tests/support/app/command-outcomes';
 import { demoMonitor } from '@tests/support/sources/demo-monitor';
 
 const STOP = 5;
@@ -34,7 +34,7 @@ interface Setup {
   readonly monitor: AppMonitor;
   readonly sent: number[];
   readonly screen: Awaited<ReturnType<typeof render>>;
-  /** Every text the Stop outcome showed since the app came up. */
+  /** Every text the Command outcome showed since the app came up. */
   readonly outcomes: () => string;
 }
 
@@ -63,7 +63,7 @@ async function setup(options: SetupOptions = {}): Promise<Setup> {
     monitor,
     sent,
     screen,
-    outcomes: recordStopOutcomes(screen.getByRole('status', { name: 'Stop outcome' })),
+    outcomes: recordCommandOutcomes(screen.getByRole('status', { name: 'Command outcome' })),
   };
 }
 
@@ -177,7 +177,7 @@ describe('connection', () => {
   });
 });
 
-describe('STOP', () => {
+describe('pinned commands and command keys', () => {
   test('Space stops the robot without pressing the focused button, and types in text fields', async () => {
     const context = await setup();
     const { screen, sent } = context;
@@ -211,25 +211,113 @@ describe('STOP', () => {
     expect(sent).toEqual([STOP, STOP, STOP]);
   });
 
-  test('is not sent without a robot, and says there is nothing to stop', async () => {
+  test('come from the robot package: none before one was seen', async () => {
     const context = await setup();
     await userEvent.keyboard(' ');
-    await expect.poll(context.outcomes).toContain('Nothing to stop');
+    expect(context.sent).toEqual([]);
+    expect(context.outcomes()).toBe('');
+    await expect
+      .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
+      .not.toBeInTheDocument();
+  });
+
+  test('come from no package for a robot no package describes', async () => {
+    const context = await setup({ packages: [] });
+    await connect(context);
+    await userEvent.keyboard(' ');
     expect(context.sent).toEqual([]);
     await expect
       .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
-      .toBeDisabled();
+      .not.toBeInTheDocument();
   });
 
-  test('is not sent to a robot no package describes', async () => {
-    const context = await setup({ packages: [] });
+  test('stay once the robot is gone, disabled, and say there is no robot', async () => {
+    const context = await setup();
     await connect(context);
+    context.monitor.disconnect();
     await expect
       .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
       .toBeDisabled();
     await userEvent.keyboard(' ');
-    await expect.poll(context.outcomes).toContain('Nothing to stop');
+    await expect.poll(context.outcomes).toContain('No robot to send Stop to');
     expect(context.sent).toEqual([]);
+  });
+
+  test('send any pinned command from the top bar, with its outcome', async () => {
+    const context = await setup({
+      packages: [
+        mouse({
+          id: 'micras',
+          displayName: 'Micras',
+          commands: [
+            { code: 0, name: 'GO', label: 'Go', acceptedIn: 'any', pinned: true },
+            { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any' },
+          ],
+        }),
+      ],
+      robot: { answer: () => ({ status: 'refused', reason: 1 }) },
+    });
+    await connect(context);
+    const banner = context.screen.getByRole('banner');
+    await expect.element(banner.getByRole('button', { name: /^Stop/ })).not.toBeInTheDocument();
+    await banner.getByRole('button', { name: /^Go/ }).click();
+
+    expect(context.sent).toEqual([0]);
+    await expect.poll(context.outcomes).toContain('Go refused: not idle');
+  });
+
+  test('send a command by the key its package gives, which the user can bind to another', async () => {
+    const context = await setup({
+      packages: [
+        mouse({
+          id: 'micras',
+          displayName: 'Micras',
+          commands: [{ code: 0, name: 'GO', label: 'Go', acceptedIn: 'any', key: 'G' }],
+        }),
+      ],
+      robot: { answer: () => ({ status: 'ok', reason: 0 }) },
+    });
+    await connect(context);
+    await userEvent.keyboard('g');
+    expect(context.sent).toEqual([0]);
+    await expect.poll(context.outcomes).toContain('Go accepted');
+
+    shell(context)
+      .getState()
+      .setKeyOverrides({ 'command.GO': ['Alt+G'] });
+    await userEvent.keyboard('g');
+    expect(context.sent).toEqual([0]);
+    await userEvent.keyboard('{Alt>}g{/Alt}');
+    expect(context.sent).toEqual([0, 0]);
+  });
+
+  test('ask first for a pinned command with a confirmation', async () => {
+    const context = await setup({
+      packages: [
+        mouse({
+          id: 'micras',
+          displayName: 'Micras',
+          commands: [
+            {
+              code: 0,
+              name: 'GO',
+              label: 'Go',
+              acceptedIn: 'any',
+              pinned: true,
+              confirm: 'Start the run?',
+            },
+          ],
+        }),
+      ],
+    });
+    await connect(context);
+    await context.screen.getByRole('banner').getByRole('button', { name: /^Go/ }).click();
+    const dialog = context.screen.getByRole('dialog');
+    await expect.element(dialog).toHaveTextContent('Start the run?');
+    expect(context.sent).toEqual([]);
+    await settled();
+    await dialog.getByRole('button', { name: 'Go' }).click();
+    expect(context.sent).toEqual([0]);
   });
 
   test('shows a refusal with its reason in the package words', async () => {

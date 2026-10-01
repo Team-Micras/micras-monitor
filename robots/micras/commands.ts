@@ -93,7 +93,9 @@ export const COMMANDS: readonly CommandSpec[] = [
     icon: 'octagon-x',
     description: 'Brake to a standstill and end whatever the robot is doing.',
     acceptedIn: 'any',
-    emergency: true,
+    pinned: true,
+    key: 'Space',
+    tone: 'danger',
   },
   {
     code: Command.LEAVE_ERROR,

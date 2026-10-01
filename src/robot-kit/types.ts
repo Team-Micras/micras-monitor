@@ -130,8 +130,18 @@ export interface CommandSpec {
    */
   readonly acceptedIn: readonly number[] | 'any';
   readonly argument?: CommandArgument;
-  /** The emergency stop: always one key away and drawn big. At most one command has it. */
-  readonly emergency?: boolean;
+  /**
+   * Whether the command stays in reach whatever is on screen: in the top bar, at the bottom of the
+   * phone view, and always sent to the live robot, even while a recording is shown.
+   */
+  readonly pinned?: boolean;
+  /**
+   * The key that sends it, as the keymap writes chords, such as `Space` or `Alt+E`; the user can
+   * bind it to another. It works wherever the focus is but in a text field.
+   */
+  readonly key?: string;
+  /** `danger` draws it in the stop color, prominent, and lets its key match with modifiers held. */
+  readonly tone?: 'danger';
 }
 
 /** A window of a layout preset. `kind` names a window kind of the app. */

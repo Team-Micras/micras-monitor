@@ -6,7 +6,7 @@
 
 import { useEffect, useEffectEvent } from 'react';
 
-import { actionForEvent, type KeyAction, type KeyBindings } from './keymap';
+import { actionForEvent, commandOf, type KeyAction, type KeyBindings } from './keymap';
 
 const TEXT_INPUT_TYPES = new Set([
   'text',
@@ -48,10 +48,10 @@ export function typesCharacter(event: KeyboardEvent): boolean {
 }
 
 /**
- * Listens to the keyboard for the whole window. It listens in the capture phase so that the
- * STOP key is handled before anything else: its keydown and keyup are both swallowed, so the
- * same press never also presses a focused button, and a held key stops only once. Space is
- * swallowed the same way outside text fields even when STOP is bound elsewhere, so it never
+ * Listens to the keyboard for the whole window. It listens in the capture phase so that a
+ * command's key is handled before anything else: its keydown and keyup are both swallowed, so the
+ * same press never also presses a focused button, and a held key sends the command only once.
+ * Space is swallowed the same way outside text fields even when no command has it, so it never
  * presses a button.
  *
  * @param bindings The chords of every action.
@@ -70,7 +70,7 @@ export function useKeymap(
 
   useEffect(() => {
     const swallow = (event: KeyboardEvent, action: KeyAction | null, inText: boolean) => {
-      if (action === 'stop' || (!inText && event.key === ' ')) {
+      if ((action !== null && commandOf(action) !== null) || (!inText && event.key === ' ')) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -86,7 +86,7 @@ export function useKeymap(
       const action = actionForEvent(bindings, event, inText);
       swallow(event, action, inText);
 
-      if (action === null || (action === 'stop' && event.repeat)) {
+      if (action === null || (commandOf(action) !== null && event.repeat)) {
         return;
       }
 

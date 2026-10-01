@@ -20,7 +20,6 @@ export {
 export {
   acceptedIn,
   activeFlags,
-  emergencyCommand,
   enumLabel,
   hasBit,
   isIdleState,

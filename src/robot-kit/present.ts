@@ -77,11 +77,6 @@ export function roleVariable(pkg: RobotPackage | null, role: Role): string | nul
   return pkg?.roles[role] ?? null;
 }
 
-/** The emergency stop command, or null when the package has none or there is no package. */
-export function emergencyCommand(pkg: RobotPackage | null): CommandSpec | null {
-  return pkg?.commands.find((command) => command.emergency === true) ?? null;
-}
-
 /**
  * Tells whether the robot is expected to accept a command in a state, per the package's mirror
  * of the firmware table; null when the state is unknown.

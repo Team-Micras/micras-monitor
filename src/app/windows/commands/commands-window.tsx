@@ -8,7 +8,7 @@ import {
 import { createElement, useState } from 'react';
 
 import type { CommandOutcome } from '@/core/source';
-import { emergencyCommand, roleVariable, type CommandSpec } from '@/robot-kit';
+import { roleVariable, type CommandSpec } from '@/robot-kit';
 
 import { Button } from '../../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
@@ -17,7 +17,7 @@ import { useEver } from '../../lib/use-ever';
 import { cn } from '../../lib/utils';
 import { useLiveValue, useRobotPackage, useShownMonitor, useStatus } from '../../monitor-context';
 import { useAnnounce } from '../../shell/announce';
-import { useStopAction } from '../../shell/stop-action';
+import { useSendCommand } from '../../shell/send-command';
 import { useCommandTracker } from '../shared/command-tracker';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
@@ -33,16 +33,17 @@ import {
 const TONE_ICONS = { ok: CircleCheckIcon, refused: CircleAlertIcon, failed: CircleXIcon } as const;
 
 /**
- * The robot package's commands as buttons, with the emergency stop drawn big. A dangerous
- * command asks first; a button says when the robot's state is not one its table accepts it in,
- * and the robot's answer, a refusal with its reason included, shows below. The big STOP is the
- * shell's own stop, the one of the top bar and the keyboard, with its notice there; a view that
- * keeps a STOP of its own in reach, such as the phone's, hides it with `showStop`.
+ * The robot package's commands as buttons, a dangerous one drawn big in the stop color. A command
+ * with a confirmation asks first; a button says when the robot's state is not one its table
+ * accepts it in, and the robot's answer, a refusal with its reason included, shows below. A
+ * pinned command goes through the shell, as its button in the top bar and its key do, to the live
+ * robot and with the shell's notice; a view that keeps the pinned commands in reach of its own,
+ * such as the phone's, leaves them out with `showPinned`.
  */
 export function CommandsWindow({
   window,
-  showStop = true,
-}: WindowViewProps & { readonly showStop?: boolean }) {
+  showPinned = true,
+}: WindowViewProps & { readonly showPinned?: boolean }) {
   const monitor = useShownMonitor();
   const track = useCommandTracker();
   const pkg = useRobotPackage(monitor)?.package ?? null;
@@ -57,7 +58,7 @@ export function CommandsWindow({
   const [asking, setAsking] = useState(false);
   const askedOnce = useEver(asking);
   const [asks, setAsks] = useState(0);
-  const stop = useStopAction();
+  const sendPinned = useSendCommand();
   const announce = useAnnounce();
 
   const linked = status.kind === 'linked';
@@ -72,10 +73,12 @@ export function CommandsWindow({
     );
   }
 
-  const underWay = status.kind !== 'disconnected' && status.kind !== 'failed';
   const labels = state?.presentation?.labels?.kind === 'enum' ? state.presentation.labels : null;
-  const emergency = emergencyCommand(pkg);
-  const buttons = pkg.commands.filter((command) => command !== emergency);
+  const shown = pkg.commands.filter((command) => showPinned || command.pinned !== true);
+  const ordered = [
+    ...shown.filter((command) => command.tone !== 'danger'),
+    ...shown.filter((command) => command.tone === 'danger'),
+  ];
 
   const show = (message: OutcomeMessage) => {
     setAnswer(message);
@@ -108,7 +111,9 @@ export function CommandsWindow({
   };
 
   const press = (command: CommandSpec) => {
-    if (command.confirm === undefined) {
+    if (command.pinned === true) {
+      sendPinned(command);
+    } else if (command.confirm === undefined) {
       void send(command);
     } else {
       setConfirming(command);
@@ -120,7 +125,7 @@ export function CommandsWindow({
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto px-5 pt-1 pb-5">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
-        {buttons.map((command) => (
+        {ordered.map((command) => (
           <CommandButton
             key={command.code}
             command={command}
@@ -137,18 +142,6 @@ export function CommandsWindow({
       </div>
       {answer === null ? null : (
         <Answer message={answer} sequence={answers} onDismiss={() => setAnswer(null)} />
-      )}
-      {emergency === null || !showStop ? null : (
-        <button
-          type="button"
-          disabled={!underWay}
-          title={emergency.description}
-          onClick={stop}
-          className="mt-auto flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-stop text-base font-semibold text-stop-foreground shadow-sm transition-colors hover:brightness-90 focus-visible:ring-[3px] focus-visible:ring-stop/40 focus-visible:outline-none disabled:opacity-45"
-        >
-          <CircleXIcon className="size-5" aria-hidden />
-          {emergency.label}
-        </button>
       )}
       {askedOnce ? (
         <LazyPart fallback={null} resetKey={asks} onError={confirmFailed}>
@@ -175,6 +168,7 @@ function CommandButton({
   readonly waiting: boolean;
   readonly onPress: () => void;
 }) {
+  const danger = command.tone === 'danger';
   const button = (
     <Button
       variant="outline"
@@ -183,7 +177,9 @@ function CommandButton({
       disabled={!availability.enabled}
       className={cn(
         'h-10 justify-start pointer-coarse:h-12',
-        availability.hint === 'not-accepted' && 'text-muted-foreground'
+        availability.hint === 'not-accepted' && 'text-muted-foreground',
+        danger &&
+          'col-span-full h-12 justify-center border-transparent bg-stop text-base font-semibold text-stop-foreground hover:bg-stop hover:text-stop-foreground hover:brightness-90 focus-visible:ring-stop/40'
       )}
       onClick={onPress}
     >
@@ -203,7 +199,7 @@ function CommandButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="grid">{button}</span>
+        <span className={cn('grid', danger && 'col-span-full')}>{button}</span>
       </TooltipTrigger>
       <TooltipContent>{availability.reason ?? command.description}</TooltipContent>
     </Tooltip>

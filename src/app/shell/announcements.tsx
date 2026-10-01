@@ -39,8 +39,9 @@ function useChanges<T>(value: T, onChange: (value: T, previous: T) => void): voi
 
 /**
  * Turns the few events a user must not miss into announcements: connection changes, the robot's
- * state, what STOP came to (assertively), and recording starting and stopping. It reads
- * events, never samples: the state is announced when its label changes, not while it holds.
+ * state, what a command sent from the shell came to (assertively), and recording starting and
+ * stopping. It reads events, never samples: the state is announced when its label changes, not
+ * while it holds.
  * Command refusals and failed windows announce from where they happen.
  */
 export function Announcements() {
@@ -57,7 +58,7 @@ export function Announcements() {
     linked && typeof raw === 'number'
       ? `Robot state: ${labels === null ? raw : enumLabel(labels, raw)}`
       : null;
-  const notice = useShell((shell) => shell.stopNotice);
+  const notice = useShell((shell) => shell.commandNotice);
   const settled = notice !== null && notice.tone !== 'pending' ? notice : null;
   const recording = (useSessions()?.recording ?? null) !== null;
 

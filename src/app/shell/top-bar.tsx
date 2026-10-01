@@ -3,15 +3,15 @@ import { RecordingControls } from '../sessions/recording-controls';
 import { ViewingIndicator } from '../sessions/viewing-indicator';
 import { ConnectionPopover } from './connection-popover';
 import { LayoutsMenu } from './layouts-menu';
+import { PinnedCommands } from './pinned-commands';
 import { SessionClock } from './session-clock';
-import { StopButton } from './stop-button';
 import { WorkspaceTabs } from './workspace-tabs';
 
 /**
  * The bar above the tiling: robot and connection, the saved session on screen, workspaces,
- * clock, REC and STOP.
+ * clock, REC and the robot package's pinned commands.
  */
-export function TopBar({ onStop }: { readonly onStop: () => void }) {
+export function TopBar() {
   const monitor = useLiveMonitor();
   const selection = useRobotPackage(monitor);
   const status = useStatus(monitor);
@@ -32,7 +32,7 @@ export function TopBar({ onStop }: { readonly onStop: () => void }) {
         <LayoutsMenu />
         <SessionClock />
         <RecordingControls />
-        <StopButton onStop={onStop} />
+        <PinnedCommands size="bar" />
       </div>
     </header>
   );

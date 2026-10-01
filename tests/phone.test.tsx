@@ -101,7 +101,7 @@ describe('the phone view', () => {
 
     await stop.click();
     await expect.poll(() => sent).toEqual([STOP_CODE]);
-    await expect.element(screen.getByRole('status', { name: 'Stop outcome' })).toBeVisible();
+    await expect.element(screen.getByRole('status', { name: 'Command outcome' })).toBeVisible();
   });
 
   test('keeps STOP in reach after scrolling the overflowing column to its end', async () => {
@@ -144,11 +144,13 @@ describe('the phone view', () => {
     await expect.poll(() => sent).toEqual([0]);
   });
 
-  test('gives a robot with no package a plain view whose STOP is off', async () => {
+  test('gives a robot with no package a plain view with no pinned command', async () => {
     const { screen } = await open({ registry: new RobotRegistry([]) });
 
     await expect.element(screen.getByRole('region', { name: 'Status' })).toBeVisible();
-    await expect.element(screen.getByRole('button', { name: 'Stop', exact: true })).toBeDisabled();
+    await expect
+      .element(screen.getByRole('button', { name: 'Stop', exact: true }))
+      .not.toBeInTheDocument();
     await expect.element(screen.getByRole('region', { name: 'Maze' })).not.toBeInTheDocument();
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(PHONE.width);
   });
@@ -204,10 +206,10 @@ describe('the update notice on the phone', () => {
     const { updates } = waitingUpdate();
     const { screen } = await open({ state: RUN, updates });
     await screen.getByRole('button', { name: 'Stop', exact: true }).click();
-    await expect.element(screen.getByRole('status', { name: 'Stop outcome' })).toBeVisible();
+    await expect.element(screen.getByRole('status', { name: 'Command outcome' })).toBeVisible();
 
     const notice = rect('output[aria-label="Update available"]');
-    const outcome = rect('output[aria-label="Stop outcome"] p');
+    const outcome = rect('output[aria-label="Command outcome"] p');
     const overlap =
       notice.left < outcome.right &&
       outcome.left < notice.right &&

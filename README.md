@@ -36,13 +36,15 @@ shape its link and inject faults, for example `bun run simulate --throughput 300
 
 The keymap is central (`src/app/keymap/keymap.ts`), and the launcher (`Ctrl+K`) lists the same
 actions. Keys that are not a modified chord (`P`, `Space`, `/`) are ignored while typing in a text
-field. Space is STOP: it is handled before anything else, in keydown and keyup, so the same press
-never also presses a focused button. On Linux Chrome, `Alt+1..8` and `Alt+F` may belong to the
+field. A robot package gives its commands keys (`key`), which join the keymap and can be bound to
+others like any key; Micras puts STOP on Space. A command's key is handled before anything else,
+in keydown and keyup, so the same press never also presses a focused button, and it always goes to
+the live robot. On Linux Chrome, `Alt+1..8` and `Alt+F` may belong to the
 browser; the installed PWA does not have that problem.
 
 | Keys                                    | Action                                                               |
 | --------------------------------------- | -------------------------------------------------------------------- |
-| `Space`                                 | STOP the robot                                                       |
+| `Space`                                 | STOP the robot (the key Micras gives its STOP command)               |
 | `Alt+←/→/↑/↓`                           | Focus the window in that direction                                   |
 | `Alt+Shift+←/→/↑/↓`                     | Move (swap) the window in that direction                             |
 | `Alt+F`                                 | Maximize the focused window                                          |
@@ -216,7 +218,15 @@ export const sumo: RobotPackage = {
   types: [],
   commands: [
     { code: 0, name: 'FIGHT', label: 'Fight', acceptedIn: [0], confirm: 'Start the fight?' },
-    { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any', emergency: true },
+    {
+      code: 5,
+      name: 'STOP',
+      label: 'Stop',
+      acceptedIn: 'any',
+      pinned: true,
+      key: 'Space',
+      tone: 'danger',
+    },
   ],
   refusalReasons: { 1: 'not idle' },
   presets: [{ name: 'Overview', root: { window: { kind: 'robot' } } }],
@@ -227,7 +237,10 @@ Register it in `src/main.tsx` next to `micras`: `new RobotRegistry([micras, sumo
 roles (`state`, `battery`, `pose.x`, `map`, `map.revision`, …) and never names, so the Robot window,
 the phone view and the Commands window work as soon as the roles are set. A package for React adds
 `SerializableType` entries whose `View` draws a blob such as the maze (`robots/micras/` is the full
-example), and `idleStates` tells the app when the robot is at rest for updates. `validatePackage`
+example), and `idleStates` tells the app when the robot is at rest for updates. A command is
+presented by plain fields: `pinned` keeps it in the top bar and at the bottom of the phone, sent to
+the live robot even while a recording is shown; `key` binds it to a key; `tone: 'danger'` draws it
+in the stop color and lets its key match with modifiers held; `confirm` asks first. `validatePackage`
 rejects a malformed package at registration.
 
 ## Tests and checks

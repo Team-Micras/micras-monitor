@@ -50,7 +50,15 @@ export function mouse(overrides: Partial<RobotPackage<string>> = {}): RobotPacka
     types: [GRID],
     commands: [
       { code: 0, name: 'GO', label: 'Go', acceptedIn: [0] },
-      { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any', emergency: true },
+      {
+        code: 5,
+        name: 'STOP',
+        label: 'Stop',
+        acceptedIn: 'any',
+        pinned: true,
+        key: 'Space',
+        tone: 'danger',
+      },
     ],
     refusalReasons: { 1: 'not idle' },
     presets: [],

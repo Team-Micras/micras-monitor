@@ -12,6 +12,8 @@ export interface Chord {
   readonly shift: boolean;
   readonly meta: boolean;
   readonly key: string;
+  /** Whether it also matches with more modifiers held, for keys that must work under pressure. */
+  readonly loose?: boolean;
 }
 
 /** The parts of a keyboard event a chord is matched against. */
@@ -118,8 +120,8 @@ export function matchesChord(chord: Chord, event: KeyInput): boolean {
 }
 
 /**
- * Tells whether an event is a chord with any other modifiers held too, as the emergency stop
- * matches: a Shift held by accident must not keep the robot from stopping.
+ * Tells whether an event is a chord with any other modifiers held too, as a loose chord matches:
+ * a Shift held by accident must not keep a dangerous robot from stopping.
  */
 export function matchesChordHeld(chord: Chord, event: KeyInput): boolean {
   return (

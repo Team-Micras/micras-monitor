@@ -23,7 +23,9 @@ const STOP: CommandSpec = {
   name: 'STOP',
   label: 'Stop',
   acceptedIn: 'any',
-  emergency: true,
+  pinned: true,
+  key: 'Space',
+  tone: 'danger',
 };
 const context = { linked: true, state: 0, stateLabels: STATE, inFlight: false };
 

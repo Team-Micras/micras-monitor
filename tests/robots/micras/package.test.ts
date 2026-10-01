@@ -158,11 +158,13 @@ describe('the commands, against the firmware', () => {
     expect(mirrored).toEqual(expected);
   });
 
-  test('make STOP the emergency command, accepted in any state', () => {
-    const stops = micras.commands.filter((command) => command.emergency === true);
+  test('pin STOP alone, on Space, in the danger tone, accepted in any state', () => {
+    const pinned = micras.commands.filter((command) => command.pinned === true);
 
-    expect(stops.map((command) => command.name)).toEqual(['STOP']);
-    expect(stops[0]?.acceptedIn).toBe('any');
+    expect(pinned).toEqual([
+      expect.objectContaining({ name: 'STOP', key: 'Space', tone: 'danger', acceptedIn: 'any' }),
+    ]);
+    expect(micras.commands.filter((command) => command.key !== undefined)).toEqual(pinned);
   });
 
   test('ask before the ones that move the robot, write the flash or lose the pose', () => {

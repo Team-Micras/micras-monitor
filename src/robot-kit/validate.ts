@@ -11,9 +11,9 @@ import type { BitmaskType, EnumType, PresetNode, RobotPackage } from './types';
 const MAX_BIT = 52;
 
 /**
- * Checks a package's internal consistency: a non-empty id, unique command codes and names, at
- * most one emergency command, unique enum values and bits, unique type tags, variables that name
- * known types, and presets whose ratios lie strictly inside (0, 1).
+ * Checks a package's internal consistency: a non-empty id, unique command codes, names and keys,
+ * unique enum values and bits, unique type tags, variables that name known types, and presets
+ * whose ratios lie strictly inside (0, 1).
  *
  * @throws {PackageError} Naming the first field that breaks a rule.
  */
@@ -38,7 +38,7 @@ type Fail = (path: string, problem: string) => never;
 function checkCommands(pkg: RobotPackage, fail: Fail): void {
   const codes = new Set<number>();
   const names = new Set<string>();
-  let emergency: number | null = null;
+  const keys = new Map<string, number>();
 
   pkg.commands.forEach((command, index) => {
     const path = `commands[${index}]`;
@@ -55,12 +55,18 @@ function checkCommands(pkg: RobotPackage, fail: Fail): void {
       fail(`${path}.name`, `repeats "${command.name}"`);
     }
 
-    if (command.emergency === true) {
-      if (emergency !== null) {
-        fail(`${path}.emergency`, `is already set on commands[${emergency}]`);
+    if (command.key !== undefined) {
+      const bound = keys.get(command.key.toLowerCase());
+
+      if (command.key.trim() === '') {
+        fail(`${path}.key`, 'must be a non-empty chord');
       }
 
-      emergency = index;
+      if (bound !== undefined) {
+        fail(`${path}.key`, `is already the key of commands[${bound}]`);
+      }
+
+      keys.set(command.key.toLowerCase(), index);
     }
 
     if (command.argument?.options !== undefined) {

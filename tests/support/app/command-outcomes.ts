@@ -1,5 +1,5 @@
 /**
- * What the Stop outcome of the top bar showed, for tests. A notice clears itself a few seconds
+ * What the Command outcome of the top bar showed, for tests. A notice clears itself a few seconds
  * after the answer, so on a loaded machine a test that looks for it on screen can arrive after it
  * is gone; recording every text it shows lets the test check what a press came to whenever it
  * gets there.
@@ -14,10 +14,10 @@ import type { Locator } from 'vitest/browser';
  * Starts recording the texts the Stop outcome shows, until the test finishes.
  *
  * @param outcome - The Stop outcome, found the way a reader finds it:
- *   `getByRole('status', { name: 'Stop outcome' })`. It must be on screen already.
+ *   `getByRole('status', { name: 'Command outcome' })`. It must be on screen already.
  * @returns What it showed so far, one notice per line.
  */
-export function recordStopOutcomes(outcome: Locator): () => string {
+export function recordCommandOutcomes(outcome: Locator): () => string {
   const output = outcome.element();
   const shown: string[] = [];
   const record = () => {

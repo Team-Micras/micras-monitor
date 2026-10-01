@@ -14,7 +14,7 @@ import type { ShellWindow } from '@/app/windows/types';
 import type { CommandOutcome, ReadOutcome } from '@/core/source';
 import type { DemoRobot } from '@/sources/demo/demo-source';
 import { settled } from '@tests/support/app/animations';
-import { recordStopOutcomes } from '@tests/support/app/stop-outcomes';
+import { recordCommandOutcomes } from '@tests/support/app/command-outcomes';
 import {
   DEMO_TARGET,
   demoMonitor,
@@ -72,7 +72,15 @@ const PACKAGE: RobotPackage<string> = mouse({
       confirm: 'Save the maze to the flash?',
       acceptedIn: [1],
     },
-    { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any', emergency: true },
+    {
+      code: 5,
+      name: 'STOP',
+      label: 'Stop',
+      acceptedIn: 'any',
+      pinned: true,
+      key: 'Space',
+      tone: 'danger',
+    },
   ],
   refusalReasons: { 1: 'robot not idle' },
 });
@@ -94,7 +102,7 @@ interface Harness {
   readonly readsOf: (name: string) => number;
   readonly store: ShellStore;
   readonly screen: Awaited<ReturnType<typeof render>>;
-  /** Every text the Stop outcome showed since the app came up. */
+  /** Every text the Command outcome showed since the app came up. */
   readonly outcomes: () => string;
 }
 
@@ -146,7 +154,7 @@ async function open({
   const screen = await render(
     <App monitor={monitor} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
   );
-  const outcomes = recordStopOutcomes(screen.getByRole('status', { name: 'Stop outcome' }));
+  const outcomes = recordCommandOutcomes(screen.getByRole('status', { name: 'Command outcome' }));
   monitor.connect(DEMO_TARGET);
   await expect.poll(() => monitor.state.status.kind).toBe('linked');
   const readsOf = (name: string) => reads.filter((read) => read === name).length;

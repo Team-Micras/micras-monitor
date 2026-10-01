@@ -1,15 +1,14 @@
-import { CircleXIcon, MoonIcon, SunIcon } from 'lucide-react';
+import { MoonIcon, SunIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { emergencyCommand, roleVariable } from '@/robot-kit';
+import { roleVariable } from '@/robot-kit';
 
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
 import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../monitor-context';
 import { ConnectionPopover } from '../shell/connection-popover';
 import { SessionClock } from '../shell/session-clock';
-import { useStopAction } from '../shell/stop-action';
-import { StopNoticeView } from '../shell/stop-button';
+import { PinnedCommands } from '../shell/pinned-commands';
 import { useShell, useShellStore } from '../state/shell-store';
 import { WindowErrorBoundary } from '../tiling/window-error-boundary';
 import { CommandsWindow } from '../windows/commands/commands-window';
@@ -154,32 +153,10 @@ function Windowed({
   );
 }
 
-function PhoneStop() {
-  const monitor = useLiveMonitor();
-  const status = useStatus(monitor);
-  const stop = emergencyCommand(useRobotPackage(monitor)?.package ?? null);
-  const notice = useShell((state) => state.stopNotice);
-  const onStop = useStopAction();
-  const connected = status.kind !== 'disconnected' && status.kind !== 'failed';
-
+function PhoneCommands() {
   return (
-    <footer className="relative shrink-0 border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      <output
-        aria-label="Stop outcome"
-        aria-live="off"
-        className="absolute right-4 bottom-full left-4 z-50 mb-2"
-      >
-        {notice === null ? null : <StopNoticeView notice={notice} />}
-      </output>
-      <button
-        type="button"
-        onClick={onStop}
-        disabled={!connected || stop === null}
-        className="flex h-16 w-full touch-manipulation items-center justify-center gap-3 rounded-2xl bg-stop text-xl font-semibold text-stop-foreground shadow-sm transition-colors active:brightness-90 focus-visible:ring-[3px] focus-visible:ring-stop/40 focus-visible:outline-none disabled:opacity-45"
-      >
-        <CircleXIcon className="size-7" aria-hidden />
-        {stop?.label ?? 'Stop'}
-      </button>
+    <footer className="shrink-0 border-t bg-background px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <PinnedCommands size="phone" />
     </footer>
   );
 }
@@ -203,8 +180,9 @@ function ThemeToggle() {
 
 /**
  * The phone's single column, from the plan: connection, status, the map, the values, the commands,
- * a small plot and the settings, above a STOP that stays in reach. It draws the windows of the
- * plan, so what a robot shows on the phone is whatever the plan finds in its package.
+ * a small plot and the settings, above the pinned commands, such as STOP, that stay in reach. It
+ * draws the windows of the plan, so what a robot shows on the phone is whatever the plan finds in
+ * its package.
  */
 export function PhoneView({ plan }: { readonly plan: PhonePlan }) {
   return (
@@ -228,7 +206,7 @@ export function PhoneView({ plan }: { readonly plan: PhonePlan }) {
           <Windowed window={plan.values} label="Values" className="shrink-0 py-2" />
         )}
         <Card label="Commands" className="pt-4">
-          <CommandsWindow window={plan.commands} paused={false} visible showStop={false} />
+          <CommandsWindow window={plan.commands} paused={false} visible showPinned={false} />
         </Card>
         {plan.plot === null ? null : <Windowed window={plan.plot} label="Plot" className="h-56" />}
         {plan.settings === null ? null : (
@@ -238,7 +216,7 @@ export function PhoneView({ plan }: { readonly plan: PhonePlan }) {
           <ThemeToggle />
         </div>
       </main>
-      <PhoneStop />
+      <PhoneCommands />
     </div>
   );
 }

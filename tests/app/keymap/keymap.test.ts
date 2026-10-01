@@ -13,11 +13,26 @@ import {
   actionFor,
   actionForEvent,
   actionSpec,
+  commandAction,
+  commandOf,
   resolveBindings,
   workspaceAction,
   workspaceIndexOf,
 } from '@/app/keymap/keymap';
 import { tilingCommandFor } from '@/app/keymap/tiling-commands';
+import type { CommandSpec } from '@/robot-kit';
+
+const STOP: CommandSpec = {
+  code: 5,
+  name: 'STOP',
+  label: 'Stop',
+  acceptedIn: 'any',
+  pinned: true,
+  key: 'Space',
+  tone: 'danger',
+};
+const GO: CommandSpec = { code: 0, name: 'GO', label: 'Go', acceptedIn: [0], key: 'G' };
+const COMMANDS = [STOP, GO];
 
 function press(key: string, modifiers: Partial<KeyInput> = {}, code = ''): KeyInput {
   return {
@@ -112,23 +127,35 @@ describe('resolveBindings', () => {
       'send-to-workspace.2'
     );
     expect(actionFor(bindings, press('k', { metaKey: true }, 'KeyK'))).toBe('launcher');
-    expect(actionFor(bindings, press(' ', {}, 'Space'))).toBe('stop');
+    expect(actionFor(bindings, press(' ', {}, 'Space'))).toBeNull();
     expect(actionFor(bindings, press('x'))).toBeNull();
   });
 
-  test('takes the user overrides', () => {
-    const bindings = resolveBindings({ stop: ['Ctrl+Space'] });
-    expect(actionFor(bindings, press(' ', {}, 'Space'))).toBeNull();
-    expect(actionFor(bindings, press(' ', { ctrlKey: true }, 'Space'))).toBe('stop');
+  test('binds the key of every command of the package that has one', () => {
+    const bindings = resolveBindings({}, [...COMMANDS, { ...GO, name: 'KEYLESS', key: undefined }]);
+    expect(bindings.size).toBe(ACTIONS.length + 2);
+    expect(actionFor(bindings, press(' ', {}, 'Space'))).toBe('command.STOP');
+    expect(actionFor(bindings, press('g', {}, 'KeyG'))).toBe('command.GO');
+    expect(commandOf(commandAction(GO))).toBe('GO');
+    expect(commandOf('launcher')).toBeNull();
   });
 
-  test('stops with any modifier held on Space, unless another action has that chord', () => {
-    const bindings = resolveBindings();
-    expect(actionFor(bindings, press(' ', { shiftKey: true }, 'Space'))).toBe('stop');
-    expect(actionFor(bindings, press(' ', { ctrlKey: true, altKey: true }, 'Space'))).toBe('stop');
-    const shared = resolveBindings({ launcher: ['Ctrl+Space'] });
+  test('takes the user overrides, for command keys as for the rest', () => {
+    const bindings = resolveBindings({ 'command.STOP': ['Ctrl+Space'] }, COMMANDS);
+    expect(actionFor(bindings, press(' ', {}, 'Space'))).toBeNull();
+    expect(actionFor(bindings, press(' ', { ctrlKey: true }, 'Space'))).toBe('command.STOP');
+  });
+
+  test('sends a dangerous command with any modifier held, unless another action has that chord', () => {
+    const bindings = resolveBindings({}, COMMANDS);
+    expect(actionFor(bindings, press(' ', { shiftKey: true }, 'Space'))).toBe('command.STOP');
+    expect(actionFor(bindings, press(' ', { ctrlKey: true, altKey: true }, 'Space'))).toBe(
+      'command.STOP'
+    );
+    expect(actionFor(bindings, press('g', { ctrlKey: true }, 'KeyG'))).toBeNull();
+    const shared = resolveBindings({ launcher: ['Ctrl+Space'] }, COMMANDS);
     expect(actionFor(shared, press(' ', { ctrlKey: true }, 'Space'))).toBe('launcher');
-    expect(actionFor(shared, press(' ', { shiftKey: true }, 'Space'))).toBe('stop');
+    expect(actionFor(shared, press(' ', { shiftKey: true }, 'Space'))).toBe('command.STOP');
   });
 
   test('keeps the defaults of an override that no longer parses', () => {
@@ -138,7 +165,7 @@ describe('resolveBindings', () => {
 });
 
 describe('actionForEvent', () => {
-  const bindings = resolveBindings();
+  const bindings = resolveBindings({}, COMMANDS);
 
   test('ignores Space, P and / while typing', () => {
     expect(actionForEvent(bindings, press(' ', {}, 'Space'), true)).toBeNull();
@@ -154,7 +181,7 @@ describe('actionForEvent', () => {
   });
 
   test('acts on plain keys outside of text fields', () => {
-    expect(actionForEvent(bindings, press(' ', {}, 'Space'), false)).toBe('stop');
+    expect(actionForEvent(bindings, press(' ', {}, 'Space'), false)).toBe('command.STOP');
     expect(actionForEvent(bindings, press('p', {}, 'KeyP'), false)).toBe('window.pause');
   });
 });
@@ -169,7 +196,8 @@ describe('workspace actions', () => {
   });
 
   test('actionSpec describes an action', () => {
-    expect(actionSpec('stop')).toMatchObject({ group: 'Robot', inText: false });
+    expect(actionSpec('drawer')).toMatchObject({ group: 'App', inText: false });
+    expect(actionSpec('command.GO')).toMatchObject({ group: 'Robot', inText: false });
   });
 });
 
@@ -191,7 +219,7 @@ describe('tilingCommandFor', () => {
   test('ignores workspaces that do not exist and actions outside the tiling', () => {
     expect(tilingCommandFor('workspace.5', 4)).toBeNull();
     expect(tilingCommandFor('send-to-workspace.9', 4)).toBeNull();
-    expect(tilingCommandFor('stop', 4)).toBeNull();
+    expect(tilingCommandFor('command.STOP', 4)).toBeNull();
     expect(tilingCommandFor('launcher', 4)).toBeNull();
     expect(tilingCommandFor('workspace.close', 4)).toBeNull();
   });
