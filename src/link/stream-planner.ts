@@ -258,7 +258,7 @@ export class StreamPlanner {
       plan.usedBytesPerSecond > estimate.bytesPerSecond * (1 + this.overspendToReplan);
 
     if (this.retryTimer !== undefined) {
-      if (estimate.saturated || overspent) {
+      if (estimate.saturated || this.settled(overspent, now)) {
         clearTimeout(this.retryTimer);
         this.retryTimer = undefined;
         this.replan();

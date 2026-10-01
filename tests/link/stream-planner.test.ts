@@ -155,6 +155,32 @@ describe('StreamPlanner', () => {
     expect(session.calls).toHaveLength(2);
   });
 
+  test('while a retry waits, plans again for an overspent budget only once it lasted', async () => {
+    planner.close();
+    planner = new StreamPlanner(session, {
+      debounceMs: 10,
+      retryMs: 60_000,
+      now: () => Date.now(),
+    });
+    session.answer = () => Promise.reject(new Error('No answer'));
+    const tick = unmeteredTicks();
+    planner.request([{ variable: 'a', rateHz: 8000 }]);
+    await vi.advanceTimersByTimeAsync(20);
+    tick(0);
+    tick(0);
+
+    tick(6000);
+    tick(0);
+    tick(0);
+    expect(session.calls).toHaveLength(1);
+
+    for (let second = 0; second < 5; second++) {
+      tick(6000);
+    }
+
+    expect(session.calls).toHaveLength(2);
+  });
+
   test('falls back to gaps once the epoch carrying the drop counter ends', async () => {
     planner.request([
       { variable: 'a', rateHz: 100 },
