@@ -30,6 +30,7 @@ class Feed {
   stats = BASE;
   now = 0;
   robotDropped: number | undefined;
+  counterPeriodMs = 1000;
 
   /** One second of a link that carries `rate` and is asked for `asked`, probing when cut. */
   link(capacity: number, asked: number, seconds: number) {
@@ -54,12 +55,42 @@ class Feed {
       bytesIn: stats.bytesIn + (change.bytesIn ?? 0),
       creditReturned: stats.creditReturned + (change.creditReturned ?? 0),
       droppedSamples: stats.droppedSamples + (change.droppedSamples ?? 0),
+      samples: stats.samples + (change.samples ?? 0),
       framesDiscarded: stats.framesDiscarded + (change.framesDiscarded ?? 0),
       rttMs: change.rttMs === undefined ? stats.rttMs : change.rttMs,
     };
     this.now += 1000;
-    return this.budget.update(this.stats, WINDOW, this.now, wantsMore, this.robotDropped);
+    return this.budget.update(
+      this.stats,
+      WINDOW,
+      this.now,
+      wantsMore,
+      this.robotDropped === undefined
+        ? undefined
+        : { count: this.robotDropped, periodMs: this.counterPeriodMs }
+    );
   }
+}
+
+/** The updates, from 1, that cut the ceiling while the robot's counter climbs every second. */
+function cutsWith(counterPeriodMs: number): number[] {
+  const feed = new Feed();
+  feed.counterPeriodMs = counterPeriodMs;
+  feed.robotDropped = 0;
+  feed.second({ rttMs: 5 });
+  const seconds: number[] = [];
+
+  for (let second = 1; second <= 8; second++) {
+    feed.robotDropped += 10;
+    const before = feed.budget.value.revision;
+    const after = feed.second({ bytesIn: 3000, creditReturned: 3000, samples: 50 }).revision;
+
+    if (after !== before) {
+      seconds.push(second);
+    }
+  }
+
+  return seconds;
 }
 
 describe('BandwidthEstimator', () => {
@@ -155,10 +186,10 @@ describe('BandwidthEstimator', () => {
     }
 
     const cut = 3000 * DEFAULT_BANDWIDTH_ESTIMATOR.backoff;
-    expect(ceilings[1]).toBeCloseTo(3000);
+    expect(ceilings[0]).toBeCloseTo(3000);
+    expect(ceilings[1]).toBeCloseTo(cut);
     expect(ceilings[2]).toBeCloseTo(cut);
-    expect(ceilings[4]).toBeCloseTo(cut);
-    expect(ceilings[5]).toBeCloseTo(cut * DEFAULT_BANDWIDTH_ESTIMATOR.backoff);
+    expect(ceilings[3]).toBeCloseTo(cut * DEFAULT_BANDWIDTH_ESTIMATOR.backoff);
   });
 
   test('never raises the ceiling while samples drop, whatever arrived', () => {
@@ -190,9 +221,7 @@ describe('BandwidthEstimator', () => {
     feed.second({ bytesIn: 2400, creditReturned: 2400, droppedSamples: 4 });
     const second = feed.second({ bytesIn: 2400, creditReturned: 2400, droppedSamples: 4 });
 
-    expect(first.capacityBytesPerSecond).toBeLessThanOrEqual(
-      credit * DEFAULT_BANDWIDTH_ESTIMATOR.backoff
-    );
+    expect(first.capacityBytesPerSecond).toBeLessThan(credit);
     expect(second.capacityBytesPerSecond).toBeCloseTo(
       first.capacityBytesPerSecond * DEFAULT_BANDWIDTH_ESTIMATOR.backoff
     );
@@ -239,6 +268,45 @@ describe('BandwidthEstimator', () => {
 
     expect(dipped).toBeLessThan(1500);
     expect(feed.budget.value.bytesPerSecond).toBeGreaterThan(settled * 0.9);
+  });
+
+  test('takes a loss below a small share of the samples as noise, not a full link', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    const busy = feed.second({
+      bytesIn: 3000,
+      creditReturned: 3000,
+      samples: 500,
+      droppedSamples: 2,
+    });
+    const full = feed.second({
+      bytesIn: 3000,
+      creditReturned: 3000,
+      samples: 500,
+      droppedSamples: 20,
+    });
+
+    expect(busy.saturated).toBe(false);
+    expect(full.saturated).toBe(true);
+  });
+
+  test('lets two samples go with every frame discarded when only gaps tell', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    const estimate = feed.second({
+      bytesIn: 3000,
+      creditReturned: 3000,
+      samples: 50,
+      droppedSamples: 6,
+      framesDiscarded: 3,
+    });
+
+    expect(estimate.saturated).toBe(false);
+  });
+
+  test('waits for a slow drop counter to report again before it cuts twice', () => {
+    expect(cutsWith(1000)).toEqual([1, 4, 7]);
+    expect(cutsWith(4000)).toEqual([1, 7]);
   });
 
   test("takes the robot's own count of dropped samples over gaps seen on the monitor", () => {

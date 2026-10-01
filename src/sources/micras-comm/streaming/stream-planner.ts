@@ -9,6 +9,7 @@ import {
   BandwidthEstimator,
   type BudgetEstimate,
   type BandwidthEstimatorOptions,
+  type DropCounter,
 } from './bandwidth-estimator';
 import { fitGroups, type PlannedRate, type RateRequest, type StreamPlan } from './fit-groups';
 
@@ -120,7 +121,7 @@ export class StreamPlanner {
   readonly #settleMs: number;
   readonly #now: () => number;
   readonly #detach: Unsubscribe[];
-  readonly #dropCounters = new Map<number, number>();
+  readonly #dropCounters = new Map<number, { readonly index: number; readonly periodMs: number }>();
   readonly #refused = new Set<string>();
   #requests: readonly RateRequest[] = [];
   #current: StreamPlan | undefined;
@@ -128,7 +129,7 @@ export class StreamPlanner {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #retryTimer: ReturnType<typeof setTimeout> | undefined;
   #failures = 0;
-  #robotDropped: number | undefined;
+  #dropCounter: DropCounter | undefined;
   #driftingSince: number | undefined;
   #closed = false;
 
@@ -225,21 +226,25 @@ export class StreamPlanner {
     const index = id === undefined ? -1 : epoch.variableIds.indexOf(id);
 
     if (index >= 0) {
-      this.#dropCounters.set(epoch.id, index);
+      const periodMs = (epoch.periodTicks * (this.#link.robot?.loopTimeUs ?? 0)) / 1000;
+      this.#dropCounters.set(epoch.id, { index, periodMs });
     }
   }
 
   #onEpochEnd(epoch: Epoch): void {
     if (this.#dropCounters.delete(epoch.id)) {
-      this.#robotDropped = undefined;
+      this.#dropCounter = undefined;
     }
   }
 
   #onSample(sample: SampleEvent): void {
-    const index = this.#dropCounters.get(sample.epoch);
+    const counter = this.#dropCounters.get(sample.epoch);
 
-    if (index !== undefined) {
-      this.#robotDropped = Number(sample.values[index]);
+    if (counter !== undefined) {
+      this.#dropCounter = {
+        count: Number(sample.values[counter.index]),
+        periodMs: counter.periodMs,
+      };
     }
   }
 
@@ -253,7 +258,7 @@ export class StreamPlanner {
       window,
       now,
       plan?.overBudget === true,
-      this.#robotDropped
+      this.#dropCounter
     );
 
     if (!plan || this.#timer !== undefined) {

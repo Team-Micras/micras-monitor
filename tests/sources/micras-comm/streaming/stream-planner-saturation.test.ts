@@ -33,7 +33,13 @@ const SIGNALS = [
 const OVER_CAPACITY = 1.4;
 /** Hold periods after a failed probe before the next, long enough that none falls in the watch. */
 const QUIET_HOLDS = 30;
-const SETTLE_S = 60;
+const SETTLE_S = 90;
+/** What a stall-free link carries easily, with room to spare. */
+const STALL_DEMAND = 5956;
+/** How long, after a long stall, the plan may take to give back all that was asked. */
+const RECOVERY_S = 30;
+/** How long the default probe cycle is watched for. */
+const CYCLE_MINUTES = 3;
 const WATCH_S = 30;
 
 let harness: Harness | undefined;
@@ -136,4 +142,60 @@ describe('a planner over a saturated link', { timeout: 120_000 }, () => {
       expect(used).toBeGreaterThan(least);
     }
   );
+
+  test('gets back to what was asked within a few holds once a long stall is over', async () => {
+    harness = await connect(
+      { latencyMs: 10 },
+      { timing: { ...TEST_TIMING, statsIntervalMs: 1000 } }
+    );
+    const { link, robot } = harness;
+    planner = new StreamPlanner(link, { debounceMs: 20 });
+    planner.request(demanding(link, STALL_DEMAND));
+
+    await delay(20_000);
+    expect(planner.plan?.overBudget).toBe(false);
+    robot.faults.stallMs = 600;
+    await delay(30_000);
+    const stalled = planner.plan?.usedBytesPerSecond ?? 0;
+    robot.faults.stallMs = 0;
+    await delay(RECOVERY_S * 1000);
+
+    expect(stalled).toBeLessThan(STALL_DEMAND / 2);
+    expect(planner.plan?.overBudget).toBe(false);
+  });
+
+  test('keeps what was asked on a fast link that corrupts frames', async () => {
+    harness = await connect(
+      { corruptRate: 0.05, seed: 3 },
+      { timing: { ...TEST_TIMING, statsIntervalMs: 1000 } }
+    );
+    const { link } = harness;
+    planner = new StreamPlanner(link, { debounceMs: 20 });
+    planner.request(demanding(link, 3000).filter((request) => request.countsDrops !== true));
+
+    await delay(60_000);
+
+    expect(link.stats.framesDiscarded).toBeGreaterThan(100);
+    expect(planner.budget.bytesPerSecond).toBeGreaterThan(3000);
+    expect(planner.plan?.overBudget).toBe(false);
+  });
+
+  test('with the default probe cycle, drops and plans stay rare once settled', async () => {
+    harness = await connect(
+      { latencyMs: 10, jitterMs: 10, stallMs: 120 },
+      { timing: { ...TEST_TIMING, statsIntervalMs: 1000 } }
+    );
+    const { link, robot } = harness;
+    const applied: (readonly GroupRequest[])[] = [];
+    planner = new StreamPlanner(counted(link, applied), { debounceMs: 20 });
+    planner.request(demanding(link, 2400));
+
+    await delay(60_000);
+    const dropsBefore = robot.stats.samplesDropped;
+    const plansBefore = applied.length;
+    await delay(CYCLE_MINUTES * 60_000);
+
+    expect((robot.stats.samplesDropped - dropsBefore) / CYCLE_MINUTES).toBeLessThanOrEqual(3);
+    expect((applied.length - plansBefore) / CYCLE_MINUTES).toBeLessThanOrEqual(2);
+  });
 });
