@@ -207,7 +207,7 @@ export const sumo: RobotPackage = {
 };
 ```
 
-Register it in `src/main.tsx` next to `micras`: `new RobotRegistry([micras, sumo])`. The UI reads
+Register it in `src/main.tsx` next to `micras`: `new RobotRegistry([micras, sumo], reservedChord)`. The UI reads
 roles (`state`, `battery`, `pose.x`, `map`, `map.revision`, …) and never names, so the Robot window,
 the phone view and the Commands window work as soon as the roles are set. A package for React adds
 `SerializableType` entries whose `View` draws a blob, or whose `loadView` imports the view on first

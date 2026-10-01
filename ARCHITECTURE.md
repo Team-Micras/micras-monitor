@@ -28,98 +28,106 @@ Going the other way, the UI only calls the monitor, which calls the source's con
 (what to stream), `command`, `write`, `read`. Nothing in the UI knows how a source talks to its
 robot. `src/main.tsx` builds the pieces and is the only file that names a source or a robot package.
 
-The four paths below follow real code. Names in backticks are files under `src/`; those starting `link/`, `wire/`, `streaming/` or
-`transports/` are under `sources/micras-comm/`.
+The four paths below follow real code. Every path in this file is written in full from the project
+root. In section 2 the files are listed by bare name under the folder named in the heading.
 
 ### 1.1 A sample arrives and becomes a pixel
 
-1. The transport (`sources/micras-comm/transports/websocket-transport.ts` or
-   `bluetooth/bluetooth-transport.ts`) hands bytes to `RobotLink` (`link/robot-link.ts`).
-2. `wire/cobs.ts` and `wire/frame.ts` cut and check frames; `link/messages.ts` decodes a `SAMPLE`.
-3. `link/epochs.ts` checks the sequence number of the sample against the one it expected. If the
+1. The transport (`src/sources/micras-comm/transports/websocket-transport.ts` or
+   `src/sources/micras-comm/transports/bluetooth/bluetooth-transport.ts`) hands bytes to `RobotLink` (`src/sources/micras-comm/link/robot-link.ts`).
+2. `src/sources/micras-comm/wire/cobs.ts` and `src/sources/micras-comm/wire/frame.ts` cut and check frames; `src/sources/micras-comm/link/messages.ts` decodes a `SAMPLE`.
+3. `src/sources/micras-comm/link/epochs.ts` checks the sequence number of the sample against the one it expected. If the
    difference is `n > 0`, `n` samples went missing, and the sample leaves with `missingBefore = n`.
-4. `stream-feed.ts` calls `sink.sample(stream, timeUs, values, missedBefore)`.
-5. `Monitor` (`core/monitor.ts`) puts the time on the session timeline (`core/timeline.ts`) and calls
+4. `src/sources/micras-comm/stream-feed.ts` calls `sink.sample(stream, timeUs, values, missedBefore)`.
+5. `Monitor` (`src/core/monitor.ts`) puts the time on the session timeline (`src/core/timeline.ts`) and calls
    `history.append(runId, timeUs, values, missedBefore)`.
-6. `HistoryStore.append` (`history/history-store.ts`) hands it to the `StreamRun` (`history/stream-run.ts`).
-   With `missedBefore > 0` the run records a `dropped` gap in its `GapLog` (`history/gap-log.ts`)
-   with the count, then stores the values in the current `Block` (`history/block.ts`) and its
-   min/max pyramid (`history/min-max-pyramid.ts`).
-7. The store tells its subscribers through `TickNotifier` (`history/tick-notifier.ts`), at most once
-   per frame (the app gives it a `requestAnimationFrame` scheduler in `main.tsx`).
-8. `PlotController` (`ui/windows/plot/plot-controller.ts`) hears it, and `plot-data.ts` asks the
-   store for the visible window: `DecimationBuilder` (`history/decimation.ts`) gives one min/max pair
+6. `HistoryStore.append` (`src/history/history-store.ts`) hands it to the `StreamRun` (`src/history/stream-run.ts`).
+   With `missedBefore > 0` the run records a `dropped` gap in its `GapLog` (`src/history/gap-log.ts`)
+   with the count, then stores the values in the current `Block` (`src/history/block.ts`) and its
+   min/max pyramid (`src/history/min-max-pyramid.ts`).
+7. The store tells its subscribers through `TickNotifier` (`src/history/tick-notifier.ts`), at most once
+   per frame (the app gives it a `requestAnimationFrame` scheduler in `src/main.tsx`).
+8. `PlotController` (`src/ui/windows/plot/plot-controller.ts`) hears it, and `src/ui/windows/plot/plot-data.ts` asks the
+   store for the visible window: `DecimationBuilder` (`src/history/decimation.ts`) gives one min/max pair
    per pixel column, and `history.gaps()` gives the gaps in the window.
-9. `plot-config.ts` hands the columns to uPlot and draws the dropped (and not-stored) gaps as bands
-   behind the lines, with the "N dropped" count; uPlot draws the pixels.
+9. `PlotController` passes the columns to uPlot with `setData` (`src/ui/windows/plot/plot-controller.ts`).
+   `src/ui/windows/plot/plot-config.ts` gives uPlot its options and `drawGaps`, which paints the
+   dropped and not-stored gaps as bands behind the lines. The "N dropped" label is drawn by
+   `src/ui/windows/plot/plot-window.tsx`; uPlot draws the pixels.
 
 So a lost sample becomes a count on the wire, then `missedBefore`, then a stored gap, then a band.
 The monitor does not know the wire: the source does the sequence arithmetic.
 
 ### 1.2 A window asks for variables, and GROUP_DEFINE goes out
 
-1. Each window kind in `ui/windows/registry.ts` has a `demand` function: the Plot asks for its
-   variables at `PLOT_RATE_HZ`, Readouts at `READOUT_RATE_HZ` (`ui/windows/stream-rates.ts`).
-2. `useStreamDemand` (`ui/stream-demand.ts`) gathers the demands of the visible windows and of the
+1. Each window kind in `src/ui/windows/registry.ts` has a `demand` function: the Plot asks for its
+   variables at `PLOT_RATE_HZ`, Readouts at `READOUT_RATE_HZ` (`src/ui/windows/stream-rates.ts`). A kind with no `demand`
+   streams each of its variables at `DEFAULT_STREAM_RATE_HZ`; a kind that wants none says `nothing`.
+2. `useStreamDemand` (`src/ui/stream-demand.ts`) gathers the demands of the visible windows and of the
    roles the package pins, and calls `live.request(demands)`.
-3. `Monitor.request` (`core/monitor.ts`) turns variable names into ids and calls
+3. `Monitor.request` (`src/core/monitor.ts`) turns variable names into ids and calls
    `connection.request(...)`.
-4. `MicrasCommConnection.request` (`sources/micras-comm/micras-comm-connection.ts`) passes the rates
-   to `StreamPlanner.request` (`streaming/stream-planner.ts`).
-5. The planner calls `fitGroups` (`streaming/fit-groups.ts`) with the budget from
-   `BandwidthEstimator` (`streaming/bandwidth-estimator.ts`). The result is a list of groups, each a
+4. `MicrasCommConnection.request` (`src/sources/micras-comm/micras-comm-connection.ts`) passes the rates
+   to `StreamPlanner.request` (`src/sources/micras-comm/streaming/stream-planner.ts`).
+5. The planner calls `fitGroups` (`src/sources/micras-comm/streaming/fit-groups.ts`) with the budget from
+   `BandwidthEstimator` (`src/sources/micras-comm/streaming/bandwidth-estimator.ts`). The result is a list of groups, each a
    set of variables and a period; what does not fit is cut and shows in the Link window.
-6. If the groups changed, `GroupConfigurator` (`link/group-configurator.ts`) sends one
-   `GROUP_DEFINE` and `GROUP_ENABLE` per group. `encodeGroupDefine` in `link/messages.ts` builds the
-   payload, `wire/frame.ts` frames it, `RobotLink` and the transport write it.
-7. The robot answers `GROUP_ACK`; `link/epochs.ts` opens an epoch, and `stream-feed.ts` tells the sink
-   `streamOpened`. The `Monitor` opens a stream run in the history, and samples start to flow (1.1).
+6. If the groups changed, the planner calls `RobotLink.setGroups`
+   (`src/sources/micras-comm/link/robot-link.ts`), which runs `GroupConfigurator`
+   (`src/sources/micras-comm/link/group-configurator.ts`): one `GROUP_DEFINE` and `GROUP_ENABLE` per
+   group. `encodeGroupDefine` in `src/sources/micras-comm/link/messages.ts` builds the payload,
+   `src/sources/micras-comm/wire/frame.ts` frames it, and `RobotLink` and the transport write it.
+7. The robot answers `GROUP_ACK` to the define, and the configurator registers the epoch
+   (`define` in `src/sources/micras-comm/link/epochs.ts`). After the `GROUP_ENABLE` is acknowledged it
+   calls `activate`, the epoch is announced, and `src/sources/micras-comm/stream-feed.ts` tells the sink
+   `streamOpened`. The `Monitor` opens a stream run in the history and samples start to flow (1.1).
 
 ### 1.3 A pinned command (STOP): key press to notice
 
 1. The package declares `{ name: 'STOP', pinned: true, key: 'Space', tone: 'danger' }`
-   (`robots/micras/commands.ts`). Nothing else in the code knows what STOP is.
-2. `ui/keyboard/keymap.ts` adds the command's key to the keymap. `use-keymap.ts` swallows keydown and
+   (`src/robots/micras/commands.ts`). Nothing else in the code knows what STOP is.
+2. `src/ui/keyboard/keymap.ts` adds the command's key to the keymap. `src/ui/keyboard/use-keymap.ts` swallows keydown and
    keyup for it, ignores key repeat, and calls the app's `onAction`.
-3. `ui/app.tsx` finds the command (`sendByName`), asks for confirmation if the command has `confirm`
-   (`ui/shell/commands/command-confirm.tsx`), then shows a "sent" notice
-   (`ui/shell/commands/command-outcome.ts`).
+3. `src/ui/app.tsx` finds the command (`sendByName`), asks for confirmation if the command has `confirm`
+   (`src/ui/shell/commands/command-confirm.tsx`), then shows a "sent" notice
+   (`src/ui/shell/commands/command-outcome.ts`).
 4. It calls `live.command(code)` on the **live** monitor, never the shown one, so STOP works with a
-   recording on screen. The button in the top bar (`ui/shell/commands/pinned-commands.tsx`) takes
-   the same path through `useSendCommand` (`ui/shell/shell-contexts.ts`).
+   recording on screen. The button in the top bar (`src/ui/shell/commands/pinned-commands.tsx`) takes
+   the same path through `useSendCommand` (`src/ui/shell/shell-contexts.ts`).
 5. `Monitor.command` forwards to `MicrasCommConnection.command`, which calls `RobotLink.command`
-   (`link/robot-link.ts`). `messages.ts` encodes `COMMAND`; `link/requests.ts` waits for the matching
+   (`src/sources/micras-comm/link/robot-link.ts`). `src/sources/micras-comm/link/messages.ts` encodes `COMMAND`; `src/sources/micras-comm/link/requests.ts` waits for the matching
    `COMMAND_ACK`, with a timeout.
-6. The connection maps the ack to a `CommandOutcome` (`ok`, `refused` with a reason code, `failed`).
-7. `commandAnswered` (`command-outcome.ts`) turns it into a notice, using the package's refusal
-   reasons. It goes into the shell store (`ui/state/shell-store/commands.ts`), shown next to the
-   button and announced to screen readers (`ui/shell/a11y/announcements.tsx`).
+6. The connection maps the ack to a `CommandOutcome` (`src/core/source.ts`): `ok`, `unknown`, `refused` or `deferred`, each with the
+   robot's reason code, or `failed` with a message when there was no answer.
+7. `commandAnswered` (`src/ui/shell/commands/command-outcome.ts`) turns it into a notice, using the package's refusal
+   reasons. It goes into the shell store (`src/ui/state/shell-store/commands.ts`), shown next to the
+   button and announced to screen readers (`src/ui/shell/a11y/announcements.tsx`).
 
 ### 1.4 Recording a session, and reopening it
 
 Recording:
 
-1. The REC button (`ui/recordings/recording-controls.tsx`) calls `RecordingManager.startRecording`
-   (`recording/library/recording-manager.ts`).
-2. The manager creates a file in the library (`recording/library/opfs-library.ts`, which talks to
-   `opfs.worker.ts` and `opfs-host.ts`, or `memory-library.ts` without the file system) and calls
-   `RecordingWriter.start` (`recording/recording-writer.ts`).
+1. The REC button (`src/ui/recordings/recording-controls.tsx`) calls `RecordingManager.startRecording`
+   (`src/recording/library/recording-manager.ts`).
+2. The manager creates a file in the library (`src/recording/library/opfs-library.ts`, which talks to
+   `src/recording/library/opfs.worker.ts` and `src/recording/library/opfs-host.ts`, or `src/recording/library/memory-library.ts` without the file system) and calls
+   `RecordingWriter.start` (`src/recording/recording-writer.ts`).
 3. The writer is the history's `BlockBacking`: it calls `store.startRecording(writer)` and follows the
-   history (`store.follow`), appending records encoded by `recording/codec.ts` and framed by
-   `recording/scan.ts`. Sealed blocks are written at once and the block being filled every 5 s, so a
+   history (`store.follow`), appending records encoded by `src/recording/codec.ts` and framed by
+   `src/recording/scan.ts`. Sealed blocks are written at once and the block being filled every 5 s, so a
    dead tab loses at most that.
 
 Reopening:
 
-1. `recordings-dialog.tsx` calls `RecordingManager.open(id)`.
-2. `RecordingReader.read(file)` (`recording/recording-reader.ts`) scans the file, and `load.ts` builds a
+1. `src/ui/recordings/recordings-dialog.tsx` calls `RecordingManager.open(id)`.
+2. `RecordingReader.read(file)` (`src/recording/recording-reader.ts`) scans the file, and `src/recording/load.ts` builds a
    `HistoryStore` of its own whose blocks load from the file as plots scroll to them.
-3. The manager publishes it as `viewing`. `ShownMonitor` (`ui/recordings/shown-monitor.tsx`) sees it
+3. The manager publishes it as `viewing`. `ShownMonitor` (`src/ui/recordings/shown-monitor.tsx`) sees it
    and replaces the _shown_ monitor with `Monitor.ofRecording(store, ...)`: a monitor over that history
    with no connection.
-4. Windows read `useShownMonitor()` (`ui/monitor-context.ts`) and so draw the recording; the bars,
+4. Windows read `useShownMonitor()` (`src/ui/monitor-context.ts`) and so draw the recording; the bars,
    STOP and the connection read `useLiveMonitor()` and carry on with the robot.
-   `viewing-indicator.tsx` shows which recording is on screen, and its "Live" button calls
+   `src/ui/recordings/viewing-indicator.tsx` shows which recording is on screen, and its "Live" button calls
    `backToLive()`, after which the shown monitor is the live one again.
 
 ## 2. Every folder and every file
@@ -321,7 +329,7 @@ The tiling window engine: workspaces of split trees, a floating layer, placement
 
 ### `src/ui/`
 
-The React interface. It reads the monitor and never imports a source or a robot package; `main.tsx` hands those in. The subfolders are shell (bars, dialogs), tiling (the React side of the engine), windows (one folder per kind), state, layouts, keyboard, recordings, phone, pwa and lazy.
+The React interface. It reads the monitor and never imports a source or a robot package; `main.tsx` hands those in. The subfolders are shell (bars, dialogs), tiling (the React side of the engine), windows (one folder per kind), state, layouts, keyboard, recordings, phone, pwa, lazy, lib (formatting) and primitives (shadcn).
 
 - `app.tsx`: `App`: wires the monitors, the shell store, keyboard, command sending and confirmation, and lays out the top bar, tiling, status bar, drawer and launcher.
 - `monitor-context.ts`: `MonitorContext` and its hooks: `useLiveMonitor()` (bars, STOP, connection) and `useShownMonitor()` (windows), plus the per-variable hooks and the `PackageChooser`.
@@ -575,23 +583,31 @@ Folders are layers and the arrows point one way. `.oxlintrc.json` enforces them 
 `no-restricted-imports`; each rule's message says what it guards, and `bun run lint` fails on a
 violation.
 
-| Folder                | May import                                        | Never imports                                          |
-| --------------------- | ------------------------------------------------- | ------------------------------------------------------ |
-| `src/core/`           | nothing else in the project (relative paths only) | everything else, React                                 |
-| `src/history/`        | `core`                                            | recording, tiling, sources, robots, ui, React          |
-| `src/recording/`      | `core`, `history`                                 | tiling, sources, robots, ui                            |
-| `src/tiling/`         | nothing in the project                            | everything else, React                                 |
-| `src/sources/<s>/`    | `core` and its own folder                         | history, recording, tiling, robots, ui, another source |
-| `src/robots/<robot>/` | `core` (with `core/robot` as the contract), React | history, recording, tiling, sources, ui, another robot |
-| `src/ui/`             | `core`, `history`, `recording`, `tiling`          | sources, robots, `main.tsx`                            |
-| `src/main.tsx`        | everything                                        |                                                        |
-| `scripts/`            | `core` and the sources                            | history, recording, tiling, robots, ui, tests          |
-| any file in `src/`    |                                                   | `tests/`, `scripts/`                                   |
+| Folder                     | May import                                                 | Never imports                                                           |
+| -------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `src/core/`                | other core modules, by relative path                       | anything else in the project (also `main`), React                       |
+| `src/history/`             | `core`                                                     | recording, tiling, sources, robots, ui, `main`, React                   |
+| `src/recording/`           | `core`, `history`                                          | tiling, sources, robots, ui, `main`, React                              |
+| `src/tiling/`              | nothing in the project                                     | core, history, recording, sources, robots, ui, `main`, React            |
+| `src/sources/<s>/`         | `core` (by `@/core`) and its own folder (by relative path) | history, recording, tiling, robots, ui, `main`, any other source, React |
+| `src/robots/<robot>/`      | `core` (with `core/robot` as the contract), React          | history, recording, tiling, sources, ui, `main`, another robot          |
+| `src/ui/`                  | `core`, `history`, `recording`, `tiling`, React            | sources, robots, `main`                                                 |
+| `src/main.tsx`             | everything in `src/`, React                                |                                                                         |
+| `scripts/`                 | `core` and the sources                                     | history, recording, tiling, `core/robot`, robots, ui, tests, React      |
+| `scripts/simulated-robot/` | `src/sources/micras-comm/wire` only                        | everything else in `src/`, tests, React                                 |
+| `scripts/bench-history.ts` | `core` and `history`                                       | recording, tiling, `core/robot`, robots, ui, sources, tests, React      |
+| any file in `src/`         |                                                            | `tests/`, `scripts/`                                                    |
 
-React is allowed only in `src/ui/` and the robot packages. The `@/` alias is `src/`.
+React is allowed only in `src/ui/`, the robot packages and `src/main.tsx`. The `@/` alias is `src/`.
 
-`tests/config/import-fences.test.ts` checks the fences themselves: it writes probe files into a temporary directory with the same
-config, runs oxlint on them and expects each import to be refused or accepted as the table says. If
+How a source is fenced from other sources without naming them: the generic rule for
+`src/sources/*/**` forbids every `@/sources/...` alias, so a source reaches its own files only by
+relative path; and a rule per depth (`src/sources/*/*.ts`, `src/sources/*/*/*.ts`, and so on to five
+levels, for `.ts` and `.tsx`) forbids a relative path that climbs out of the source's own folder. A
+new source folder is fenced from `demo`, from `micras-comm` and from every future source as soon as
+it exists, and they are fenced from it.
+
+`tests/config/import-fences.test.ts` checks the fences themselves: it writes probe files into a temporary directory with the same config, runs oxlint on them and expects each import to be refused or accepted as the table says. If
 you change a rule in `.oxlintrc.json`, that test is where to say what it should now do.
 
 ## 4. The vocabulary
@@ -601,11 +617,11 @@ you change a rule in `.oxlintrc.json`, that test is where to say what it should 
 - **monitor**: the `Monitor` of `src/core/monitor.ts`: the sink every connection pushes into, and what the UI reads. The _live_ monitor has a connection; a _recording_ monitor reads a saved history and has none.
 - **stream**: a set of variables sampled together and delivered together, with one time per sample. The source numbers streams.
 - **stream run** (`StreamRun`): one stream in the history, from the moment it opened to the moment it closed. A new layout in the same slot is a new run.
-- **run of the robot's clock** (in the timeline, `core/timeline.ts`): the stretch of a robot's own clock between two reboots or resets. `SessionTimeline` gives each one an offset so all of them sit on one timeline. Not the same as a stream run.
-- **epoch**: `micras-comm` only (`link/epochs.ts`): one definition of a group on the robot, from enabled to redefined or lost. Its sequence numbers only mean something inside it. The monitor sees epochs as streams.
+- **run of the robot's clock** (in the timeline, `src/core/timeline.ts`): the stretch of a robot's own clock between two reboots or resets. `SessionTimeline` gives each one an offset so all of them sit on one timeline. Not the same as a stream run.
+- **epoch**: `micras-comm` only (`src/sources/micras-comm/link/epochs.ts`): one definition of a group on the robot, from enabled to redefined or lost. Its sequence numbers only mean something inside it. The monitor sees epochs as streams.
 - **slot**: where the robot keeps a stream; a new stream in a slot replaces the one there. For `micras-comm` it is the group number.
-- **gap**: a stretch of a variable's history with no samples. Kinds: `dropped` (it was streamed, the source knows samples were lost; has a count), `not-stored` (arrived, but the memory cap kept or later released them; has a count), `not-streamed` (the variable was in no stream then; not drawn).
-- **block**: a fixed-size stretch of a run's columns (`history/block.ts`), the unit of memory eviction and of what a recording writes and reads back.
+- **gap**: a stretch of a variable's history with no samples. Kinds: `dropped` (it was streamed, the source knows samples were lost; has a count), `not-stored` (the memory cap did not keep them, or later let them go; has a count), `not-streamed` (the variable was in no stream then; not drawn).
+- **block**: a fixed-size stretch of a run's columns (`src/history/block.ts`), the unit of memory eviction and of what a recording writes and reads back.
 - **package**: a `RobotPackage` (`src/core/robot/types.ts`): plain data saying what a schema cannot (labels, units, roles, commands, presets). Without one the app still works in raw mode.
 - **pinned command**: a command whose package entry says `pinned: true`: it stays in the top bar and at the bottom of the phone view, may carry a `key`, a `tone` and a `confirm`, and always goes to the live monitor.
 - **recording**: a saved history in a file (`src/recording/`). The UI calls them "Sessions".
@@ -616,14 +632,20 @@ you change a rule in `.oxlintrc.json`, that test is where to say what it should 
 
 1. Make `src/sources/<name>/` with a class implementing `Source` (`id`, `targets`, `connect(target, sink)`),
    which returns a `SourceConnection` (`request`, `command`, `write`, `read`, `pendingWrite`, `close`).
-2. Push into the sink: `status`, `variables` (`Variable` of `core/variables.ts`; an empty list when
-   they are gone), `streamOpened`, `sample` with `missedBefore` (the source does its own loss count), `streamClosed`,
-   `value`, `boundary`, `log`, `stats`.
-3. Import only `src/core` and your own folder. The fences in `.oxlintrc.json` apply to `src/sources/*/**`
-   automatically, including "never import another source"; add rows to `tests/config/import-fences.test.ts`
-   only if you add a rule.
-4. Register it in `src/main.tsx`, where `source()` chooses what the `Monitor` gets.
-5. Put tests under `tests/sources/<name>/`. `tests/support/sources/scripted-source.ts` is a scripted
+2. Push into the sink: `status`, `variables` (`Variable` of `src/core/variables.ts`; an empty list when
+   they are gone), `streamOpened`, `sample` with `missedBefore` (the source does its own loss count),
+   `streamClosed`, `value`, `boundary`, `log`, `writesChanged` (a write started or ended), `stats`.
+3. Import only `src/core` (by `@/core/...`) and your own folder, by relative path. Never write
+   `@/sources/...`. The fences in `.oxlintrc.json` cover any folder `src/sources/*/` automatically,
+   including "never import another source" (section 3); add rows to
+   `tests/config/import-fences.test.ts` only if you add a rule.
+4. If it reaches robots in a way the monitor cannot yet name, extend `TargetKind` and `Target` in
+   `src/core/source.ts`, then give the new kind a label in `TRANSPORT_LABELS` and a form in
+   `src/ui/shell/bars/connection-popover.tsx`.
+5. Choose it in `src/main.tsx`, where `source()` decides what the `Monitor` gets. Today `?fake` is an
+   either/or switch between the demo and `micras-comm`, and `?connect=` starts a WebSocket target only,
+   so a third source needs its own way to be selected and to be connected.
+6. Put tests under `tests/sources/<name>/`. `tests/support/sources/scripted-source.ts` is a scripted
    source for tests of the layers above; `src/sources/demo/` is the shortest example to read.
 
 ### A new window kind
@@ -631,29 +653,36 @@ you change a rule in `.oxlintrc.json`, that test is where to say what it should 
 1. Make `src/ui/windows/<kind>/<kind>-window.tsx`, a component taking `WindowViewProps`. Read data with
    `useShownMonitor()`; use `useLiveMonitor()` only for what must act on the robot.
 2. Add an entry to `WINDOW_KINDS` in `src/ui/windows/registry.ts`: `id`, `title`, `description`, `icon`,
-   the (lazy) `component`, and `demand` if it needs variables streamed (rates in `stream-rates.ts`).
-3. Add it to `src/ui/state/default-desktop.ts` or to a package's presets if it should open by default.
-4. Pure logic goes in its own `.ts` file beside the window, with a test in `tests/ui/windows/<kind>/`.
+   the (lazy) `component`, and `acceptsVariables` (required: whether a variable dropped on the window
+   joins it, or opens a plot beside it).
+3. Say what it wants streamed with `demand` (rates in `src/ui/windows/stream-rates.ts`). Without
+   `demand`, each of its variables streams at `DEFAULT_STREAM_RATE_HZ`; pass `nothing` to stream none.
+4. Add it to `src/ui/state/default-desktop.ts` or to a package's presets if it should open by default.
+5. Pure logic goes in its own `.ts` file beside the window, with a test in `tests/ui/windows/<kind>/`.
 
 ### A new robot package
 
 1. Make `src/robots/<robot>/index.ts` exporting a `RobotPackage`. The README has a worked example.
    `src/robots/micras/` splits labels, commands, variables, presets and a maze view.
-2. Register it in `src/main.tsx`: `new RobotRegistry([micras, <robot>])`. `validatePackage` rejects a
-   malformed one at startup.
+2. Register it in `src/main.tsx`: `new RobotRegistry([micras, <robot>], reservedChord)`.
+   `validatePackage` rejects a malformed one at startup.
 3. A new type that needs a drawing gets a `SerializableType` whose `View` or `loadView` draws it.
 
 ## 6. Tests and scripts
 
+File names are kebab-case throughout.
+
 `tests/` mirrors `src/`: `src/history/history-store.ts` is tested by `tests/history/history-store.test.ts`.
-Also:
+An integration test sits with the module it exercises, such as
+`tests/sources/micras-comm/link/robot-link-simulated.test.ts`. Also:
 
 - `tests/support/`: fixtures and helpers (scripted source, in-memory backings, sample recordings,
   virtual time, mouse and browser setup), mirroring `src/` where they belong to a module.
 - `tests/config/`: tests of the build and lint setup, including the import fences.
 - `tests/scripts/`: tests of the bench comparison and the simulated maze.
 - `tests/e2e/`: the PWA check, which builds the app and runs it in Chromium.
-- `.test.ts` runs in Node (`unit`), `.test.tsx` in Chromium (`browser`).
+- `.test.ts` runs in Node (`unit`), `.test.tsx` in Chromium (`browser`). Files named
+  `*-performance.test.*` are the `performance` project, which only `bench` runs.
 
 Scripts (`bun run <name>`; sources in `scripts/`):
 
@@ -671,8 +700,10 @@ Scripts (`bun run <name>`; sources in `scripts/`):
 Other files in `scripts/`: `bench-compare.ts`, `bench-diff.ts`, `bench-result.ts` and
 `bench-baseline.json` (judging bench runs), and `simulated-robot/` (`server.ts`, `robot.ts`,
 `variables.ts`, `commands.ts`, `maze.ts`, `faults.ts`, `wire.ts`: a robot that speaks `micras_comm`,
-sharing `wire/` with the app). The README has the options of each.
+sharing `src/sources/micras-comm/wire/` with the app). The README has the options of each.
 
-**Machine rule: run one browser suite at a time.** `check`, `test:browser`, `test:e2e`, `bench` and
-`check:*` all start Chromium; two at once have frozen the notebook. Take the lock when you run them:
+**Machine rule: run one browser suite at a time.** Chromium starts in `bun run test` (its browser
+project), `test:browser`, `test:e2e`, `bench` (the `performance` project), `check` (which includes
+those) and, through Playwright, `check:sim` and `check:recording`. `check:live` is Node only. Two
+suites at once have frozen the notebook. Take the lock when you run them:
 `flock /tmp/micras-monitor-tests.lock bun run check`.
