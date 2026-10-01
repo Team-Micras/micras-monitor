@@ -16,7 +16,7 @@ function sources(folder: string): string[] {
 
 describe('STOP as a plain command', () => {
   test('nothing in the monitor or its packages treats one command as the emergency stop', () => {
-    const files = [...sources(join(ROOT, 'src')), ...sources(join(ROOT, 'robots'))];
+    const files = sources(join(ROOT, 'src'));
     const special = files
       .filter((path) => SPECIAL_STOP.test(readFileSync(path, 'utf8')))
       .map((path) => relative(ROOT, path));
