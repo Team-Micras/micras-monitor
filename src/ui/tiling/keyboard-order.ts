@@ -1,13 +1,44 @@
+/**
+ * Where the keyboard goes on the desktop: the order Tab visits the windows in, the DOM ids that
+ * tie a window's frame to the controls naming it, and the drawer's search field that typed
+ * characters go to.
+ *
+ * @module
+ */
+
 import { useEffect, useEffectEvent, type RefObject } from 'react';
 
-import type { WindowId } from '@/tiling';
+import type { DesktopWindow, WindowId } from '@/tiling';
 
 import { tabbableIn } from '../shell/focus-trap';
+
+/** Finds the drawer's search field, which the shell sends typed characters to. */
+export const DRAWER_SEARCH_SELECTOR = '[data-drawer-search]';
+
+/** The DOM id of a window's frame, which a splitter names in `aria-controls`. */
+export function windowElementId(id: string): string {
+  return `window-${id}`;
+}
 
 /** The windows Tab visits, in screen order; the gaps between them come after the tiles. */
 export interface ScreenOrder {
   readonly tiled: readonly WindowId[];
   readonly floating: readonly WindowId[];
+}
+
+/**
+ * The windows on screen in the order Tab should reach them: the tiles from the top-left corner
+ * to the bottom-right, row by row, then the floating windows in stacking order. Windows of other
+ * workspaces cannot be reached and are left out.
+ */
+export function screenOrder(windows: readonly DesktopWindow[]): ScreenOrder {
+  return {
+    tiled: windows
+      .filter((entry) => entry.visible && !entry.floating)
+      .toSorted((a, b) => Math.round(a.rect.y) - Math.round(b.rect.y) || a.rect.x - b.rect.x)
+      .map((entry) => entry.id),
+    floating: windows.filter((entry) => entry.visible && entry.floating).map((entry) => entry.id),
+  };
 }
 
 interface Stop {

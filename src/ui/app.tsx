@@ -34,7 +34,7 @@ import { RecordingsContext } from './recordings/recordings-context';
 import { ShownMonitor } from './recordings/shown-monitor';
 import { Announcements } from './shell/announcements';
 import { Announcer } from './shell/announcer';
-import { DRAWER_SEARCH_SELECTOR } from './shell/drawer-selector';
+import { DRAWER_SEARCH_SELECTOR } from './tiling/keyboard-order';
 import {
   LazyCloseWorkspaceDialog,
   LazyLauncher,

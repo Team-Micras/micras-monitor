@@ -8,7 +8,7 @@ import { useLinkUp, useLiveValue, useShownMonitor } from '../monitor-context';
 import { Popover, PopoverContent, PopoverTrigger } from '../primitives/popover';
 import { cn } from '../primitives/utils';
 import { useShellStore } from '../state/shell-store';
-import { windowElementId } from './dom-ids';
+import { windowElementId } from './keyboard-order';
 
 /** How many series the title bar shows before the rest go behind a "+N" button. */
 export const VISIBLE_SERIES = 3;

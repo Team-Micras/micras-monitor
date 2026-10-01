@@ -6,7 +6,7 @@ import { ratioAtPoint, type Gutter } from '@/tiling';
 
 import { cn } from '../primitives/utils';
 import { useShellStore } from '../state/shell-store';
-import { windowElementId } from './dom-ids';
+import { windowElementId } from './keyboard-order';
 import { startPointerDrag } from './pointer-drag';
 
 const KEY_STEP = 0.02;

@@ -13,8 +13,7 @@ import { useShell, useShellStore } from '../state/shell-store';
 import { windowTitle } from '../windows/registry';
 import { CornerHandle } from './corner-handle';
 import { DropPreview } from './drop-preview';
-import { useScreenTabOrder } from './screen-tab-order';
-import { tabOrder } from './tab-order';
+import { screenOrder, useScreenTabOrder } from './keyboard-order';
 import { WindowFrame } from './window-frame';
 
 import type { KeyAction } from '../keyboard/keymap';
@@ -73,11 +72,7 @@ export function TilingView() {
   const focused = focusedWindow(workspace);
   const placed = new Map(layoutDesktop(desktop, metrics).map((entry) => [entry.id, entry]));
   const { gutters } = layoutWorkspace(workspace, metrics);
-  const order = tabOrder([...placed.values()]);
-  useScreenTabOrder(container, {
-    tiled: order.tiled.map((entry) => entry.id),
-    floating: order.floating.map((entry) => entry.id),
-  });
+  useScreenTabOrder(container, screenOrder([...placed.values()]));
   const empty = workspace.root === null && workspace.floating.length === 0;
 
   return (

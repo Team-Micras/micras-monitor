@@ -17,7 +17,7 @@ import { useShell, useShellStore } from '../state/shell-store';
 import { windowKind, windowTitle } from '../windows/registry';
 import { useLinkLive } from '../windows/shared/session-end';
 import type { ShellWindow } from '../windows/types';
-import { windowElementId } from './dom-ids';
+import { windowElementId } from './keyboard-order';
 import { startPointerDrag, surroundingsAt } from './pointer-drag';
 import { SeriesChips } from './series-chips';
 import { WindowErrorBoundary } from './window-error-boundary';
