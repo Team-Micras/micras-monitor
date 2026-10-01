@@ -82,4 +82,18 @@ describe('BoundedLog', () => {
       ['bad sample', 5, undefined],
     ]);
   });
+
+  test('folds a history warning into the newest history entry, whatever the link says between', () => {
+    const log = new BoundedLog();
+
+    log.add(line('run went back in time', 'history', 'warning', 1));
+    log.add(line('bad sample', 'link', 'warning', 2));
+    log.add(line('run went back in time', 'history', 'warning', 3));
+    log.add(line('bad sample', 'link', 'warning', 4));
+
+    expect(log.entries.map((entry) => [entry.source, entry.hostTime, entry.count])).toEqual([
+      ['history', 3, 2],
+      ['link', 4, 2],
+    ]);
+  });
 });

@@ -7,7 +7,7 @@ import { useMonitorState, useShownMonitor } from '../../monitor-context';
 import { Button } from '../../primitives/button';
 import { cn } from '../../primitives/utils';
 import type { WindowViewProps } from '../types';
-import { SEVERITIES, entryTime, filterLog } from './log-filter';
+import { SEVERITIES, entryTime, filterLog, sourceLabel } from './log-filter';
 
 const SEVERITY_DOTS: Readonly<Record<LogSeverity, string>> = {
   debug: 'bg-muted-foreground/50',
@@ -133,9 +133,9 @@ export function LogWindow({ paused }: WindowViewProps) {
                   entry.severity === 'error' && 'text-destructive'
                 )}
               >
-                {entry.source === 'link' ? (
-                  <span className="mr-2 text-muted-foreground">link</span>
-                ) : null}
+                {sourceLabel(entry) === null ? null : (
+                  <span className="mr-2 text-muted-foreground">{sourceLabel(entry)}</span>
+                )}
                 {entry.text}
                 {entry.count === undefined ? null : (
                   <span className="ml-2 text-muted-foreground tabular-nums">×{entry.count}</span>

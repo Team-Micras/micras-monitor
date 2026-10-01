@@ -22,6 +22,11 @@ export function filterLog(entries: readonly LogEntry[], minimum: LogSeverity): r
   return kept.length > SHOWN_ENTRIES ? kept.slice(-SHOWN_ENTRIES) : kept;
 }
 
+/** The name an entry is tagged with: the part of the monitor that noted it, none for the robot. */
+export function sourceLabel(entry: LogEntry): string | null {
+  return entry.source === 'robot' ? null : entry.source;
+}
+
 /**
  * When an entry happened, as the top bar's clock reads: the robot's time on the session timeline
  * for its own lines, the time since the link came up for the link's, or the wall clock without a

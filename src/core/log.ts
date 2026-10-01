@@ -1,5 +1,6 @@
 /**
- * The monitor's log: what the robot logged and what the connection noted, kept to a bound.
+ * The monitor's log: what the robot logged and what the connection and the history noted, kept
+ * to a bound.
  *
  * @module
  */
@@ -14,12 +15,13 @@ export interface LogEntry {
   /** When the monitor got it, in `Date.now()` milliseconds. */
   readonly hostTime: number;
   readonly severity: LogSeverity;
-  /** Whether the robot sent it or the connection noted it. */
-  readonly source: 'robot' | 'link';
+  /** Whether the robot sent it, the connection noted it or the history did. */
+  readonly source: 'robot' | 'link' | 'history';
   readonly text: string;
   /**
-   * How many times the line was noted, when more than once: a link warning noted again is folded
-   * into one entry, so that a fault that repeats on every sample cannot push everything else out.
+   * How many times the line was noted, when more than once: a warning of the link or the history
+   * noted again is folded into one entry, so that a fault that repeats on every sample cannot push
+   * everything else out.
    */
   readonly count?: number;
 }
@@ -28,10 +30,11 @@ export interface LogEntry {
 export const DEFAULT_LOG_LIMIT = 1000;
 
 /**
- * The newest entries of a log, oldest first, as an array that is replaced on every change. A link
- * warning with the text of the newest link entry replaces it at the end, counting both, so a fault
- * that repeats takes one line however many robot lines come between; any other link line in
- * between keeps the order of the link's history, and the warning starts a new entry.
+ * The newest entries of a log, oldest first, as an array that is replaced on every change. A
+ * warning of the link or the history with the text of the newest entry of the same source
+ * replaces it at the end, counting both, so a fault that repeats takes one line however many lines
+ * of other sources come between; any other line of that source in between keeps the order of its
+ * history, and the warning starts a new entry.
  */
 export class BoundedLog {
   readonly #limit: number;
@@ -51,7 +54,7 @@ export class BoundedLog {
 
   /** Adds an entry, letting go of the oldest one when the log is full. */
   add(entry: LogEntry): void {
-    const repeated = foldable(entry) ? this.#newestLinkEntry() : -1;
+    const repeated = foldable(entry) ? this.#newestOf(entry.source) : -1;
 
     if (repeated >= 0 && sameLine(this.#entries[repeated], entry)) {
       const count = (this.#entries[repeated].count ?? 1) + 1;
@@ -63,13 +66,13 @@ export class BoundedLog {
     this.#entries = [...kept, entry];
   }
 
-  #newestLinkEntry(): number {
-    return this.#entries.findLastIndex((kept) => kept.source === 'link');
+  #newestOf(source: LogEntry['source']): number {
+    return this.#entries.findLastIndex((kept) => kept.source === source);
   }
 }
 
 function foldable(entry: LogEntry): boolean {
-  return entry.source === 'link' && entry.severity === 'warning';
+  return entry.source !== 'robot' && entry.severity === 'warning';
 }
 
 function sameLine(a: LogEntry, b: LogEntry): boolean {

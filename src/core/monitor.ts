@@ -143,9 +143,13 @@ function isHistoryProblem(warning: { readonly type: string }): warning is Histor
   return LOGGED_PROBLEMS.has(warning.type);
 }
 
-function problemLog(problem: HistoryProblem, stream: (runId: number) => string): SourceLog {
-  const severity = problem.type === 'persistence-recovered' ? 'info' : 'warning';
-  return { severity, source: 'link', text: problemText(problem, stream) };
+function problemEntry(problem: HistoryProblem, stream: (runId: number) => string): LogEntry {
+  return {
+    hostTime: Date.now(),
+    severity: problem.type === 'persistence-recovered' ? 'info' : 'warning',
+    source: 'history',
+    text: problemText(problem, stream),
+  };
 }
 
 function problemText(problem: HistoryProblem, stream: (runId: number) => string): string {
@@ -209,7 +213,8 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     };
     this.history.onWarning((warning) => {
       if (isHistoryProblem(warning)) {
-        this.#addLog(problemLog(warning, (runId) => this.#streamOf(runId)));
+        this.#log.add(problemEntry(warning, (runId) => this.#streamOf(runId)));
+        this.#update({ log: this.#log.entries });
       }
     });
   }

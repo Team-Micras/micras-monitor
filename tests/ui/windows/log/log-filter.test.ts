@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { LogEntry } from '@/core/log';
-import { entryTime, filterLog, SHOWN_ENTRIES } from '@/ui/windows/log/log-filter';
+import { entryTime, filterLog, SHOWN_ENTRIES, sourceLabel } from '@/ui/windows/log/log-filter';
 
 const entry = (severity: LogEntry['severity'], hostTime = 0): LogEntry => ({
   hostTime,
@@ -37,5 +37,13 @@ describe('entryTime', () => {
     expect(entryTime(entry('info', new Date(2026, 8, 28, 9, 5, 7).getTime()), null)).toBe(
       '09:05:07'
     );
+  });
+});
+
+describe('sourceLabel', () => {
+  test('tags the lines of the link and the history, and none of the robot', () => {
+    expect(sourceLabel({ ...entry('info'), source: 'link' })).toBe('link');
+    expect(sourceLabel({ ...entry('info'), source: 'history' })).toBe('history');
+    expect(sourceLabel({ ...entry('info'), source: 'robot' })).toBeNull();
   });
 });
