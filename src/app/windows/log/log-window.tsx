@@ -39,8 +39,9 @@ function keyOf(entry: LogEntry): number {
 }
 
 /**
- * The robot's LOG lines and the link's events, newest at the bottom, filtered by severity. It
- * follows new lines until scrolled up, and a paused window keeps the lines it had.
+ * The robot's LOG lines and the link's events, newest at the bottom, filtered by severity, with a
+ * count on a link warning noted more than once. It follows new lines until scrolled up, and a
+ * paused window keeps the lines it had.
  */
 export function LogWindow({ paused }: WindowViewProps) {
   const monitor = useShownMonitor();
@@ -111,6 +112,7 @@ export function LogWindow({ paused }: WindowViewProps) {
             <li
               key={keyOf(entry)}
               data-severity={entry.severity}
+              data-count={entry.count}
               className="flex items-baseline gap-3"
             >
               <span className="shrink-0 text-muted-foreground tabular-nums">
@@ -135,6 +137,9 @@ export function LogWindow({ paused }: WindowViewProps) {
                   <span className="mr-2 text-muted-foreground">link</span>
                 ) : null}
                 {entry.text}
+                {entry.count === undefined ? null : (
+                  <span className="ml-2 text-muted-foreground tabular-nums">×{entry.count}</span>
+                )}
               </span>
             </li>
           ))
