@@ -17,7 +17,7 @@ import {
   type SessionLibrary,
   type SessionLocks,
 } from './session-library';
-import { recordedSchema, SessionManager, type RobotDescription } from './session-manager';
+import { SessionManager, type RobotDescription } from './session-manager';
 import { startStorageWorker } from './storage-worker';
 
 interface NavigatorLike {
@@ -67,7 +67,7 @@ export function describeRobot(ports: MonitorPorts): RobotDescription {
       schemaHash: identity?.schemaHash ?? null,
       transport: 'target' in status ? status.target.transport : null,
     },
-    schema: recordedSchema(ports.schema.variables()),
+    schema: ports.schema.variables(),
   };
 }
 

@@ -1,7 +1,8 @@
 import { CheckIcon, CircleAlertIcon, LoaderCircleIcon, RefreshCwIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
-import type { TypeCode } from '@/protocol';
+import { bitSet, integerValue, sameInteger, withBit, type IntegerValue } from '@/core/integers';
+import type { ValueType } from '@/core/variables';
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -11,7 +12,6 @@ import { useLinkUp, useLiveValue, useMonitor } from '../../monitor-context';
 import type { WriteOutcome, WriteValue } from '../../ports';
 import { CoalescedReads } from '../type-view/coalesced-reads';
 import { usePresentedVariables, type PresentedVariable } from '../shared/presented-variables';
-import { bitSet, integerValue, sameInteger, withBit, type IntegerValue } from '../shared/bits';
 import { formatReading } from '../shared/readings';
 import type { WindowViewProps } from '../types';
 import {
@@ -166,7 +166,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
         type={variable.type}
         onWrite={write}
       />
-      {variable.access.idle && writable ? (
+      {variable.access.writeNeedsIdle && writable ? (
         <p className="text-xs text-muted-foreground">Takes writes only while the robot is idle.</p>
       ) : null}
       <WriteNote
@@ -199,7 +199,7 @@ function Control({
   readonly confirmed: IntegerValue | undefined;
   readonly pending: IntegerValue | undefined;
   readonly disabled: boolean;
-  readonly type: TypeCode;
+  readonly type: ValueType;
   readonly onWrite: (value: WriteValue) => void;
 }) {
   switch (control.kind) {

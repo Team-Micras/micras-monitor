@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 
+import type { Variable } from '@/core/variables';
 import { presentVariable } from '@/robot-kit';
 
 import { formatValue } from '../lib/format';
 import { useLiveValue, useRobotPackage, useVariables } from '../monitor-context';
-import type { RobotVariable } from '../ports';
 import type { WindowViewProps } from './types';
 
 /**
@@ -46,7 +46,7 @@ function VariableList({
   );
 }
 
-function PlaceholderRow({ variable }: { readonly variable: RobotVariable }) {
+function PlaceholderRow({ variable }: { readonly variable: Variable }) {
   const value = useLiveValue(variable.name)?.value;
   const selection = useRobotPackage();
   const { unit } = presentVariable(selection?.package ?? null, variable);

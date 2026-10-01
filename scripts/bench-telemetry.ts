@@ -11,7 +11,6 @@
  * Run with `bun run bench:telemetry`; it exits with 1 if a target is missed.
  */
 
-import { TypeCode } from '../src/protocol';
 import {
   type Decimation,
   historyWindow,
@@ -24,7 +23,7 @@ const MB = 1024 * 1024;
 const PIXELS = 1600;
 
 function variables(first: number, count: number): VariableSpec[] {
-  return Array.from({ length: count }, (_, index) => ({ id: first + index, type: TypeCode.F32 }));
+  return Array.from({ length: count }, (_, index) => ({ id: first + index, type: 'f32' }));
 }
 
 function fill(

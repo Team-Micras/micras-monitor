@@ -101,7 +101,7 @@ describe('LiveRobot against the simulated robot', () => {
     expect(status.kind === 'linked' && status.since).toBeGreaterThan(0);
     await waitFor(() => live.ports.schema.variables().length > 0, 2000, 'the schema');
     expect(live.ports.schema.variables().map((variable) => variable.name)).toContain('maze');
-    expect(live.ports.schema.variables().find((v) => v.name === 'maze')?.typeTag).not.toBeNull();
+    expect(live.ports.schema.variables().find((v) => v.name === 'maze')?.tag).toBe('maze-grid');
     expect(live.ports.connection.status()).toBe(live.ports.connection.status());
   });
 

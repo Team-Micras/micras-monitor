@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode, decodeAccess } from '@/protocol';
+import type { ValueType, Variable } from '@/core/variables';
 import { mouse } from '@tests/support/robot-kit/packages';
 import { phonePlan, planWindows } from '@/app/phone/phone-plan';
-import type { RobotVariable } from '@/app/ports';
 
 import { micras } from '@robots/micras';
 
@@ -11,23 +10,28 @@ let nextId = 0;
 
 function variable(
   name: string,
-  type: TypeCode = TypeCode.F32,
-  access = decodeAccess(0x01)
-): RobotVariable {
+  type: ValueType = 'f32',
+  access = { stream: true, write: false, writeNeedsIdle: false, persists: false }
+): Variable {
   nextId += 1;
-  return { id: nextId, name, type, access, typeTag: null };
+  return { id: nextId, name, type, access };
 }
 
-const MICRAS_SCHEMA: readonly RobotVariable[] = [
-  variable('state', TypeCode.U8),
+const MICRAS_SCHEMA: readonly Variable[] = [
+  variable('state', 'u8'),
   variable('battery_voltage'),
   variable('pose/linear_speed'),
   variable('reference/linear_speed'),
   variable('pose/orientation'),
   variable('wall/0'),
-  variable('objective', TypeCode.U8, decodeAccess(0x07)),
-  variable('run_profile', TypeCode.U8, decodeAccess(0x03)),
-  variable('maze', TypeCode.BLOB, decodeAccess(0x08)),
+  variable('objective', 'u8', { stream: true, write: true, writeNeedsIdle: true, persists: false }),
+  variable('run_profile', 'u8', {
+    stream: true,
+    write: true,
+    writeNeedsIdle: false,
+    persists: false,
+  }),
+  variable('maze', 'bytes', { stream: false, write: false, writeNeedsIdle: false, persists: true }),
 ];
 
 describe('phonePlan', () => {
@@ -55,7 +59,14 @@ describe('phonePlan', () => {
   });
 
   test('never offers the state variable as a setting', () => {
-    const schema = [variable('state', TypeCode.U8, decodeAccess(0x03))];
+    const schema = [
+      variable('state', 'u8', {
+        stream: true,
+        write: true,
+        writeNeedsIdle: false,
+        persists: false,
+      }),
+    ];
     const plan = phonePlan(mouse(), schema);
 
     expect(plan.settings).toBeNull();
@@ -63,9 +74,14 @@ describe('phonePlan', () => {
 
   test('shows an unknown robot its first streamed numbers and nothing it cannot draw', () => {
     const schema = [
-      variable('flag', TypeCode.BOOL),
-      variable('blob', TypeCode.BLOB),
-      variable('hidden', TypeCode.F32, decodeAccess(0x00)),
+      variable('flag', 'bool'),
+      variable('blob', 'bytes'),
+      variable('hidden', 'f32', {
+        stream: false,
+        write: false,
+        writeNeedsIdle: false,
+        persists: false,
+      }),
       variable('speed'),
       variable('turn'),
       variable('lift'),

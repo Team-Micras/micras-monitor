@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
-
 import { crc32 } from '@/telemetry/crc32';
 import {
   decodeBlock,
@@ -25,15 +23,23 @@ import {
 
 const RECORD_KIND_BOUNDARY = 4;
 
+const STREAM = { stream: true, write: false, writeNeedsIdle: false, persists: false };
+
 const HEADER: RecordingHeader = {
   format: RECORDING_FORMAT,
   version: RECORDING_FORMAT_VERSION,
   startedAtMs: 1_790_000_000_000,
   robot: { name: 'micras', bootId: 3_735_928_559, schemaHash: '9f1c', simulated: false },
   schema: [
-    { id: 0, name: 'odometry/velocity', type: TypeCode.F32, access: 0x01 },
-    { id: 1, name: 'localizer/accepted', type: TypeCode.U32, access: 0x01 },
-    { id: 2, name: 'maze', type: TypeCode.BLOB },
+    { id: 0, name: 'odometry/velocity', type: 'f32', access: STREAM },
+    { id: 1, name: 'localizer/accepted', type: 'u32', access: STREAM },
+    {
+      id: 2,
+      name: 'maze',
+      type: 'bytes',
+      access: { stream: false, write: false, writeNeedsIdle: false, persists: true },
+      tag: 'maze-grid',
+    },
   ],
 };
 
@@ -44,8 +50,8 @@ const RECORDS: readonly RecordingRecord[] = [
       epochId: 1,
       groupId: 0,
       variables: [
-        { id: 0, name: 'odometry/velocity', type: TypeCode.F32 },
-        { id: 1, name: 'localizer/accepted', type: TypeCode.U32 },
+        { id: 0, name: 'odometry/velocity', type: 'f32' },
+        { id: 1, name: 'localizer/accepted', type: 'u32' },
       ],
     },
   },
@@ -98,7 +104,6 @@ const RECORDS: readonly RecordingRecord[] = [
   },
   { kind: 'value', value: { variableId: 7, name: 'n', timeUs: Number.NaN, value: -(2n ** 63n) } },
   { kind: 'value', value: { variableId: 8, name: 'ok', timeUs: 1, value: true } },
-  { kind: 'value', value: { variableId: 9, name: 'label', timeUs: 1, value: 'árvore' } },
   { kind: 'value', value: { variableId: 10, name: 'x', timeUs: 1, value: -0.5 } },
 ];
 
@@ -163,14 +168,35 @@ describe('recording format v1', () => {
     expect(deserializeRecording(bytes)).toEqual({ header: HEADER, records: [] });
   });
 
-  test('refuses what is not a version 1 recording', () => {
-    const future = withHeader(JSON.stringify({ ...HEADER, version: 2 }));
+  test('refuses what is not a recording, or has a malformed header', () => {
     const malformed = withHeader(JSON.stringify({ ...HEADER, schema: [{ id: 'x' }] }));
+    const coded = withHeader(
+      JSON.stringify({ ...HEADER, schema: [{ id: 0, name: 'x', type: 9, access: STREAM }] })
+    );
 
     expect(() => deserializeRecording(new Uint8Array(20))).toThrow('Not a monitor recording');
-    expect(() => deserializeRecording(future)).toThrow('version 2');
     expect(() => deserializeRecording(malformed)).toThrow('malformed');
+    expect(() => deserializeRecording(coded)).toThrow('malformed');
     expect(() => encodeRecordingHeader({ ...HEADER, startedAtMs: Number.NaN })).toThrow(RangeError);
+  });
+
+  test('refuses a recording of any other version, saying which it is', () => {
+    const older = withHeader(
+      JSON.stringify({
+        ...HEADER,
+        version: 1,
+        schema: [{ id: 0, name: 'odometry/velocity', type: 9, access: 1 }],
+      })
+    );
+    const newer = withHeader(JSON.stringify({ ...HEADER, version: RECORDING_FORMAT_VERSION + 1 }));
+
+    expect(RECORDING_FORMAT_VERSION).toBe(2);
+    expect(() => deserializeRecording(older)).toThrow(
+      'The recording is in format version 1; this monitor reads only version 2'
+    );
+    expect(() => deserializeRecording(newer)).toThrow(
+      'The recording is in format version 3; this monitor reads only version 2'
+    );
   });
 
   test('keeps the whole records of a recording cut short or damaged at its end', () => {

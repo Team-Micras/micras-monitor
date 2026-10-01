@@ -4,9 +4,8 @@
  * @module
  */
 
-import { TypeCode, decodeAccess } from '@/protocol';
-
-import type { RobotPackage, SchemaVariable, SerializableType } from '@/robot-kit/types';
+import type { ValueType, Variable } from '@/core/variables';
+import type { RobotPackage, SerializableType } from '@/robot-kit/types';
 
 /** A grid decoded from its bytes, drawn as a string. */
 export const GRID: SerializableType<readonly number[], string> = {
@@ -70,11 +69,13 @@ export function sumo(overrides: Partial<RobotPackage<string>> = {}): RobotPackag
   };
 }
 
-/** A schema entry of a streamed variable. */
-export function variable(
-  name: string,
-  type: TypeCode,
-  typeTag: string | null = null
-): SchemaVariable {
-  return { name, type, access: decodeAccess(0x01), typeTag };
+let nextId = 0;
+
+/** A streamed variable, with a fresh id. */
+export function variable(name: string, type: ValueType, tag?: string): Variable {
+  nextId += 1;
+  const access = { stream: true, write: false, writeNeedsIdle: false, persists: false };
+  return tag === undefined
+    ? { id: nextId, name, type, access }
+    : { id: nextId, name, type, access, tag };
 }

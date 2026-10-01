@@ -131,3 +131,18 @@ export function decodeAccess(bits: number): Access {
     persist: (bits & 0x08) !== 0,
   };
 }
+
+/**
+ * Pack access flags into the byte a schema entry carries, as `Access::to_byte` does.
+ *
+ * @param access The flags.
+ * @returns The byte that stands for them.
+ */
+export function encodeAccess(access: Access): number {
+  return (
+    Number(access.stream) |
+    (Number(access.write) << 1) |
+    (Number(access.idle) << 2) |
+    (Number(access.persist) << 3)
+  );
+}

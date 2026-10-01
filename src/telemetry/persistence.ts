@@ -4,7 +4,7 @@ import type {
   RecordedEpoch,
   RecordedGap,
   RecordedValue,
-  SchemaEntry,
+  HistoryVariable,
 } from './types';
 
 /**
@@ -89,7 +89,7 @@ export interface StoredEpoch {
  */
 export interface StoredSession {
   /** The robot's schema when the session was recorded. */
-  readonly schema: readonly SchemaEntry[];
+  readonly schema: readonly HistoryVariable[];
 
   /** Every epoch, in the order they opened. */
   readonly epochs: readonly StoredEpoch[];

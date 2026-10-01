@@ -1,19 +1,17 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { TypeCode } from '@/protocol';
-
 import { Block } from '@/telemetry/block';
 import { referenceDecimation, type ReferenceSample } from '@tests/support/telemetry/reference';
 import type { BlockPersistence, BlockRef, PersistedBlock } from '@/telemetry/persistence';
 import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
-import type { TelemetryEvent } from '@/telemetry/types';
+import type { TelemetryEvent, VariableSpec } from '@/telemetry/types';
 import { MemoryBlockPersistence } from '@tests/support/telemetry/memory-persistence';
 import { ManualScheduler } from '@/telemetry';
 
 const BLOCK_SIZE = 1024;
-const VARIABLES = [
-  { id: 1, type: TypeCode.F32 },
-  { id: 2, type: TypeCode.F64 },
+const VARIABLES: readonly VariableSpec[] = [
+  { id: 1, type: 'f32' },
+  { id: 2, type: 'f64' },
 ];
 const BLOCK_BYTES = Block.byteLengthFor({ capacity: BLOCK_SIZE, kinds: ['f32', 'f64'] });
 
@@ -496,8 +494,8 @@ describe('writing while recording', () => {
       epochId: 2,
       groupId: 1,
       variables: [
-        { id: 3, type: TypeCode.F32 },
-        { id: 4, type: TypeCode.F64 },
+        { id: 3, type: 'f32' },
+        { id: 4, type: 'f64' },
       ],
     });
     other(0, BLOCK_SIZE);
@@ -540,7 +538,7 @@ describe('writing while recording', () => {
     const { store } = cappedStore(2);
     store.startRecording(failing);
     await streamBlocks(store, 0, 3);
-    store.openEpoch({ epochId: 2, groupId: 1, variables: [{ id: 3, type: TypeCode.F32 }] });
+    store.openEpoch({ epochId: 2, groupId: 1, variables: [{ id: 3, type: 'f32' }] });
 
     for (let index = 0; index < 5; index++) {
       store.append(2, index, 10_000_000 + index, [1]);
@@ -555,7 +553,7 @@ describe('writing while recording', () => {
 describe('short epochs', () => {
   test('take little memory, because an epoch starts with a small block', () => {
     const store = new TelemetryStore({ scheduler: new ManualScheduler() });
-    const variables = Array.from({ length: 16 }, (_, id) => ({ id, type: TypeCode.F32 }));
+    const variables = Array.from({ length: 16 }, (_, id): VariableSpec => ({ id, type: 'f32' }));
     const row = Array.from({ length: 16 }, () => 1);
 
     for (let epoch = 0; epoch < 50; epoch++) {

@@ -7,15 +7,10 @@
 
 import { createContext, use, useSyncExternalStore, type ReactNode } from 'react';
 
+import type { Variable } from '@/core/variables';
 import type { PackageSelection, RobotPackage, RobotRegistry } from '@/robot-kit';
 
-import type {
-  ConnectionStatus,
-  LatestValue,
-  MonitorPorts,
-  RobotVariable,
-  ValuesPort,
-} from './ports';
+import type { ConnectionStatus, LatestValue, MonitorPorts, ValuesPort } from './ports';
 
 /** The robot a window draws with, a React package. */
 export type ReactRobotPackage = RobotPackage<ReactNode>;
@@ -76,7 +71,7 @@ export function useLinkUp(): boolean {
 }
 
 /** The variables of the connected robot's schema, rendering again when it changes. */
-export function useVariables(): readonly RobotVariable[] {
+export function useVariables(): readonly Variable[] {
   const { schema } = useMonitor().ports;
   return useSyncExternalStore(
     (listener) => schema.subscribe(listener),

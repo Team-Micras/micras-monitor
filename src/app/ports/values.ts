@@ -5,9 +5,9 @@
  * @module
  */
 
-import type { LatestValue, TelemetryValue } from '@/telemetry';
+import type { LatestValue } from '@/telemetry';
 
-export type { LatestValue, TelemetryValue };
+export type { LatestValue };
 
 /** How the shell names a variable: by name, followed across schema changes, or by current id. */
 export type ValueRef = string | number;

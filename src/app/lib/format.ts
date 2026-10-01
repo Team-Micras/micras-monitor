@@ -4,13 +4,13 @@
  * @module
  */
 
-import type { TelemetryValue } from '../ports';
+import type { Value } from '@/core/variables';
 
 /**
  * A value as a readout shows it: integers whole, other numbers with three decimals, 64 bit
  * integers with every digit, blobs by size.
  */
-export function formatValue(value: TelemetryValue | undefined): string {
+export function formatValue(value: Value | undefined): string {
   if (value === undefined) {
     return '—';
   }

@@ -5,7 +5,7 @@
  * @module
  */
 
-import { TypeCode, typeName } from '@/protocol';
+import { isInteger, typeLabel, type Variable } from '@/core/variables';
 
 import type {
   BitFlag,
@@ -14,24 +14,15 @@ import type {
   EnumType,
   RobotPackage,
   Role,
-  SchemaVariable,
   SerializableType,
 } from './types';
 
-const INTEGER_TYPES: ReadonlySet<TypeCode> = new Set([
-  TypeCode.U8,
-  TypeCode.I8,
-  TypeCode.U16,
-  TypeCode.I16,
-  TypeCode.U32,
-  TypeCode.I32,
-  TypeCode.U64,
-  TypeCode.I64,
-]);
-
 /** How to show one variable, from its schema entry and what the package adds. */
 export interface VariablePresentation<Node = unknown> {
-  /** The type as people read it: the serializable, enum or bitmask name, else the wire type. */
+  /**
+   * The type as people read it: the serializable, enum or bitmask name, else the label of its
+   * value type.
+   */
   readonly typeLabel: string;
   readonly unit: string | null;
   readonly description: string | null;
@@ -49,15 +40,15 @@ export interface VariablePresentation<Node = unknown> {
  */
 export function presentVariable<Node>(
   pkg: RobotPackage<Node> | null,
-  variable: SchemaVariable
+  variable: Variable
 ): VariablePresentation<Node> {
   const spec = pkg?.variables[variable.name];
-  const blob = variable.type === TypeCode.BLOB;
-  const tag = blob ? (variable.typeTag ?? spec?.serializable ?? null) : null;
+  const blob = variable.type === 'bytes';
+  const tag = blob ? (variable.tag ?? spec?.serializable ?? null) : null;
   const serializable = tag === null ? null : (pkg?.types.find((type) => type.tag === tag) ?? null);
-  const labels = INTEGER_TYPES.has(variable.type) ? (spec?.labels ?? null) : null;
+  const labels = isInteger(variable.type) ? (spec?.labels ?? null) : null;
   return {
-    typeLabel: serializable?.name ?? labels?.name ?? tag ?? typeName(variable.type),
+    typeLabel: serializable?.name ?? labels?.name ?? tag ?? typeLabel(variable.type),
     unit: spec?.unit ?? null,
     description: spec?.description ?? null,
     color: spec?.color ?? null,

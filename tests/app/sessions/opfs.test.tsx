@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
-import { TypeCode, decodeAccess } from '@/protocol';
+import type { Variable } from '@/core/variables';
 import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import { MessageTransport, OpfsSessionLibrary } from '@/app/sessions/opfs-library';
 import { MemoryLocks, WebLocks } from '@/app/sessions/session-library';
-import { recordedSchema, SessionManager } from '@/app/sessions/session-manager';
+import { SessionManager } from '@/app/sessions/session-manager';
 
 const SAMPLE_US = 10_000;
-const VARIABLES = [
-  { id: 0, name: 'pose/x', type: TypeCode.F32, access: decodeAccess(0x01), typeTag: null },
+const VARIABLES: readonly Variable[] = [
+  {
+    id: 0,
+    name: 'pose/x',
+    type: 'f32',
+    access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
+  },
 ];
 
 const workers: Worker[] = [];
@@ -30,7 +35,7 @@ function tab(clock: { ms: number }) {
   store.openEpoch({
     epochId: 1,
     groupId: 0,
-    variables: [{ id: 0, type: TypeCode.F32 }],
+    variables: [{ id: 0, type: 'f32' }],
     firstSequence: 0,
   });
   const manager = new SessionManager({
@@ -42,7 +47,7 @@ function tab(clock: { ms: number }) {
     describe: () => ({
       name: 'micras',
       robot: { name: 'micras' },
-      schema: recordedSchema(VARIABLES),
+      schema: VARIABLES,
     }),
   });
   return { worker, store, manager };

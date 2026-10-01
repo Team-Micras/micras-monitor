@@ -6,8 +6,7 @@
  * @module
  */
 
-import { TypeCode } from '@/protocol';
-import type { SchemaVariable } from '@/robot-kit';
+import { isFloat, type Variable } from '@/core/variables';
 import {
   createDesktop,
   createWorkspace,
@@ -46,15 +45,11 @@ interface Panel {
 
 interface Group {
   readonly title: string;
-  readonly variables: readonly SchemaVariable[];
+  readonly variables: readonly Variable[];
 }
 
-function isFloat({ type }: SchemaVariable): boolean {
-  return type === TypeCode.F32 || type === TypeCode.F64;
-}
-
-function isBlob({ type }: SchemaVariable): boolean {
-  return type === TypeCode.BLOB;
+function isBlob({ type }: Variable): boolean {
+  return type === 'bytes';
 }
 
 function chunks<T>(items: readonly T[], size: number): T[][] {
@@ -68,8 +63,8 @@ function groupTitle(prefix: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function groupsOf(variables: readonly SchemaVariable[]): Group[] {
-  const groups = new Map<string, SchemaVariable[]>();
+function groupsOf(variables: readonly Variable[]): Group[] {
+  const groups = new Map<string, Variable[]>();
 
   for (const variable of variables) {
     const slash = variable.name.indexOf('/');
@@ -80,15 +75,18 @@ function groupsOf(variables: readonly SchemaVariable[]): Group[] {
   return [...groups].map(([title, members]) => ({ title, variables: members }));
 }
 
-function namesOf(members: readonly SchemaVariable[]): string[] {
+function namesOf(members: readonly Variable[]): string[] {
   return members.map(({ name }) => name);
 }
 
 function panelsOf({ title, variables }: Group): Panel[] {
-  const plotted = variables.filter((variable) => variable.access.stream && isFloat(variable));
+  const plotted = variables.filter((variable) => variable.access.stream && isFloat(variable.type));
   const counted = variables.filter(
     (variable) =>
-      variable.access.stream && !isFloat(variable) && !isBlob(variable) && !variable.access.write
+      variable.access.stream &&
+      !isFloat(variable.type) &&
+      !isBlob(variable) &&
+      !variable.access.write
   );
   const written = variables.filter((variable) => variable.access.write && !isBlob(variable));
 
@@ -201,7 +199,7 @@ function sheetName({ titles }: Sheet): string {
  *
  * It depends only on the schema, so the same schema always gives the same desktop.
  */
-export function autoLayout(variables: readonly SchemaVariable[]): Desktop<WindowPayload> {
+export function autoLayout(variables: readonly Variable[]): Desktop<WindowPayload> {
   const windows: ShellWindow[] = [];
   const nextWindow = (panel: Panel): string => {
     const id = `${panel.kind}-${windows.length + 1}`;

@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode, decodeAccess } from '@/protocol';
-import type { SchemaVariable } from '@/robot-kit';
+import type { ValueType, Variable } from '@/core/variables';
 import { leafIds, windowIds } from '@/tiling';
 
 import {
@@ -13,25 +12,28 @@ import {
   MAX_WINDOWS_PER_WORKSPACE,
 } from '@/app/layouts/auto-layout';
 
-const STREAM = decodeAccess(0x01);
-const STREAM_WRITE = decodeAccess(0x03);
-const PERSIST = decodeAccess(0x08);
-const NONE = decodeAccess(0x00);
+const STREAM = { stream: true, write: false, writeNeedsIdle: false, persists: false };
+const STREAM_WRITE = { stream: true, write: true, writeNeedsIdle: false, persists: false };
+const PERSIST = { stream: false, write: false, writeNeedsIdle: false, persists: true };
+const NONE = { stream: false, write: false, writeNeedsIdle: false, persists: false };
 
-function variable(name: string, type: TypeCode = TypeCode.F32, access = STREAM): SchemaVariable {
-  return { name, type, access, typeTag: null };
+let nextId = 0;
+
+function variable(name: string, type: ValueType = 'f32', access = STREAM): Variable {
+  nextId += 1;
+  return { id: nextId, name, type, access };
 }
 
 function series(
   prefix: string,
   count: number,
-  type = TypeCode.F32,
+  type: ValueType = 'f32',
   access = STREAM
-): SchemaVariable[] {
+): Variable[] {
   return Array.from({ length: count }, (_, index) => variable(`${prefix}/v${index}`, type, access));
 }
 
-function summary(variables: readonly SchemaVariable[]) {
+function summary(variables: readonly Variable[]) {
   const desktop = autoLayout(variables);
   return desktop.workspaces.map((workspace) => ({
     name: workspace.name,
@@ -54,10 +56,10 @@ describe('the automatic layout', () => {
     const layout = summary([
       variable('pose/x'),
       variable('pose/y'),
-      variable('pose/steps', TypeCode.U32),
-      variable('gain', TypeCode.F32, STREAM_WRITE),
-      variable('maze', TypeCode.BLOB, PERSIST),
-      variable('state', TypeCode.U8),
+      variable('pose/steps', 'u32'),
+      variable('gain', 'f32', STREAM_WRITE),
+      variable('maze', 'bytes', PERSIST),
+      variable('state', 'u8'),
     ]);
     expect(layout).toEqual([
       { name: 'Overview', windows: ['link::', 'log::'] },
@@ -71,10 +73,10 @@ describe('the automatic layout', () => {
 
   test('puts the variables without a prefix in General, and a blob in a type view of its own', () => {
     const layout = summary([
-      variable('state', TypeCode.U8),
-      variable('battery', TypeCode.F32),
-      variable('objective', TypeCode.U8, STREAM_WRITE),
-      variable('maze', TypeCode.BLOB, PERSIST),
+      variable('state', 'u8'),
+      variable('battery', 'f32'),
+      variable('objective', 'u8', STREAM_WRITE),
+      variable('maze', 'bytes', PERSIST),
     ]);
     expect(layout[1]).toEqual({
       name: 'General',
@@ -89,8 +91,8 @@ describe('the automatic layout', () => {
 
   test('leaves out what cannot be shown live and cannot be written', () => {
     const layout = summary([
-      variable('cal/scale', TypeCode.F32, NONE),
-      variable('cal/valid', TypeCode.BOOL, PERSIST),
+      variable('cal/scale', 'f32', NONE),
+      variable('cal/valid', 'bool', PERSIST),
     ]);
     expect(layout).toHaveLength(1);
   });
@@ -98,7 +100,7 @@ describe('the automatic layout', () => {
   test('splits a long group into plots, readouts and editors of a few variables', () => {
     const variables = [
       ...series('wall', MAX_PLOT_VARIABLES + 1),
-      ...series('count', MAX_READOUT_VARIABLES + 1, TypeCode.U32),
+      ...series('count', MAX_READOUT_VARIABLES + 1, 'u32'),
     ];
     const windows = autoLayout(variables).windows;
     const kinds = [...windows.values()].map((window) => [
@@ -111,9 +113,7 @@ describe('the automatic layout', () => {
     expect(kinds).toContainEqual(['readouts', 1]);
 
     const editors = [
-      ...autoLayout(
-        series('cfg', MAX_EDITOR_VARIABLES + 1, TypeCode.F32, STREAM_WRITE)
-      ).windows.values(),
+      ...autoLayout(series('cfg', MAX_EDITOR_VARIABLES + 1, 'f32', STREAM_WRITE)).windows.values(),
     ]
       .filter((window) => window.kind === 'editor')
       .map((window) => window.payload.variables.length);
@@ -169,7 +169,7 @@ describe('the automatic layout', () => {
     const variables = [
       ...series('pose', 6),
       ...series('imu', 3),
-      variable('maze', TypeCode.BLOB, PERSIST),
+      variable('maze', 'bytes', PERSIST),
     ];
     const first = autoLayout(variables);
     expect(autoLayout(variables)).toEqual(first);

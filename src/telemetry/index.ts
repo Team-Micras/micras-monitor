@@ -2,7 +2,7 @@
  * Every sample of the session in memory, and what the interface reads from it: latest values,
  * sample runs, decimated windows for the plots, gaps, and the recording format.
  *
- * It depends only on the protocol's types. The session feeds it through its own ingestion API,
+ * It depends only on the model of `src/core`. The session feeds it through its own ingestion API,
  * and the application gives it a scheduler, so it runs the same in the browser, in Node and in
  * tests.
  *
@@ -47,7 +47,6 @@ export {
   type RecordingHeader,
   type RecordingRecord,
   type RecordingScan,
-  type RecordingVariable,
   type LocatedRecord,
 } from './recording';
 export { ManualScheduler, type Scheduler } from './scheduler';
@@ -83,10 +82,9 @@ export type {
   RecordedValue,
   SampleRun,
   SampleValue,
-  SchemaEntry,
+  HistoryVariable,
   StoreStatus,
   TelemetryEvent,
-  TelemetryValue,
   TimeRange,
   VariableRef,
   VariableSpec,

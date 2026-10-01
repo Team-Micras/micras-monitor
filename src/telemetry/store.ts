@@ -1,4 +1,4 @@
-import type { TypeCode } from '@/protocol';
+import type { Value, ValueType } from '@/core/variables';
 
 import type { Block } from './block';
 import { ChannelRegistry } from './channels';
@@ -29,10 +29,9 @@ import type {
   RecordedEpoch,
   SampleRun,
   SampleValue,
-  SchemaEntry,
+  HistoryVariable,
   StoreStatus,
   TelemetryEvent,
-  TelemetryValue,
   TimeRange,
   VariableRef,
 } from './types';
@@ -91,7 +90,7 @@ export interface VariableInfo {
   readonly name: string;
 
   /** Its type, once known. */
-  readonly type: TypeCode | undefined;
+  readonly type: ValueType | undefined;
 
   /** How its history is stored, or `none` for blobs. */
   readonly storage: ColumnKind | 'none' | undefined;
@@ -239,7 +238,7 @@ export class TelemetryStore {
    * @param entries Every variable of the schema.
    * @param timeUs When the schema took effect; the latest sample's time by default.
    */
-  setSchema(entries: readonly SchemaEntry[], timeUs = this.clockUs): void {
+  setSchema(entries: readonly HistoryVariable[], timeUs = this.clockUs): void {
     if (this.registry.setSchema(entries) && Number.isFinite(timeUs)) {
       this.addBoundary('schema', timeUs);
     }
@@ -357,12 +356,7 @@ export class TelemetryStore {
    * @param values One value per variable, in the epoch's order.
    * @throws If the epoch is not open or the number of values is wrong.
    */
-  append(
-    epochId: number,
-    sequence: number,
-    timeUs: number,
-    values: ArrayLike<TelemetryValue>
-  ): void {
+  append(epochId: number, sequence: number, timeUs: number, values: ArrayLike<Value>): void {
     const { epoch, records } = this.openEpochOf(epochId);
 
     if (values.length !== records.length) {
@@ -425,7 +419,7 @@ export class TelemetryStore {
    * @param value The value as decoded.
    * @param timeUs When it was sampled, if known.
    */
-  setLatestValue(variableId: number, value: TelemetryValue, timeUs?: number): void {
+  setLatestValue(variableId: number, value: Value, timeUs?: number): void {
     const record = this.registry.recordFor(
       this.registry.nameOf(variableId),
       this.registry.typeOf(variableId)
@@ -1028,7 +1022,7 @@ export class TelemetryStore {
     return open;
   }
 
-  private checkPrecision(record: VariableRecord, wide: boolean, value: TelemetryValue): void {
+  private checkPrecision(record: VariableRecord, wide: boolean, value: Value): void {
     if (wide && !record.precisionLost && losesPrecision(value)) {
       record.precisionLost = true;
       this.emit({ type: 'precision-loss', name: record.name });
@@ -1109,7 +1103,7 @@ export class TelemetryStore {
   private ingestValue(
     record: VariableRecord,
     variableId: number,
-    value: TelemetryValue,
+    value: Value,
     timeUs: number
   ): void {
     if (this.ingestionListeners.size > 0) {

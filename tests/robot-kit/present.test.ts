@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
-
 import { GRID, mouse, variable } from '@tests/support/robot-kit/packages';
 import {
   acceptedIn,
@@ -20,8 +18,8 @@ import {
 const pkg = mouse();
 
 describe('presenting a variable', () => {
-  test('raw mode shows the wire type and nothing else', () => {
-    expect(presentVariable(null, variable('battery', TypeCode.F32))).toEqual({
+  test('raw mode shows the value type and nothing else', () => {
+    expect(presentVariable(null, variable('battery', 'f32'))).toEqual({
       typeLabel: 'f32',
       unit: null,
       description: null,
@@ -32,35 +30,35 @@ describe('presenting a variable', () => {
   });
 
   test('a known variable gets its unit, description and color', () => {
-    const presentation = presentVariable(pkg, variable('battery', TypeCode.F32));
+    const presentation = presentVariable(pkg, variable('battery', 'f32'));
     expect(presentation).toMatchObject({ unit: 'V', description: 'Pack voltage', color: 'red' });
   });
 
   test('an integer variable with labels is named by them', () => {
-    const presentation = presentVariable(pkg, variable('state', TypeCode.U8));
+    const presentation = presentVariable(pkg, variable('state', 'u8'));
     expect(presentation.typeLabel).toBe('State');
     expect(presentation.labels?.kind).toBe('enum');
   });
 
   test('labels do not apply to a variable that is not an integer', () => {
-    const presentation = presentVariable(pkg, variable('state', TypeCode.F32));
+    const presentation = presentVariable(pkg, variable('state', 'f32'));
     expect(presentation.labels).toBeNull();
     expect(presentation.typeLabel).toBe('f32');
   });
 
   test("a blob is typed by the schema's tag first", () => {
-    const presentation = presentVariable(pkg, variable('other', TypeCode.BLOB, 'grid'));
+    const presentation = presentVariable(pkg, variable('other', 'bytes', 'grid'));
     expect(presentation.serializable).toBe(GRID);
     expect(presentation.typeLabel).toBe('Grid');
   });
 
   test('a blob without a tag is typed by the package', () => {
-    expect(presentVariable(pkg, variable('grid', TypeCode.BLOB)).serializable).toBe(GRID);
+    expect(presentVariable(pkg, variable('grid', 'bytes')).serializable).toBe(GRID);
   });
 
-  test('a blob of an unknown type shows its tag, or the wire type without one', () => {
-    expect(presentVariable(pkg, variable('x', TypeCode.BLOB, 'lidar')).typeLabel).toBe('lidar');
-    expect(presentVariable(null, variable('x', TypeCode.BLOB)).typeLabel).toBe('blob');
+  test('a blob of an unknown type shows its tag, or the value type without one', () => {
+    expect(presentVariable(pkg, variable('x', 'bytes', 'lidar')).typeLabel).toBe('lidar');
+    expect(presentVariable(null, variable('x', 'bytes')).typeLabel).toBe('blob');
   });
 });
 

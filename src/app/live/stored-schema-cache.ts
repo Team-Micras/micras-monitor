@@ -5,7 +5,7 @@
  * @module
  */
 
-import { decodeAccess, TypeCode, type Access } from '@/protocol';
+import { decodeAccess, encodeAccess, TypeCode } from '@/protocol';
 import type { SchemaCache, SchemaEntry } from '@/link';
 
 /** The part of `localStorage` the cache uses. */
@@ -22,15 +22,6 @@ type StoredEntry = readonly [name: string, type: TypeCode, access: number, typeT
 
 function keyOf(hash: number): string {
   return `${PREFIX}${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
-
-function accessBits(access: Access): number {
-  return (
-    Number(access.stream) |
-    (Number(access.write) << 1) |
-    (Number(access.idle) << 2) |
-    (Number(access.persist) << 3)
-  );
 }
 
 function isTypeCode(value: unknown): value is TypeCode {
@@ -139,8 +130,8 @@ export class StoredSchemaCache implements SchemaCache {
       version: RECORD_VERSION,
       entries: entries.map(({ name, type, access, typeTag }): StoredEntry =>
         typeTag === undefined
-          ? [name, type, accessBits(access)]
-          : [name, type, accessBits(access), typeTag]
+          ? [name, type, encodeAccess(access)]
+          : [name, type, encodeAccess(access), typeTag]
       ),
     };
     const storage = this.#storage;

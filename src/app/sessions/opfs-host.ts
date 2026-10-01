@@ -8,7 +8,7 @@
  * ```
  * micras-monitor/sessions/<id>/session.json    the SessionInfo, rewritten whole
  * micras-monitor/sessions/<id>/session.next.json the same, written first on every change
- * micras-monitor/sessions/<id>/recording.mmrec the recording, version 1 of the format
+ * micras-monitor/sessions/<id>/recording.mmrec the recording, in the current format version
  * ```
  *
  * A description is written to `session.next.json` and then to `session.json`, so a tab that dies

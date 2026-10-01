@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
-
 import {
   COLUMN_BREAKS,
   COLUMN_HAS_DATA,
@@ -31,7 +29,7 @@ interface Fixture {
 
 function newStore(blockSize: number): TelemetryStore {
   const store = new TelemetryStore({ scheduler: new ManualScheduler(), blockSize });
-  store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: TypeCode.F32 }] });
+  store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: 'f32' }] });
   return store;
 }
 

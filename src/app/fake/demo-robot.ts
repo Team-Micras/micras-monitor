@@ -5,16 +5,21 @@
  * @module
  */
 
-import { TypeCode, decodeAccess } from '@/protocol';
+import type { Access, ValueType } from '@/core/variables';
 
 import { demoMazePosition, demoMazeRecord, demoMazeRevision } from './demo-maze';
 import { FakeRobot, type FakeRobotOptions, type FakeVariable } from './fake-robot';
 
-const STREAM = decodeAccess(0x01);
-const STREAM_WRITE = decodeAccess(0x03);
-const STREAM_WRITE_IDLE = decodeAccess(0x07);
-const PERSIST = decodeAccess(0x08);
-const NONE = decodeAccess(0x00);
+const STREAM: Access = { stream: true, write: false, writeNeedsIdle: false, persists: false };
+const STREAM_WRITE: Access = { stream: true, write: true, writeNeedsIdle: false, persists: false };
+const STREAM_WRITE_IDLE: Access = {
+  stream: true,
+  write: true,
+  writeNeedsIdle: true,
+  persists: false,
+};
+const PERSIST: Access = { stream: false, write: false, writeNeedsIdle: false, persists: true };
+const NONE: Access = { stream: false, write: false, writeNeedsIdle: false, persists: false };
 
 const RUN = 3;
 const IDLE = 1;
@@ -27,19 +32,19 @@ const bootSequence = (t: number) => (t < 0.4 ? INIT : t < 3 ? IDLE : t < 6 ? WAI
 
 const f32 = (name: string, signal?: (t: number) => number): FakeVariable => ({
   name,
-  type: TypeCode.F32,
+  type: 'f32',
   access: STREAM,
   signal,
 });
 
 const counter = (name: string, rate: number, start = 0): FakeVariable => ({
   name,
-  type: TypeCode.U32,
+  type: 'u32',
   access: STREAM,
   signal: (t) => start + t * rate,
 });
 
-const quiet = (name: string, type: TypeCode, value: number): FakeVariable => ({
+const quiet = (name: string, type: ValueType, value: number): FakeVariable => ({
   name,
   type,
   access: NONE,
@@ -52,7 +57,7 @@ const wall = (phase: number) => (t: number) =>
 
 /** The variables of the demo robot. */
 export const DEMO_VARIABLES: readonly FakeVariable[] = [
-  { name: 'state', type: TypeCode.U8, access: STREAM, signal: bootSequence },
+  { name: 'state', type: 'u8', access: STREAM, signal: bootSequence },
   ...[0, 1, 2, 3].map((i) => f32(`wall/${i}`, wall(i * 1.7))),
   ...[0, 1, 2, 3].map((i) => f32(`wall_dark/${i}`, (t) => 0.01 + 0.002 * Math.sin(t + i))),
   f32('imu/gyro_x', (t) => 0.02 * Math.sin(t * 3.1)),
@@ -62,11 +67,11 @@ export const DEMO_VARIABLES: readonly FakeVariable[] = [
   f32('imu/accel_y', (t) => 0.1 * Math.sin(t * 1.9)),
   f32('imu/accel_z', (t) => 9.81 + 0.02 * Math.sin(t * 7)),
   f32('battery_voltage', (t) => 12.3 - t * 0.0004 + 0.01 * Math.sin(t * 5)),
-  quiet('adc_restarts', TypeCode.U32, 0),
-  quiet('failed_saves', TypeCode.U32, 0),
-  quiet('fault', TypeCode.U8, 0),
+  quiet('adc_restarts', 'u32', 0),
+  quiet('failed_saves', 'u32', 0),
+  quiet('fault', 'u8', 0),
   f32('loop/elapsed_time', () => 0.001),
-  { name: 'loop/worst_time_us', type: TypeCode.U32, access: STREAM, signal: () => 8 },
+  { name: 'loop/worst_time_us', type: 'u32', access: STREAM, signal: () => 8 },
   counter('loop/missed_ticks', 0),
   counter('loop/saturated_iterations', 0),
   f32('pose/x', (t) => demoMazePosition(t).x),
@@ -94,36 +99,36 @@ export const DEMO_VARIABLES: readonly FakeVariable[] = [
   counter('localizer/rejected', 0.02, 2),
   counter('localizer/edges', 0.4, 311),
   counter('localizer/recoveries', 0),
-  ...[0, 1, 2, 3].map((i) => quiet(`wall_reference/${i}`, TypeCode.F32, 0.09 + i * 0.001)),
-  ...[0, 1, 2, 3].map((i) => quiet(`wall_spread/${i}`, TypeCode.F32, 0.002)),
+  ...[0, 1, 2, 3].map((i) => quiet(`wall_reference/${i}`, 'f32', 0.09 + i * 0.001)),
+  ...[0, 1, 2, 3].map((i) => quiet(`wall_spread/${i}`, 'f32', 0.002)),
   f32('route_time', () => 7.42),
-  quiet('identification/valid', TypeCode.BOOL, 1),
-  quiet('identification/breakaway_voltage', TypeCode.F32, 0.61),
-  quiet('identification/linear_static_friction', TypeCode.F32, 0.18),
-  quiet('identification/linear_speed_constant', TypeCode.F32, 3.9),
-  quiet('identification/linear_acceleration_constant', TypeCode.F32, 0.42),
-  quiet('identification/angular_static_friction', TypeCode.F32, 0.05),
-  quiet('identification/angular_speed_constant', TypeCode.F32, 0.21),
-  quiet('identification/angular_acceleration_constant', TypeCode.F32, 0.014),
-  quiet('identification/torque_constant', TypeCode.F32, 0.0068),
-  quiet('identification/resistance', TypeCode.F32, 2.4),
-  quiet('identification/yaw_inertia', TypeCode.F32, 0.00011),
-  quiet('gyroscope/scale_valid', TypeCode.BOOL, 1),
-  quiet('gyroscope/scale', TypeCode.F32, 1.003),
-  { name: 'objective', type: TypeCode.U8, access: STREAM_WRITE_IDLE, signal: () => 0 },
-  { name: 'run_profile', type: TypeCode.U8, access: STREAM_WRITE, signal: () => 5 },
+  quiet('identification/valid', 'bool', 1),
+  quiet('identification/breakaway_voltage', 'f32', 0.61),
+  quiet('identification/linear_static_friction', 'f32', 0.18),
+  quiet('identification/linear_speed_constant', 'f32', 3.9),
+  quiet('identification/linear_acceleration_constant', 'f32', 0.42),
+  quiet('identification/angular_static_friction', 'f32', 0.05),
+  quiet('identification/angular_speed_constant', 'f32', 0.21),
+  quiet('identification/angular_acceleration_constant', 'f32', 0.014),
+  quiet('identification/torque_constant', 'f32', 0.0068),
+  quiet('identification/resistance', 'f32', 2.4),
+  quiet('identification/yaw_inertia', 'f32', 0.00011),
+  quiet('gyroscope/scale_valid', 'bool', 1),
+  quiet('gyroscope/scale', 'f32', 1.003),
+  { name: 'objective', type: 'u8', access: STREAM_WRITE_IDLE, signal: () => 0 },
+  { name: 'run_profile', type: 'u8', access: STREAM_WRITE, signal: () => 5 },
   {
     name: 'maze',
-    type: TypeCode.BLOB,
+    type: 'bytes',
     access: PERSIST,
-    typeTag: 'maze-grid',
+    tag: 'maze-grid',
     bytes: demoMazeRecord,
   },
   counter('link/dropped_samples', 0.8, 315),
   counter('link/dropped_logs', 0),
-  { name: 'link/credit', type: TypeCode.U32, access: STREAM, signal: (t) => 86 + 40 * Math.sin(t) },
+  { name: 'link/credit', type: 'u32', access: STREAM, signal: (t) => 86 + 40 * Math.sin(t) },
   counter('link/discarded_frames', 0),
-  { name: 'maze/revision', type: TypeCode.U32, access: STREAM, signal: demoMazeRevision },
+  { name: 'maze/revision', type: 'u32', access: STREAM, signal: demoMazeRevision },
 ];
 
 /**
@@ -152,7 +157,7 @@ export function createDemoRobot(options: Partial<FakeRobotOptions> = {}): FakeRo
         : { status: 'refused', reason: NOT_IDLE };
     },
     answerWrite: (name, _value, robot) =>
-      DEMO_VARIABLES.find((variable) => variable.name === name)?.access.idle === true &&
+      DEMO_VARIABLES.find((variable) => variable.name === name)?.access.writeNeedsIdle === true &&
       robot.valueOf('state') !== IDLE
         ? { status: 'refused', reason: 'needs-idle' }
         : { status: 'confirmed' },

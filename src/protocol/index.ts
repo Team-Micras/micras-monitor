@@ -13,6 +13,7 @@ export {
   CommandResult,
   CREDIT_WINDOW,
   decodeAccess,
+  encodeAccess,
   ErrorCode,
   MAX_FRAME_SIZE,
   MAX_GROUP_VARIABLES,

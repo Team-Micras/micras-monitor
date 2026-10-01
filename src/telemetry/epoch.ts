@@ -1,8 +1,10 @@
+import { isWide, type Value } from '@/core/variables';
+
 import type { Block, BlockLayout } from './block';
 import type { PersistedBlock } from './persistence';
 import { LEAF_SIZE } from './pyramid';
-import { type ColumnKind, columnKindOf, isWideInteger, kindOfColumn, toNumber } from './storage';
-import type { RecordedEpoch, RecordedGap, SchemaEntry, TelemetryValue } from './types';
+import { type ColumnKind, columnKindOf, kindOfColumn, toNumber } from './storage';
+import type { RecordedEpoch, RecordedGap, HistoryVariable } from './types';
 
 /**
  * How many samples the first block of an epoch holds. Each block that fills makes the next one
@@ -77,7 +79,7 @@ export class Epoch {
   readonly groupId: number;
 
   /** The variables of each sample, in wire order, with their names. */
-  readonly variables: readonly SchemaEntry[];
+  readonly variables: readonly HistoryVariable[];
 
   /** For each variable, its column among the numeric ones, or -1 for a blob. */
   readonly columnOf: readonly number[];
@@ -153,7 +155,7 @@ export class Epoch {
     this.numericIds = numericIds;
     this.kinds = kinds;
     this.columnOf = columnOf;
-    this.wide = this.variables.map((variable) => isWideInteger(variable.type));
+    this.wide = this.variables.map((variable) => isWide(variable.type));
     this.row = new Float64Array(numericIds.length);
   }
 
@@ -229,7 +231,7 @@ export class Epoch {
    * @param values Its values, in wire order.
    * @returns Whether it was stored.
    */
-  store(timeUs: number, values: ArrayLike<TelemetryValue>): boolean {
+  store(timeUs: number, values: ArrayLike<Value>): boolean {
     const block = this.writableBlock();
 
     if (!block) {

@@ -5,6 +5,7 @@
  * @module
  */
 
+import type { Variable } from '@/core/variables';
 import {
   BluetoothTransport,
   MemorySchemaCache,
@@ -24,8 +25,10 @@ import {
   type TimelineEvent,
   type Transport,
   type WebSocketFactory,
+  valueTypeOf,
+  variableOf,
 } from '@/link';
-import { CommandResult, WriteStatus, type Fundamental } from '@/protocol';
+import { CommandResult, WriteStatus } from '@/protocol';
 import { TelemetryStore, type Scheduler } from '@/telemetry';
 
 import type {
@@ -35,7 +38,6 @@ import type {
   LinkStats,
   MonitorPorts,
   ReadOutcome,
-  RobotVariable,
   StreamRequest,
   Transport as TransportKind,
   WriteOutcome,
@@ -108,16 +110,6 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function toVariable(entry: SchemaEntry): RobotVariable {
-  return {
-    id: entry.id,
-    name: entry.name,
-    type: entry.type,
-    access: entry.access,
-    typeTag: entry.typeTag ?? null,
-  };
-}
-
 function rateRequests(request: StreamRequest): RateRequest[] {
   return [
     ...request.pinned.map(({ role, variable, rateHz }) => ({
@@ -173,7 +165,7 @@ export class LiveRobot {
   #link: ActiveLink | null = null;
   #status: ConnectionStatus = { kind: 'disconnected' };
   #schemaSource: readonly SchemaEntry[] | undefined;
-  #variables: readonly RobotVariable[] = [];
+  #variables: readonly Variable[] = [];
   #stats: LinkStats = NO_STATS;
   #request: StreamRequest = { windows: [], pinned: [] };
   #currentTimeline = 0;
@@ -362,10 +354,7 @@ export class LiveRobot {
   /** The value of the newest write the robot has not answered, as `WritePort.pending` says. */
   pending(name: string): WriteValue | undefined {
     const id = this.#idOf(name);
-    const value: Fundamental | undefined =
-      id === undefined ? undefined : this.#link?.session.pendingWrite(id);
-
-    return typeof value === 'string' ? undefined : value;
+    return id === undefined ? undefined : this.#link?.session.pendingWrite(id);
   }
 
   /** Reads a variable as `ReadPort.read` does; the answer also becomes its latest value. */
@@ -483,7 +472,7 @@ export class LiveRobot {
   }
 
   #onSchema(entries: readonly SchemaEntry[]): void {
-    this.store.setSchema(entries);
+    this.store.setSchema(entries.map(variableOf));
     this.#refreshSchema();
   }
 
@@ -498,7 +487,7 @@ export class LiveRobot {
     this.store.openEpoch({
       epochId: epoch.id,
       groupId: epoch.group,
-      variables: epoch.variableIds.map((id) => ({ id, type: schema[id].type })),
+      variables: epoch.variableIds.map((id) => ({ id, type: valueTypeOf(schema[id].type) })),
       firstSequence: continued ? undefined : 0,
     });
     this.#epochTimelines.set(epoch.id, epoch.timeline);
@@ -614,7 +603,7 @@ export class LiveRobot {
 
     if (entries !== this.#schemaSource) {
       this.#schemaSource = entries;
-      this.#variables = entries?.map(toVariable) ?? [];
+      this.#variables = entries?.map(variableOf) ?? [];
       emit(this.#schemaListeners);
     }
   }

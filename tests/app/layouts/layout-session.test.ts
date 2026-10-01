@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { TypeCode, decodeAccess } from '@/protocol';
-import type { LayoutPreset, SchemaVariable } from '@/robot-kit';
+import type { Variable } from '@/core/variables';
+import type { LayoutPreset } from '@/robot-kit';
 import { activeWorkspace, leafIds } from '@/tiling';
 
 import { createShellStore, type ShellStore } from '@/app/state/shell-store';
@@ -14,10 +14,10 @@ import {
 import { LayoutSession, SAVE_DELAY_MS, type LayoutSubject } from '@/app/layouts/layout-session';
 import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
 
-const STREAM = decodeAccess(0x01);
+const STREAM = { stream: true, write: false, writeNeedsIdle: false, persists: false };
 
-function schema(...variableNames: string[]): SchemaVariable[] {
-  return variableNames.map((name) => ({ name, type: TypeCode.F32, access: STREAM, typeTag: null }));
+function schema(...variableNames: string[]): Variable[] {
+  return variableNames.map((name, id): Variable => ({ id, name, type: 'f32', access: STREAM }));
 }
 
 function subject(

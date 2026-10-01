@@ -7,8 +7,8 @@
  * @module
  */
 
-import { TypeCode, type Access } from '@/protocol';
-import { TelemetryStore, type Scheduler, type TelemetryValue } from '@/telemetry';
+import { isFloat, VALUE_TYPES, type Value, type Variable } from '@/core/variables';
+import { TelemetryStore, type Scheduler } from '@/telemetry';
 
 import type {
   CommandOutcome,
@@ -20,18 +20,13 @@ import type {
   LogSeverity,
   MonitorPorts,
   ReadOutcome,
-  RobotVariable,
   Transport,
   WriteOutcome,
   WriteValue,
 } from '../ports';
 
-/** A variable of the fake robot. */
-export interface FakeVariable {
-  readonly name: string;
-  readonly type: TypeCode;
-  readonly access: Access;
-  readonly typeTag?: string | null;
+/** A variable of the fake robot; its id is its position in the list of variables. */
+export interface FakeVariable extends Omit<Variable, 'id'> {
   /** Its value at a time in seconds since the link came up; a gentle wave when omitted. */
   readonly signal?: (seconds: number) => number;
   /** The bytes of a blob at a time in seconds since the link came up; eight bytes of its id when omitted. */
@@ -135,25 +130,7 @@ const FRAME_SCHEDULER: Scheduler = {
 };
 
 function isStreamed(variable: FakeVariable): boolean {
-  return variable.access.stream && variable.type !== TypeCode.BLOB;
-}
-
-function sizeOf(type: TypeCode): number {
-  switch (type) {
-    case TypeCode.BOOL:
-    case TypeCode.U8:
-    case TypeCode.I8:
-      return 1;
-    case TypeCode.U16:
-    case TypeCode.I16:
-      return 2;
-    case TypeCode.U64:
-    case TypeCode.I64:
-    case TypeCode.F64:
-      return 8;
-    default:
-      return 4;
-  }
+  return variable.access.stream && variable.type !== 'bytes';
 }
 
 /** A robot that exists only in memory and serves every port of the app. */
@@ -163,8 +140,8 @@ export class FakeRobot {
   /** The store the values live in, as the session would feed it. */
   readonly store: TelemetryStore;
   readonly #options: FakeRobotOptions;
-  readonly #entries: readonly RobotVariable[];
-  readonly #streamed: readonly RobotVariable[];
+  readonly #entries: readonly Variable[];
+  readonly #streamed: readonly Variable[];
   readonly #statusListeners = new Set<() => void>();
   readonly #schemaListeners = new Set<() => void>();
   readonly #held = new Map<string, number>();
@@ -176,7 +153,7 @@ export class FakeRobot {
   #stats: LinkStats = NO_STATS;
   readonly #unanswered = new Set<() => void>();
   #status: ConnectionStatus = { kind: 'disconnected' };
-  #variables: readonly RobotVariable[] = [];
+  #variables: readonly Variable[] = [];
   #timers: ReturnType<typeof setTimeout>[] = [];
   #ticker: ReturnType<typeof setInterval> | null = null;
   readonly #now: () => number;
@@ -223,13 +200,9 @@ export class FakeRobot {
         subscribe: (listener) => this.#listen(this.#logListeners, listener),
       },
     };
-    this.#entries = options.variables.map((variable, id) => ({
-      id,
-      name: variable.name,
-      type: variable.type,
-      access: variable.access,
-      typeTag: variable.typeTag ?? null,
-    }));
+    this.#entries = options.variables.map(({ name, type, access, tag }, id) =>
+      tag === undefined ? { id, name, type, access } : { id, name, type, access, tag }
+    );
     this.#streamed = this.#entries.filter((_, id) => isStreamed(options.variables[id]));
   }
 
@@ -502,7 +475,8 @@ export class FakeRobot {
   #updateStats(): void {
     const rateHz = 1000 / this.#stepMs();
     const sampleBytes =
-      SAMPLE_HEADER_BYTES + this.#streamed.reduce((total, entry) => total + sizeOf(entry.type), 0);
+      SAMPLE_HEADER_BYTES +
+      this.#streamed.reduce((total, entry) => total + VALUE_TYPES[entry.type].size, 0);
     const used = sampleBytes * rateHz;
     const bytesPerSecond = this.#options.budgetBytesPerSecond ?? 3000;
     const overBudget = used > bytesPerSecond;
@@ -529,8 +503,8 @@ export class FakeRobot {
     return (this.#now() - this.#origin) * 1000;
   }
 
-  #valueOf(variable: FakeVariable, id: number, seconds: number): TelemetryValue {
-    if (variable.type === TypeCode.BLOB) {
+  #valueOf(variable: FakeVariable, id: number, seconds: number): Value {
+    if (variable.type === 'bytes') {
       return variable.bytes?.(seconds) ?? new Uint8Array(8).fill(id);
     }
 
@@ -539,13 +513,11 @@ export class FakeRobot {
       variable.signal?.(seconds) ??
       Math.sin(seconds * (0.3 + (id % 7) * 0.11) + id);
 
-    if (variable.type === TypeCode.BOOL) {
+    if (variable.type === 'bool') {
       return value !== 0;
     }
 
-    return variable.type === TypeCode.F32 || variable.type === TypeCode.F64
-      ? value
-      : Math.round(value);
+    return isFloat(variable.type) ? value : Math.round(value);
   }
 
   #control(): FakeRobotControl {

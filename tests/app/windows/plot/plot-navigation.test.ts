@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
 import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import {
@@ -55,10 +54,10 @@ describe('moving a paused plot through the history', () => {
   test('bounds the history by the variables that have samples', () => {
     const store = new TelemetryStore({ scheduler: new ManualScheduler() });
     store.setSchema([
-      { id: 0, name: 'a', type: TypeCode.F32 },
-      { id: 1, name: 'b', type: TypeCode.F32 },
+      { id: 0, name: 'a', type: 'f32' },
+      { id: 1, name: 'b', type: 'f32' },
     ]);
-    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: TypeCode.F32 }] });
+    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: 'f32' }] });
     store.append(1, 0, 1000, [1]);
     store.append(1, 1, 5000, [2]);
 

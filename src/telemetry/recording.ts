@@ -1,4 +1,4 @@
-import type { TypeCode } from '@/protocol';
+import { isValueType, type Access, type Value, type Variable } from '@/core/variables';
 
 import { crc32 } from './crc32';
 import type { BlockRef, PersistedBlock, PersistedColumn } from './persistence';
@@ -10,11 +10,10 @@ import type {
   RecordedEpoch,
   RecordedGap,
   RecordedValue,
-  TelemetryValue,
 } from './types';
 
 /**
- * Recording format, version 1.
+ * Recording format, version 2.
  *
  * A recording is a header followed by records, so that a recorder can append records as they
  * happen. Every number is little endian; a string is a `u32` byte count and UTF-8.
@@ -34,8 +33,8 @@ import type {
  *
  * Payloads:
  *
- * - epoch: `u32` epoch id, `u32` group id, `u32` count, then per variable `u32` id, `u32` type and
- *   the name.
+ * - epoch: `u32` epoch id, `u32` group id, `u32` count, then per variable `u32` id, the type by
+ *   its name (`u8`, `f32`, `bytes`…) and the variable's name.
  * - block: `u32` epoch id, `u32` block index, `u32` start sample, `u32` length `n`, `u32` column
  *   count, then per column `u32` variable id, `u8` kind (0 f32, 1 f64) and 3 reserved bytes; then
  *   `n` f64 times, then each column's `n` values.
@@ -43,15 +42,15 @@ import type {
  *   count, `f64` start, `f64` time before, `f64` time after (NaN if unknown).
  * - boundary: `u8` kind (0 reconnect, 1 reboot, 2 schema), 7 reserved bytes, `f64` time.
  * - value: `u32` variable id, the name, `f64` time (NaN if unknown), `u8` tag, then by tag: 0 an
- *   `f64`, 1 a `u8` boolean, 2 a 64 bit integer as a decimal string, 3 a string, 4 `u32` count
- *   and bytes.
+ *   `f64`, 1 a `u8` boolean, 2 a 64 bit integer as a decimal string, 3 `u32` count and bytes.
  * - epoch closed: `u32` epoch id.
  *
  * The check covers the record's own header, so a damaged size cannot send a reader astray. A
  * record that fails its check is skipped up to the next record that passes one, and reported; with
  * none after it, it is where the recording was cut short. A record that passes its check but does
  * not decode is skipped and reported, unless it is the last one, which is also taken as a cut.
- * Version 1 was never released with the check over the payload alone, so it stays version 1.
+ * A recording of any other version is refused: the format keeps no compatibility with older
+ * ones, and version 1 spelled types with the codes of the robot's protocol.
  *
  * Records need not come in time order. Blocks written back from an earlier recording come after
  * newer ones, so a reader places each block by its epoch and index. A gap may be written again
@@ -63,7 +62,7 @@ import type {
  */
 
 /** The version this module writes and reads. */
-export const RECORDING_FORMAT_VERSION = 1;
+export const RECORDING_FORMAT_VERSION = 2;
 
 /** The name in every header, to tell a recording from other JSON. */
 export const RECORDING_FORMAT = 'micras-monitor-recording';
@@ -83,27 +82,7 @@ const RECORD_KIND = {
 const COLUMN_KINDS: readonly ColumnKind[] = ['f32', 'f64'];
 const GAP_KINDS: readonly RecordedGap['kind'][] = ['dropped', 'not-stored'];
 const BOUNDARY_KINDS: readonly BoundaryKind[] = ['reconnect', 'reboot', 'schema'];
-const VALUE_TAG = { number: 0, boolean: 1, bigint: 2, string: 3, bytes: 4 } as const;
-
-/**
- * A variable of the robot's schema, as the recording remembers it.
- */
-export interface RecordingVariable {
-  /** Its id in the schema. */
-  readonly id: number;
-
-  /** Its name. */
-  readonly name: string;
-
-  /** Its type. */
-  readonly type: TypeCode;
-
-  /** Its access byte, as the schema carries it. */
-  readonly access?: number;
-
-  /** The type tag of a blob, as protocol v2 carries it. */
-  readonly typeTag?: string;
-}
+const VALUE_TAG = { number: 0, boolean: 1, bigint: 2, bytes: 3 } as const;
 
 /**
  * The JSON part of a recording.
@@ -122,7 +101,7 @@ export interface RecordingHeader {
   readonly robot: Readonly<Record<string, string | number | boolean | null>>;
 
   /** The robot's schema when recording started. */
-  readonly schema: readonly RecordingVariable[];
+  readonly schema: readonly Variable[];
 
   /** The session's name, as the user gave it. */
   readonly name?: string;
@@ -324,14 +303,24 @@ function isRobotInfo(value: unknown): value is RecordingHeader['robot'] {
   );
 }
 
-function isRecordingVariable(value: unknown): value is RecordingVariable {
+function isAccess(value: unknown): value is Access {
+  return (
+    isObject(value) &&
+    typeof value.stream === 'boolean' &&
+    typeof value.write === 'boolean' &&
+    typeof value.writeNeedsIdle === 'boolean' &&
+    typeof value.persists === 'boolean'
+  );
+}
+
+function isVariable(value: unknown): value is Variable {
   return (
     isObject(value) &&
     typeof value.id === 'number' &&
     typeof value.name === 'string' &&
-    typeof value.type === 'number' &&
-    (value.access === undefined || typeof value.access === 'number') &&
-    (value.typeTag === undefined || typeof value.typeTag === 'string')
+    isValueType(value.type) &&
+    isAccess(value.access) &&
+    (value.tag === undefined || typeof value.tag === 'string')
   );
 }
 
@@ -343,7 +332,9 @@ function parseHeader(json: string): RecordingHeader {
   }
 
   if (value.version !== RECORDING_FORMAT_VERSION) {
-    throw new Error(`Recording format version ${String(value.version)} is not supported`);
+    throw new Error(
+      `The recording is in format version ${String(value.version)}; this monitor reads only version ${RECORDING_FORMAT_VERSION}`
+    );
   }
 
   const { startedAtMs, robot, schema, name } = value;
@@ -352,7 +343,7 @@ function parseHeader(json: string): RecordingHeader {
     typeof startedAtMs !== 'number' ||
     !isRobotInfo(robot) ||
     !Array.isArray(schema) ||
-    !schema.every(isRecordingVariable) ||
+    !schema.every(isVariable) ||
     (name !== undefined && typeof name !== 'string')
   ) {
     throw new Error('Recording header is malformed');
@@ -492,21 +483,19 @@ export function decodeBlock(bytes: Uint8Array): PersistedBlock {
   return { ref, startSample, time, columns };
 }
 
-function encodeValue(writer: ByteWriter, value: TelemetryValue): void {
+function encodeValue(writer: ByteWriter, value: Value): void {
   if (typeof value === 'number') {
     writer.u8(VALUE_TAG.number).f64(value);
   } else if (typeof value === 'boolean') {
     writer.u8(VALUE_TAG.boolean).u8(value ? 1 : 0);
   } else if (typeof value === 'bigint') {
     writer.u8(VALUE_TAG.bigint).text(value.toString());
-  } else if (typeof value === 'string') {
-    writer.u8(VALUE_TAG.string).text(value);
   } else {
     writer.u8(VALUE_TAG.bytes).u32(value.byteLength, 'Blob size').raw(value);
   }
 }
 
-function decodeValue(reader: ByteReader): TelemetryValue {
+function decodeValue(reader: ByteReader): Value {
   const tag = reader.u8();
 
   switch (tag) {
@@ -516,8 +505,6 @@ function decodeValue(reader: ByteReader): TelemetryValue {
       return reader.u8() !== 0;
     case VALUE_TAG.bigint:
       return BigInt(reader.text());
-    case VALUE_TAG.string:
-      return reader.text();
     case VALUE_TAG.bytes:
       return reader.raw(reader.u32());
     default:
@@ -540,7 +527,7 @@ function payloadOf(record: RecordingRecord): Uint8Array {
       .u32(epoch.variables.length, 'Variable count');
 
     for (const variable of epoch.variables) {
-      writer.u32(variable.id, 'Variable id').u32(variable.type, 'Type code').text(variable.name);
+      writer.u32(variable.id, 'Variable id').text(variable.type).text(variable.name);
     }
   } else if (record.kind === 'epoch-closed') {
     writer.u32(record.epochId, 'Epoch id');
@@ -587,11 +574,16 @@ function decodeRecord(kind: number, payload: Uint8Array): RecordingRecord | unde
         throw new Error(`Epoch record cannot hold ${count} variables`);
       }
 
-      const variables = Array.from({ length: count }, () => ({
-        id: reader.u32(),
-        type: reader.u32() as TypeCode,
-        name: reader.text(),
-      }));
+      const variables = Array.from({ length: count }, () => {
+        const id = reader.u32();
+        const type = reader.text();
+
+        if (!isValueType(type)) {
+          throw new Error(`Unknown value type ${type} in recording`);
+        }
+
+        return { id, type, name: reader.text() };
+      });
       record = { kind: 'epoch', epoch: { epochId, groupId, variables } };
       break;
     }
@@ -693,7 +685,7 @@ export function recordOf(event: IngestionEvent): RecordingRecord {
 /**
  * The header of a recording and where the records after it start.
  *
- * @throws If the bytes are not a recording, or its version is not 1.
+ * @throws If the bytes are not a recording, or not of {@link RECORDING_FORMAT_VERSION}.
  */
 export function decodeRecordingHeader(bytes: Uint8Array): {
   readonly header: RecordingHeader;
@@ -860,7 +852,7 @@ const KIND_NAMES = new Map<number, RecordingRecord['kind']>([
  * blocks only when it needs them. A recording cut short, or whose last record is damaged, still
  * gives the records before; a damaged record in the middle is skipped and listed.
  *
- * @throws If the bytes are not a recording, or its version is not 1.
+ * @throws If the bytes are not a recording, or not of {@link RECORDING_FORMAT_VERSION}.
  */
 export function scanRecording(bytes: Uint8Array): RecordingScan {
   const { header, end } = decodeHeader(bytes);

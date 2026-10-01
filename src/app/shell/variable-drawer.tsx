@@ -17,6 +17,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
+import type { Variable } from '@/core/variables';
 import { presentVariable } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
@@ -32,7 +33,6 @@ import {
   useVariables,
   type ReactRobotPackage,
 } from '../monitor-context';
-import type { RobotVariable } from '../ports';
 import { useShell, useShellStore } from '../state/shell-store';
 import { startPointerDrag, surroundingsAt } from '../tiling/pointer-drag';
 import { PLOT_KIND, windowKind } from '../windows/registry';
@@ -42,7 +42,7 @@ type Filter = 'all' | 'plotted' | 'writable';
 
 interface Group {
   readonly name: string | null;
-  readonly variables: readonly RobotVariable[];
+  readonly variables: readonly Variable[];
 }
 
 function groupOf(name: string): string | null {
@@ -50,8 +50,8 @@ function groupOf(name: string): string | null {
   return slash === -1 ? null : name.slice(0, slash);
 }
 
-function groupVariables(variables: readonly RobotVariable[]): readonly Group[] {
-  const groups = new Map<string, RobotVariable[]>();
+function groupVariables(variables: readonly Variable[]): readonly Group[] {
+  const groups = new Map<string, Variable[]>();
   const order: Group[] = [];
 
   for (const variable of variables) {
@@ -301,7 +301,7 @@ export function VariableDrawer() {
 }
 
 interface VariableRowProps {
-  readonly variable: RobotVariable;
+  readonly variable: Variable;
   readonly label: string;
   readonly pkg: ReactRobotPackage | null;
   readonly plotted: boolean;
@@ -371,8 +371,8 @@ function VariableRow({ variable, label, pkg, plotted, onAdd }: VariableRowProps)
         <span className="flex w-10 items-center gap-0.5 text-muted-foreground">
           {access.stream ? <RadioIcon className="size-3.5" aria-label="streams" /> : null}
           {access.write ? <PencilIcon className="size-3.5" aria-label="writable" /> : null}
-          {access.persist ? <HardDriveIcon className="size-3.5" aria-label="persists" /> : null}
-          {access.idle ? <LockIcon className="size-3.5" aria-label="needs idle" /> : null}
+          {access.persists ? <HardDriveIcon className="size-3.5" aria-label="persists" /> : null}
+          {access.writeNeedsIdle ? <LockIcon className="size-3.5" aria-label="needs idle" /> : null}
         </span>
         <span className="w-20 text-right tabular-nums">{formatValue(value)}</span>
       </button>

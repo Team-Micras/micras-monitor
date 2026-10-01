@@ -23,7 +23,6 @@ describe('formatValue', () => {
   test('keeps every digit of a 64 bit integer and names booleans', () => {
     expect(formatValue(18_446_744_073_709_551_615n)).toBe('18446744073709551615');
     expect(formatValue(true)).toBe('true');
-    expect(formatValue('idle')).toBe('idle');
   });
 });
 

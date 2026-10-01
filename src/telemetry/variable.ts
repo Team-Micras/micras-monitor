@@ -1,8 +1,8 @@
-import type { TypeCode } from '@/protocol';
+import type { Value, ValueType } from '@/core/variables';
 
 import type { Epoch } from './epoch';
 import type { Channel } from './notifier';
-import type { HistoryMark, LatestValue, TelemetryValue } from './types';
+import type { HistoryMark, LatestValue } from './types';
 
 /**
  * A stretch of a variable's history: an epoch it was part of, and its column there.
@@ -37,7 +37,7 @@ export class VariableRecord {
   /** The time of its last stored sample, or −∞. */
   tailUs = Number.NEGATIVE_INFINITY;
 
-  private latestValue: TelemetryValue | undefined;
+  private latestValue: Value | undefined;
   private latestTimeUs: number | undefined;
   private latestSnapshot: LatestValue | undefined;
   private recent: readonly LatestValue[] = [];
@@ -53,7 +53,7 @@ export class VariableRecord {
    */
   constructor(
     readonly name: string,
-    public type: TypeCode | undefined,
+    public type: ValueType | undefined,
     readonly channel: Channel,
     private readonly historyLength: number
   ) {}
@@ -94,14 +94,14 @@ export class VariableRecord {
   }
 
   /** Record a new latest value. */
-  setLatest(value: TelemetryValue, timeUs: number | undefined): void {
+  setLatest(value: Value, timeUs: number | undefined): void {
     this.latestValue = value;
     this.latestTimeUs = timeUs;
     this.latestSnapshot = undefined;
   }
 
   /** Keep a value in the short history of a variable not stored numerically. */
-  remember(value: TelemetryValue, timeUs: number | undefined): void {
+  remember(value: Value, timeUs: number | undefined): void {
     const start = Math.max(0, this.recent.length + 1 - this.historyLength);
     this.recent = [...this.recent.slice(start), { value, timeUs }];
   }

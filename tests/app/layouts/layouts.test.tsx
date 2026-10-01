@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
-import { TypeCode, decodeAccess } from '@/protocol';
 import { RobotRegistry, type LayoutPreset, type RobotPackage } from '@/robot-kit';
 import { mouse } from '@tests/support/robot-kit/packages';
 import { activeWorkspace, leafIds } from '@/tiling';
@@ -16,7 +15,7 @@ import '@/app/styles.css';
 import { LayoutBook, STORAGE_PREFIX } from '@/app/layouts/layout-book';
 import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
 
-const STREAM = decodeAccess(0x01);
+const STREAM = { stream: true, write: false, writeNeedsIdle: false, persists: false };
 const NAMES = Array.from({ length: 12 }, (_, index) => `sensor/s${index}`);
 
 const PRESETS: LayoutPreset[] = [
@@ -28,7 +27,7 @@ const PRESETS: LayoutPreset[] = [
 ];
 
 function variables(...names: string[]): FakeVariable[] {
-  return names.map((name) => ({ name, type: TypeCode.F32, access: STREAM }));
+  return names.map((name) => ({ name, type: 'f32', access: STREAM }));
 }
 
 interface Mounted {

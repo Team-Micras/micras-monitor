@@ -1,3 +1,5 @@
+import type { Access, Variable } from '@/core/variables';
+
 import type { PersistedBlock, StoredEpoch, StoredSession } from './persistence';
 import { RecordingBlocks } from './recorder';
 import {
@@ -9,7 +11,6 @@ import {
   type LocatedRecord,
   type RecordingDamage,
   type RecordingHeader,
-  type RecordingVariable,
 } from './recording';
 import type { RecordingFile } from './recording-file';
 import type { TelemetryStore } from './store';
@@ -49,9 +50,9 @@ export interface RecordingSummary {
 
   /**
    * Every variable it holds, by name: the header's schema, and the variables of epochs and values
-   * it does not list, as when recording started before the schema was read.
+   * it does not list, as when recording started before the schema was read, which grant no access.
    */
-  readonly schema: readonly RecordingVariable[];
+  readonly schema: readonly Variable[];
 }
 
 interface EpochParts {
@@ -189,17 +190,19 @@ export class SavedRecording {
   }
 }
 
+const NO_ACCESS: Access = { stream: false, write: false, writeNeedsIdle: false, persists: false };
+
 function mergedSchema(
-  header: readonly RecordingVariable[],
+  header: readonly Variable[],
   epochs: ReadonlyMap<number, EpochParts>,
   values: readonly RecordedValue[]
-): RecordingVariable[] {
+): Variable[] {
   const byName = new Map(header.map((variable) => [variable.name, variable]));
 
   for (const { epoch } of epochs.values()) {
     for (const { id, name, type } of epoch.variables) {
       if (!byName.has(name)) {
-        byName.set(name, { id, name, type });
+        byName.set(name, { id, name, type, access: NO_ACCESS });
       }
     }
   }
@@ -209,7 +212,7 @@ function mergedSchema(
       const type = header.find((variable) => variable.id === variableId)?.type;
 
       if (type !== undefined) {
-        byName.set(name, { id: variableId, name, type });
+        byName.set(name, { id: variableId, name, type, access: NO_ACCESS });
       }
     }
   }

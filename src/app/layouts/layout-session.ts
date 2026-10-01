@@ -5,7 +5,8 @@
  * @module
  */
 
-import type { LayoutPreset, SchemaVariable } from '@/robot-kit';
+import type { Variable } from '@/core/variables';
+import type { LayoutPreset } from '@/robot-kit';
 
 import type { ShellState, ShellStore } from '../state/shell-store';
 import { autoLayout } from './auto-layout';
@@ -20,7 +21,7 @@ export interface LayoutSubject {
   /** The robot's key, as `layoutKey` gives it. */
   readonly key: string;
   /** Its schema. */
-  readonly variables: readonly SchemaVariable[];
+  readonly variables: readonly Variable[];
   /** The presets of its package; none in raw mode. */
   readonly packagePresets: readonly LayoutPreset[];
 }

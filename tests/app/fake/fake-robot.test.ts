@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { decodeAccess, TypeCode } from '@/protocol';
-
 import { subscribeThrottled } from '@/app/monitor-context';
 import { createDemoRobot } from '@/app/fake/demo-robot';
 import { FakeRobot } from '@/app/fake/fake-robot';
@@ -86,7 +84,13 @@ describe('FakeRobot sampling', () => {
     const robot = new FakeRobot({
       name: 'sampler',
       schemaHash: 1,
-      variables: [{ name: 'x', type: TypeCode.F32, access: decodeAccess(0x01) }],
+      variables: [
+        {
+          name: 'x',
+          type: 'f32',
+          access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
+        },
+      ],
       connectMs: 10,
       handshakeMs: 20,
       configureMs: 10,

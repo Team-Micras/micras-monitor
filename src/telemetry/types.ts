@@ -1,10 +1,4 @@
-import type { TypeCode } from '@/protocol';
-
-/**
- * A value as the link decodes it: numbers, booleans and 64 bit integers from the stream or a READ,
- * bytes for a blob.
- */
-export type TelemetryValue = number | bigint | boolean | string | Uint8Array;
+import type { Value, ValueType, Variable } from '@/core/variables';
 
 /**
  * A column of stored values: 32 bit floats for the narrow types, 64 bit floats for the rest.
@@ -12,24 +6,16 @@ export type TelemetryValue = number | bigint | boolean | string | Uint8Array;
 export type NumericColumn = Float32Array | Float64Array;
 
 /**
- * A variable of the robot's schema.
+ * What the history needs of a variable: the id samples name it by, and the name and type its
+ * history is keyed by.
  */
-export interface SchemaEntry {
-  /** Its id in this boot's schema. */
-  readonly id: number;
-
-  /** Its name, which is what history and layouts are keyed by. */
-  readonly name: string;
-
-  /** Its type. */
-  readonly type: TypeCode;
-}
+export type HistoryVariable = Pick<Variable, 'id' | 'name' | 'type'>;
 
 /**
  * How queries name a variable: by name, or by its id in the current schema, for its current
  * history; or by name and type, for the history it had with that type.
  */
-export type VariableRef = string | number | { readonly name: string; readonly type: TypeCode };
+export type VariableRef = string | number | { readonly name: string; readonly type: ValueType };
 
 /**
  * One variable of a stream group, in the order its values arrive in each sample.
@@ -39,7 +25,7 @@ export interface VariableSpec {
   readonly id: number;
 
   /** Its type, as the schema states it. */
-  readonly type: TypeCode;
+  readonly type: ValueType;
 
   /** Its name; taken from the schema when left out. */
   readonly name?: string;
@@ -126,7 +112,7 @@ export interface TimeRange {
  */
 export interface LatestValue {
   /** The value as it was decoded, so 64 bit integers keep every bit. */
-  readonly value: TelemetryValue;
+  readonly value: Value;
 
   /** When the robot sampled it, if known; a READ answer carries no timestamp. */
   readonly timeUs: number | undefined;
@@ -188,7 +174,7 @@ export interface RecordedEpoch {
   readonly groupId: number;
 
   /** The variables of each sample, in wire order. */
-  readonly variables: readonly SchemaEntry[];
+  readonly variables: readonly HistoryVariable[];
 }
 
 /**
@@ -232,7 +218,7 @@ export interface RecordedValue {
   readonly timeUs: number;
 
   /** The value. */
-  readonly value: TelemetryValue;
+  readonly value: Value;
 }
 
 /**

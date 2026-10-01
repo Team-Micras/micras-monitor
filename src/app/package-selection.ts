@@ -7,20 +7,15 @@
 
 import type { ReactNode } from 'react';
 
+import type { Variable } from '@/core/variables';
 import type { PackageSelection, RobotRegistry } from '@/robot-kit';
 
-import type {
-  ConnectionPort,
-  ConnectionStatus,
-  ConnectionTarget,
-  RobotVariable,
-  SchemaPort,
-} from './ports';
+import type { ConnectionPort, ConnectionStatus, ConnectionTarget, SchemaPort } from './ports';
 
 interface Basis {
   readonly target: ConnectionTarget;
   readonly name: string | null;
-  readonly variables: readonly RobotVariable[];
+  readonly variables: readonly Variable[];
 }
 
 function sameTarget(a: ConnectionTarget, b: ConnectionTarget): boolean {

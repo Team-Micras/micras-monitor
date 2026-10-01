@@ -1,7 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { TypeCode } from '@/protocol';
-
 import { TelemetryStore } from '@/telemetry/store';
 import { ManualScheduler } from '@/telemetry';
 
@@ -12,11 +10,11 @@ function twoVariables() {
     epochId: 1,
     groupId: 0,
     variables: [
-      { id: 1, type: TypeCode.F32 },
-      { id: 2, type: TypeCode.F32 },
+      { id: 1, type: 'f32' },
+      { id: 2, type: 'f32' },
     ],
   });
-  store.openEpoch({ epochId: 2, groupId: 1, variables: [{ id: 3, type: TypeCode.F32 }] });
+  store.openEpoch({ epochId: 2, groupId: 1, variables: [{ id: 3, type: 'f32' }] });
   scheduler.flush();
   return { scheduler, store };
 }
@@ -130,10 +128,10 @@ describe('subscriptions', () => {
     const scheduler = new ManualScheduler();
     const store = new TelemetryStore({ scheduler, blockSize: 256 });
     const callback = vi.fn<() => void>();
-    store.setSchema([{ id: 3, name: 'battery', type: TypeCode.F32 }]);
+    store.setSchema([{ id: 3, name: 'battery', type: 'f32' }]);
     store.subscribe(['battery'], callback);
-    store.setSchema([{ id: 8, name: 'battery', type: TypeCode.F32 }]);
-    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 8, type: TypeCode.F32 }] });
+    store.setSchema([{ id: 8, name: 'battery', type: 'f32' }]);
+    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 8, type: 'f32' }] });
     scheduler.flush();
     callback.mockClear();
     store.append(1, 0, 0, [7.4]);
@@ -149,7 +147,7 @@ describe('subscriptions', () => {
     const status = store.status();
     store.subscribeStatus(callback);
     store.markBoundary('reboot', 5);
-    store.openEpoch({ epochId: 3, groupId: 0, variables: [{ id: 1, type: TypeCode.F32 }] });
+    store.openEpoch({ epochId: 3, groupId: 0, variables: [{ id: 1, type: 'f32' }] });
     scheduler.flush();
 
     expect(callback).toHaveBeenCalledTimes(1);

@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
 import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import {
@@ -19,15 +18,15 @@ const REFERENCE = 'reference/linear_speed';
 function store(): TelemetryStore {
   const telemetry = new TelemetryStore({ scheduler: new ManualScheduler() });
   telemetry.setSchema([
-    { id: 0, name: SPEED, type: TypeCode.F32 },
-    { id: 1, name: REFERENCE, type: TypeCode.F32 },
+    { id: 0, name: SPEED, type: 'f32' },
+    { id: 1, name: REFERENCE, type: 'f32' },
   ]);
   telemetry.openEpoch({
     epochId: 1,
     groupId: 0,
     variables: [
-      { id: 0, type: TypeCode.F32 },
-      { id: 1, type: TypeCode.F32 },
+      { id: 0, type: 'f32' },
+      { id: 1, type: 'f32' },
     ],
     firstSequence: 0,
   });

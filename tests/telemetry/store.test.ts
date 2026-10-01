@@ -1,12 +1,16 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { TypeCode } from '@/protocol';
-
+import type { ValueType } from '@/core/variables';
 import { COLUMN_BREAKS, COLUMN_HAS_DATA } from '@/telemetry/decimation';
 import { GAP_BYTES } from '@/telemetry/epoch';
 import { toLineSeries } from '@/telemetry/series';
 import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
-import type { IngestionEvent, SchemaEntry, TelemetryEvent } from '@/telemetry/types';
+import type {
+  HistoryVariable,
+  IngestionEvent,
+  TelemetryEvent,
+  VariableSpec,
+} from '@/telemetry/types';
 import { ManualScheduler } from '@/telemetry';
 
 const MS = 1000;
@@ -16,12 +20,12 @@ function makeStore(options: Partial<TelemetryStoreOptions> = {}): TelemetryStore
   return new TelemetryStore({ scheduler: new ManualScheduler(), blockSize: 256, ...options });
 }
 
-function mode(type: TypeCode): SchemaEntry[] {
+function mode(type: ValueType): HistoryVariable[] {
   return [{ id: 0, name: 'mode', type }];
 }
 
 function single(store: TelemetryStore, epochId: number, id = 1, groupId = 0): void {
-  store.openEpoch({ epochId, groupId, variables: [{ id, type: TypeCode.F32 }] });
+  store.openEpoch({ epochId, groupId, variables: [{ id, type: 'f32' }] });
 }
 
 function streamSingle(
@@ -78,13 +82,13 @@ describe('epochs and gaps', () => {
 
   test('restarts the sequence with each epoch and wraps it at 16 bits', () => {
     const store = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: TypeCode.U8 }] });
+    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: 'u8' }] });
 
     for (let index = 0; index < 70_000; index++) {
       store.append(1, index & 0xffff, index * MS, [index & 0xff]);
     }
 
-    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 1, type: TypeCode.U8 }] });
+    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 1, type: 'u8' }] });
     store.append(2, 0, 80 * SECOND, [1]);
 
     expect(store.variable(1)).toMatchObject({ storedSamples: 70_001, droppedSamples: 0 });
@@ -97,7 +101,7 @@ describe('epochs and gaps', () => {
     store.openEpoch({
       epochId: 2,
       groupId: 1,
-      variables: [{ id: 2, type: TypeCode.F32 }],
+      variables: [{ id: 2, type: 'f32' }],
       firstSequence: 0,
     });
     store.append(2, 3, 0, [1]);
@@ -202,8 +206,8 @@ describe('epoch lifecycle', () => {
         epochId: 1,
         groupId: 0,
         variables: [
-          { id: 1, type: TypeCode.F32 },
-          { id: 2, type: TypeCode.F32 },
+          { id: 1, type: 'f32' },
+          { id: 2, type: 'f32' },
         ],
       });
     }
@@ -248,7 +252,7 @@ describe('epoch lifecycle', () => {
 describe('schema', () => {
   test('keys history by name, so it survives new ids after a reboot', () => {
     const store = makeStore();
-    store.setSchema([{ id: 4, name: 'battery', type: TypeCode.F32 }]);
+    store.setSchema([{ id: 4, name: 'battery', type: 'f32' }]);
     single(store, 1, 4);
     streamSingle(
       store,
@@ -260,8 +264,8 @@ describe('schema', () => {
     );
     store.markBoundary('reboot', 20 * MS);
     store.setSchema([
-      { id: 0, name: 'state', type: TypeCode.U8 },
-      { id: 9, name: 'battery', type: TypeCode.F32 },
+      { id: 0, name: 'state', type: 'u8' },
+      { id: 9, name: 'battery', type: 'f32' },
     ]);
     single(store, 2, 9);
     streamSingle(
@@ -283,14 +287,14 @@ describe('schema', () => {
 
   test('starts a new history, with a boundary, when a name comes back with another type', () => {
     const store = makeStore();
-    store.setSchema([{ id: 0, name: 'mode', type: TypeCode.U8 }]);
+    store.setSchema([{ id: 0, name: 'mode', type: 'u8' }]);
     single(store, 1, 0);
     streamSingle(store, 1, 0, 10, (index) => index * MS);
-    store.setSchema([{ id: 0, name: 'mode', type: TypeCode.U16 }]);
-    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: TypeCode.U16 }] });
+    store.setSchema([{ id: 0, name: 'mode', type: 'u16' }]);
+    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: 'u16' }] });
     store.append(2, 0, 50 * MS, [3]);
 
-    expect(store.variable('mode')).toMatchObject({ type: TypeCode.U16, storedSamples: 1 });
+    expect(store.variable('mode')).toMatchObject({ type: 'u16', storedSamples: 1 });
     expect(store.boundaries()).toEqual([{ kind: 'schema', timeUs: 9 * MS }]);
     expect([...store.samples('mode', 0, SECOND)].map((run) => Array.from(run.values))).toEqual([
       [3],
@@ -302,16 +306,16 @@ describe('schema', () => {
     const scheduler = new ManualScheduler();
     const store = new TelemetryStore({ scheduler, blockSize: 256 });
     const callback = vi.fn<() => void>();
-    store.setSchema([{ id: 0, name: 'mode', type: TypeCode.U8 }]);
+    store.setSchema([{ id: 0, name: 'mode', type: 'u8' }]);
     store.subscribe(['mode'], callback);
     single(store, 1, 0);
     streamSingle(store, 1, 0, 10, (index) => index * MS);
     const before = store.historyMark('mode');
-    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: TypeCode.I32 }] });
+    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: 'i32' }] });
     store.append(2, 0, 50 * MS, [-3]);
     scheduler.flush();
 
-    expect(store.variable('mode')).toMatchObject({ type: TypeCode.I32, storedSamples: 1 });
+    expect(store.variable('mode')).toMatchObject({ type: 'i32', storedSamples: 1 });
     expect(store.historyMark('mode')?.source).not.toBe(before?.source);
     expect(store.boundaries()).toEqual([{ kind: 'schema', timeUs: 9 * MS }]);
     expect(callback).toHaveBeenCalledTimes(1);
@@ -319,30 +323,30 @@ describe('schema', () => {
 
   test('goes back to the history of a type that returns, and keeps the other reachable', () => {
     const store = makeStore();
-    store.setSchema(mode(TypeCode.F32));
+    store.setSchema(mode('f32'));
     single(store, 1, 0);
     streamSingle(store, 1, 0, 10, (index) => index * MS);
-    store.setSchema(mode(TypeCode.U8));
-    store.openEpoch({ epochId: 2, groupId: 0, variables: mode(TypeCode.U8) });
+    store.setSchema(mode('u8'));
+    store.openEpoch({ epochId: 2, groupId: 0, variables: mode('u8') });
     store.append(2, 0, 20 * MS, [7]);
-    store.setSchema(mode(TypeCode.F32));
+    store.setSchema(mode('f32'));
     single(store, 3, 0);
     store.append(3, 0, 30 * MS, [1.5]);
 
     expect(store.variable('mode')).toMatchObject({
-      type: TypeCode.F32,
+      type: 'f32',
       storedSamples: 11,
       epochs: 2,
     });
-    expect(store.variable({ name: 'mode', type: TypeCode.U8 })).toMatchObject({
-      type: TypeCode.U8,
+    expect(store.variable({ name: 'mode', type: 'u8' })).toMatchObject({
+      type: 'u8',
       storedSamples: 1,
     });
     expect(store.boundaries().map(({ timeUs }) => timeUs)).toEqual([9 * MS, 20 * MS]);
 
     store.reset();
 
-    expect(store.variable({ name: 'mode', type: TypeCode.U8 })?.storedSamples).toBe(0);
+    expect(store.variable({ name: 'mode', type: 'u8' })?.storedSamples).toBe(0);
     expect(store.variable('mode')?.storedSamples).toBe(0);
   });
 
@@ -356,16 +360,16 @@ describe('schema', () => {
 });
 
 describe('numeric types', () => {
-  const variables = [
-    { id: 0, type: TypeCode.BOOL },
-    { id: 1, type: TypeCode.U16 },
-    { id: 2, type: TypeCode.F32 },
-    { id: 3, type: TypeCode.U32 },
-    { id: 4, type: TypeCode.I32 },
-    { id: 5, type: TypeCode.F64 },
-    { id: 6, type: TypeCode.U64 },
-    { id: 7, type: TypeCode.I64 },
-    { id: 8, type: TypeCode.BLOB },
+  const variables: readonly VariableSpec[] = [
+    { id: 0, type: 'bool' },
+    { id: 1, type: 'u16' },
+    { id: 2, type: 'f32' },
+    { id: 3, type: 'u32' },
+    { id: 4, type: 'i32' },
+    { id: 5, type: 'f64' },
+    { id: 6, type: 'u64' },
+    { id: 7, type: 'i64' },
+    { id: 8, type: 'bytes' },
   ];
 
   test('keeps narrow types in 32 bit floats and the rest in 64 bit floats', () => {
@@ -468,8 +472,8 @@ describe('blocks', () => {
       epochId: 1,
       groupId: 0,
       variables: [
-        { id: 1, type: TypeCode.F32 },
-        { id: 2, type: TypeCode.U32 },
+        { id: 1, type: 'f32' },
+        { id: 2, type: 'u32' },
       ],
     });
     const buffers = () =>
@@ -512,7 +516,7 @@ describe('blocks', () => {
 
   test('hand out runs as views, split at block edges, for the asked range only', () => {
     const store = makeStore({ blockSize: 256 });
-    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: TypeCode.F64 }] });
+    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: 'f64' }] });
     streamSingle(store, 1, 0, 1000, (index) => index * MS);
     const runs = [...store.samples(1, 100 * MS, 700 * MS)];
 
@@ -638,8 +642,8 @@ describe('ingestion events', () => {
     const events: IngestionEvent[] = [];
     store.onIngestion((event) => events.push(event));
     store.setSchema([
-      { id: 0, name: 'speed', type: TypeCode.F32 },
-      { id: 1, name: 'maze', type: TypeCode.BLOB },
+      { id: 0, name: 'speed', type: 'f32' },
+      { id: 1, name: 'maze', type: 'bytes' },
     ]);
     single(store, 1, 0);
     store.append(1, 0, 0, [1]);
@@ -658,7 +662,7 @@ describe('ingestion events', () => {
         epoch: {
           epochId: 1,
           groupId: 0,
-          variables: [{ id: 0, name: 'speed', type: TypeCode.F32 }],
+          variables: [{ id: 0, name: 'speed', type: 'f32' }],
         },
       },
       {

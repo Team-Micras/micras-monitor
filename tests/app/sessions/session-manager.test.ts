@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode, decodeAccess } from '@/protocol';
+import type { Variable } from '@/core/variables';
 import { MemoryRecordingFile, SavedRecording, TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import { DirectTransport, FakeDirectory, FakeFile } from '@tests/support/app/sessions/fake-opfs';
@@ -10,17 +10,26 @@ import { MemoryLocks, type SessionLibrary } from '@/app/sessions/session-library
 import {
   defaultSessionName,
   exportFileName,
-  recordedSchema,
-  schemaVariables,
   SessionManager,
   type SessionsState,
 } from '@/app/sessions/session-manager';
 import { deserializeRecording } from '@tests/support/telemetry/recording-bytes';
 
 const SAMPLE_US = 10_000;
-const VARIABLES = [
-  { id: 0, name: 'pose/x', type: TypeCode.F32, access: decodeAccess(0x01), typeTag: null },
-  { id: 1, name: 'maze', type: TypeCode.BLOB, access: decodeAccess(0x08), typeTag: 'maze-grid' },
+const VARIABLES: readonly Variable[] = [
+  {
+    id: 0,
+    name: 'pose/x',
+    type: 'f32',
+    access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
+  },
+  {
+    id: 1,
+    name: 'maze',
+    type: 'bytes',
+    access: { stream: false, write: false, writeNeedsIdle: false, persists: true },
+    tag: 'maze-grid',
+  },
 ];
 
 function settle(): Promise<void> {
@@ -40,7 +49,7 @@ function rig(
   store.openEpoch({
     epochId: 1,
     groupId: 0,
-    variables: [{ id: 0, type: TypeCode.F32 }],
+    variables: [{ id: 0, type: 'f32' }],
     firstSequence: 0,
   });
   const manager = new SessionManager({
@@ -52,7 +61,7 @@ function rig(
     describe: () => ({
       name: 'micras',
       robot: { name: 'micras', schemaHash: 0x9f1c },
-      schema: recordedSchema(VARIABLES),
+      schema: VARIABLES,
     }),
   });
   let next = 0;
@@ -191,7 +200,7 @@ describe('recording the live session', () => {
 
     expect(exported?.fileName).toBe('final-run.mmrec');
     expect(read.header.name).toBe('Final run');
-    expect(read.header.schema).toEqual(recordedSchema(VARIABLES));
+    expect(read.header.schema).toEqual(VARIABLES);
     expect(read.records.some((record) => record.kind === 'block')).toBe(true);
   });
 
@@ -240,7 +249,7 @@ describe('opening a saved session', () => {
 
     expect(viewing?.session.id).toBe(saved.id);
     expect(viewing?.robot).toBe('micras');
-    expect(viewing?.variables).toEqual(schemaVariables(recordedSchema(VARIABLES)));
+    expect(viewing?.variables).toEqual(VARIABLES);
     expect(viewing?.store.timeRange()).toEqual(store.timeRange());
     expect(viewing?.summary).toMatchObject({ samples: 400, damaged: [] });
     expect(viewing?.loadMs).toBeGreaterThanOrEqual(0);
@@ -493,7 +502,7 @@ test('tells about the memory cap nearing, dropping the oldest history, and pausi
   const scheduler = new ManualScheduler();
   const store = new TelemetryStore({ scheduler, blockSize: 1024, memoryCapBytes: 200_000 });
   store.setSchema(VARIABLES);
-  store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: TypeCode.F32 }] });
+  store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: 'f32' }] });
   const manager = new SessionManager({
     store,
     library: new MemorySessionLibrary(),

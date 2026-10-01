@@ -1,7 +1,7 @@
-import type { TypeCode } from '@/protocol';
+import type { ValueType } from '@/core/variables';
 
 import { Channel } from './notifier';
-import type { SchemaEntry, VariableRef } from './types';
+import type { HistoryVariable, VariableRef } from './types';
 import { VariableRecord } from './variable';
 
 /**
@@ -16,7 +16,7 @@ export class ChannelRegistry {
   private readonly records = new Map<string, VariableRecord>();
   private readonly latestByName = new Map<string, VariableRecord>();
   private readonly channels = new Map<string, Channel>();
-  private schema = new Map<number, SchemaEntry>();
+  private schema = new Map<number, HistoryVariable>();
 
   /**
    * @param historyLength How many values to keep for variables not stored numerically.
@@ -33,7 +33,7 @@ export class ChannelRegistry {
    *
    * @returns Whether a name already known came back with another type.
    */
-  setSchema(entries: readonly SchemaEntry[]): boolean {
+  setSchema(entries: readonly HistoryVariable[]): boolean {
     this.schema = new Map(entries.map((entry) => [entry.id, entry]));
     let changed = false;
 
@@ -56,7 +56,7 @@ export class ChannelRegistry {
   }
 
   /** The type of an id in the current schema, if it has one. */
-  typeOf(id: number): TypeCode | undefined {
+  typeOf(id: number): ValueType | undefined {
     return this.schema.get(id)?.type;
   }
 
@@ -64,7 +64,7 @@ export class ChannelRegistry {
    * The record of a name and type, made if needed. A record whose type was not known yet takes
    * the type; a different known type goes back to the record of that type, or starts one.
    */
-  recordFor(name: string, type: TypeCode | undefined): VariableRecord {
+  recordFor(name: string, type: ValueType | undefined): VariableRecord {
     const current = this.latestByName.get(name);
 
     if (current && (type === undefined || current.type === type)) {
@@ -122,6 +122,6 @@ export class ChannelRegistry {
   }
 }
 
-function keyOf(name: string, type: TypeCode | undefined): string {
+function keyOf(name: string, type: ValueType | undefined): string {
   return `${name}\u0000${type ?? ''}`;
 }

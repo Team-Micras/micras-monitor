@@ -7,10 +7,9 @@
  * @module
  */
 
-import { TypeCode } from '@/protocol';
+import type { Variable } from '@/core/variables';
 import { roleVariable, type LayoutPreset, type PresetNode, type RobotPackage } from '@/robot-kit';
 
-import type { RobotVariable } from '../ports';
 import type { ShellWindow } from '../windows/types';
 
 /** How many values the phone shows next to each other. */
@@ -47,8 +46,8 @@ function plotsOf(presets: readonly LayoutPreset[]): readonly (readonly string[])
     .map((entry) => entry.variables);
 }
 
-function isNumeric(variable: RobotVariable): boolean {
-  return variable.type !== TypeCode.BLOB && variable.type !== TypeCode.BOOL;
+function isNumeric(variable: Variable): boolean {
+  return variable.type !== 'bytes' && variable.type !== 'bool';
 }
 
 function win(id: string, kind: string, variables: readonly string[], title?: string): ShellWindow {
@@ -61,10 +60,7 @@ function win(id: string, kind: string, variables: readonly string[], title?: str
  * @param pkg The robot's package, or null for raw mode.
  * @param variables The variables of its schema; empty until it loads.
  */
-export function phonePlan(
-  pkg: RobotPackage | null,
-  variables: readonly RobotVariable[]
-): PhonePlan {
+export function phonePlan(pkg: RobotPackage | null, variables: readonly Variable[]): PhonePlan {
   const known = new Set(variables.map((variable) => variable.name));
   const exists = (name: string) => known.size === 0 || known.has(name);
   const map = roleVariable(pkg, 'map');

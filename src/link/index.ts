@@ -101,6 +101,7 @@ export {
   type WriteEvent,
   type WriteResult,
 } from './session-types';
+export { accessOf, valueTypeOf, variableOf } from './value-types';
 export { BaseTransport, type CloseReason, type Transport, type TransportState } from './transport';
 export {
   WebSocketTransport,

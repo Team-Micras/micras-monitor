@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
 import { TelemetryStore, ManualScheduler } from '@/telemetry';
 
 import { TransitionTracker } from '@/app/windows/robot/transitions';
@@ -8,11 +7,11 @@ import { TransitionTracker } from '@/app/windows/robot/transitions';
 describe('TransitionTracker', () => {
   test('finds each change once, across scans and epochs', () => {
     const store = new TelemetryStore({ scheduler: new ManualScheduler() });
-    store.setSchema([{ id: 0, name: 'state', type: TypeCode.U8 }]);
+    store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
     store.openEpoch({
       epochId: 1,
       groupId: 0,
-      variables: [{ id: 0, type: TypeCode.U8 }],
+      variables: [{ id: 0, type: 'u8' }],
       firstSequence: 0,
     });
     [0, 0, 1, 1].forEach((value, index) => store.append(1, index, index * 1000, [value]));
@@ -29,7 +28,7 @@ describe('TransitionTracker', () => {
     store.openEpoch({
       epochId: 2,
       groupId: 0,
-      variables: [{ id: 0, type: TypeCode.U8 }],
+      variables: [{ id: 0, type: 'u8' }],
       firstSequence: 0,
     });
     [1, 3].forEach((value, index) => store.append(2, index, 10_000 + index * 1000, [value]));
@@ -39,11 +38,11 @@ describe('TransitionTracker', () => {
 
   test('starts over when the store is reset and the timeline restarts', () => {
     const store = new TelemetryStore({ scheduler: new ManualScheduler() });
-    store.setSchema([{ id: 0, name: 'state', type: TypeCode.U8 }]);
+    store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
     store.openEpoch({
       epochId: 1,
       groupId: 0,
-      variables: [{ id: 0, type: TypeCode.U8 }],
+      variables: [{ id: 0, type: 'u8' }],
       firstSequence: 0,
     });
     [1, 2].forEach((value, index) => store.append(1, index, 50_000 + index * 1000, [value]));
@@ -52,11 +51,11 @@ describe('TransitionTracker', () => {
 
     store.reset();
     expect(tracker.update()).toEqual([]);
-    store.setSchema([{ id: 0, name: 'state', type: TypeCode.U8 }]);
+    store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
     store.openEpoch({
       epochId: 2,
       groupId: 0,
-      variables: [{ id: 0, type: TypeCode.U8 }],
+      variables: [{ id: 0, type: 'u8' }],
       firstSequence: 0,
     });
     [2, 2, 3].forEach((value, index) => store.append(2, index, index * 1000, [value]));
@@ -68,11 +67,11 @@ describe('TransitionTracker', () => {
 
   test('starts over when the store is reset and appended to before the next scan', () => {
     const store = new TelemetryStore({ scheduler: new ManualScheduler() });
-    store.setSchema([{ id: 0, name: 'state', type: TypeCode.U8 }]);
+    store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
     store.openEpoch({
       epochId: 1,
       groupId: 0,
-      variables: [{ id: 0, type: TypeCode.U8 }],
+      variables: [{ id: 0, type: 'u8' }],
       firstSequence: 0,
     });
     [1, 2].forEach((value, index) => store.append(1, index, index * 1000, [value]));

@@ -7,17 +7,6 @@
  * @module
  */
 
-import type { Access, TypeCode } from '@/protocol';
-
-/** A variable as the schema describes it, which is all the monitor knows of an unknown robot. */
-export interface SchemaVariable {
-  readonly name: string;
-  readonly type: TypeCode;
-  readonly access: Access;
-  /** The type tag of a blob (protocol v2), such as `"maze-grid"`, or null. */
-  readonly typeTag: string | null;
-}
-
 /** What a view of a serializable value receives. */
 export interface TypeViewProps<T> {
   readonly value: T;

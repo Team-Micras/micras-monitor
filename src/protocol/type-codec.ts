@@ -14,7 +14,7 @@ import { TypeCode } from './protocol';
 /**
  * TypeScript equivalent of C++ primitive types.
  */
-export type Fundamental = number | boolean | bigint | string;
+export type Fundamental = number | boolean | bigint;
 
 /**
  * How many bytes a value of each type takes on the wire; a blob has no fixed size.

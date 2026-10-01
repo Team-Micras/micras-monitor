@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
-
+import type { Access, Variable } from '@/core/variables';
 import { Block } from '@/telemetry/block';
 import { COLUMN_HAS_DATA } from '@/telemetry/decimation';
 import type { RecordingFile } from '@/telemetry/recording-file';
@@ -14,19 +13,20 @@ import {
 import { SavedRecording } from '@/telemetry/recording-reader';
 import { RecordingBlocks, SessionRecorder } from '@/telemetry/recorder';
 import { TelemetryStore, type TelemetryStoreOptions } from '@/telemetry/store';
-import type { SampleValue } from '@/telemetry/types';
+import type { SampleValue, VariableSpec } from '@/telemetry/types';
 import { serializeRecording } from '@tests/support/telemetry/recording-bytes';
 import { ManualScheduler } from '@/telemetry';
 
 const BLOCK_SIZE = 1024;
-const VARIABLES = [
-  { id: 1, type: TypeCode.F32 },
-  { id: 2, type: TypeCode.U32 },
+const VARIABLES: readonly VariableSpec[] = [
+  { id: 1, type: 'f32' },
+  { id: 2, type: 'u32' },
 ];
-const SCHEMA = [
-  { id: 1, name: 'pose/x', type: TypeCode.F32 },
-  { id: 2, name: 'localizer/accepted', type: TypeCode.U32 },
-  { id: 3, name: 'maze', type: TypeCode.BLOB },
+const STREAM: Access = { stream: true, write: false, writeNeedsIdle: false, persists: false };
+const SCHEMA: readonly Variable[] = [
+  { id: 1, name: 'pose/x', type: 'f32', access: STREAM },
+  { id: 2, name: 'localizer/accepted', type: 'u32', access: STREAM },
+  { id: 3, name: 'maze', type: 'bytes', access: STREAM },
 ];
 const HEADER: RecordingHeader = {
   format: RECORDING_FORMAT,

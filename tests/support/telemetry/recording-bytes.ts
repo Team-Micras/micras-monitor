@@ -52,7 +52,7 @@ export function serializeRecording(recording: Recording): Uint8Array {
  * the records before, with `truncatedAt` saying where it ends; a damaged record in the middle is
  * skipped and listed in `damaged`.
  *
- * @throws If the bytes are not a recording, or its version is not 1.
+ * @throws If the bytes are not a recording, or not of the current version.
  */
 export function deserializeRecording(bytes: Uint8Array): Recording {
   const scan = scanRecording(bytes);

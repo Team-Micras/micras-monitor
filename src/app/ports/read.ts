@@ -5,11 +5,11 @@
  * @module
  */
 
-import type { TelemetryValue } from '@/telemetry';
+import type { Value } from '@/core/variables';
 
 /** How a READ ended: the value, which also becomes the variable's latest, or why it failed. */
 export type ReadOutcome =
-  | { readonly status: 'ok'; readonly value: TelemetryValue }
+  | { readonly status: 'ok'; readonly value: Value }
   | { readonly status: 'failed'; readonly message: string };
 
 /** Reads variables on demand. */

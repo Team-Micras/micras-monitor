@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
-import { TypeCode, decodeAccess } from '@/protocol';
 import { RobotRegistry, type EnumType, type RobotPackage } from '@/robot-kit';
 import { mouse } from '@tests/support/robot-kit/packages';
 import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/tiling';
@@ -326,8 +325,8 @@ describe('Editor', () => {
         variables: [
           {
             name: 'aux_flag',
-            type: TypeCode.BOOL,
-            access: decodeAccess(0x02),
+            type: 'bool',
+            access: { stream: false, write: true, writeNeedsIdle: false, persists: false },
             signal: () => 1,
           },
         ],
@@ -351,7 +350,12 @@ describe('Editor', () => {
         failing ? Promise.resolve({ status: 'failed', message: 'the robot timed out' }) : undefined,
       robot: {
         variables: [
-          { name: 'aux_flag', type: TypeCode.BOOL, access: decodeAccess(0x02), signal: () => 1 },
+          {
+            name: 'aux_flag',
+            type: 'bool',
+            access: { stream: false, write: true, writeNeedsIdle: false, persists: false },
+            signal: () => 1,
+          },
         ],
       },
     });
@@ -390,8 +394,18 @@ describe('Editor', () => {
       root: leaf('edit'),
       robot: {
         variables: [
-          { name: 'gain', type: TypeCode.U8, access: decodeAccess(0x03), signal: () => 7 },
-          { name: 'limit', type: TypeCode.F32, access: decodeAccess(0x01), signal: () => 1 },
+          {
+            name: 'gain',
+            type: 'u8',
+            access: { stream: true, write: true, writeNeedsIdle: false, persists: false },
+            signal: () => 7,
+          },
+          {
+            name: 'limit',
+            type: 'f32',
+            access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
+            signal: () => 1,
+          },
         ],
       },
     });
@@ -417,7 +431,12 @@ describe('Editor of a float', () => {
       root: leaf('edit'),
       robot: {
         variables: [
-          { name: 'speed', type: TypeCode.F32, access: decodeAccess(0x03), signal: () => 0.5 },
+          {
+            name: 'speed',
+            type: 'f32',
+            access: { stream: true, write: true, writeNeedsIdle: false, persists: false },
+            signal: () => 0.5,
+          },
         ],
       },
     });
@@ -434,11 +453,16 @@ describe('Type view', () => {
       root: leaf('maze'),
       robot: {
         variables: [
-          { name: 'maze', type: TypeCode.BLOB, access: decodeAccess(0x08), typeTag: 'maze-grid' },
+          {
+            name: 'maze',
+            type: 'bytes',
+            access: { stream: false, write: false, writeNeedsIdle: false, persists: true },
+            tag: 'maze-grid',
+          },
           {
             name: 'maze/revision',
-            type: TypeCode.U32,
-            access: decodeAccess(0x01),
+            type: 'u32',
+            access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
             signal: (seconds) => (seconds < 1.5 ? 1 : 2),
           },
         ],

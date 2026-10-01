@@ -11,7 +11,7 @@
  * @module
  */
 
-import { decodeAccess } from '@/protocol';
+import type { Variable } from '@/core/variables';
 import {
   decodeRecordingHeader,
   encodeRecordingHeader,
@@ -25,12 +25,10 @@ import {
   type RecordingFile,
   type RecordingHeader,
   type RecordingSummary,
-  type RecordingVariable,
   type Scheduler,
   type TelemetryEvent,
 } from '@/telemetry';
 
-import type { RobotVariable } from '../ports';
 import {
   sessionId,
   type SessionInfo,
@@ -47,7 +45,7 @@ export interface RobotDescription {
   /** Whatever else the link knows of it. */
   readonly robot: RecordingHeader['robot'];
   /** Its schema. */
-  readonly schema: readonly RecordingVariable[];
+  readonly schema: readonly Variable[];
 }
 
 /** How to set up the sessions. */
@@ -85,7 +83,7 @@ export interface OpenedSession {
   /** Its samples, read only. */
   readonly store: TelemetryStore;
   /** Its variables, as the schema port gives them. */
-  readonly variables: readonly RobotVariable[];
+  readonly variables: readonly Variable[];
   /** The robot it was recorded from, if it said its name. */
   readonly robot: string | null;
   /** What its file held. */
@@ -173,38 +171,6 @@ interface Viewed {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function encodeAccess(variable: RobotVariable): number {
-  const { access } = variable;
-  return (
-    (access.stream ? 1 : 0) |
-    (access.write ? 2 : 0) |
-    (access.idle ? 4 : 0) |
-    (access.persist ? 8 : 0)
-  );
-}
-
-/** The schema of the robot variables, as a recording's header keeps it. */
-export function recordedSchema(variables: readonly RobotVariable[]): RecordingVariable[] {
-  return variables.map((variable) => ({
-    id: variable.id,
-    name: variable.name,
-    type: variable.type,
-    access: encodeAccess(variable),
-    ...(variable.typeTag === null ? {} : { typeTag: variable.typeTag }),
-  }));
-}
-
-/** The robot variables of a recording's schema, for the schema port of an opened session. */
-export function schemaVariables(schema: readonly RecordingVariable[]): RobotVariable[] {
-  return schema.map((variable) => ({
-    id: variable.id,
-    name: variable.name,
-    type: variable.type,
-    access: decodeAccess(variable.access ?? 0),
-    typeTag: variable.typeTag ?? null,
-  }));
 }
 
 /** The name a session gets when it starts: the robot and the local date and time. */
@@ -485,7 +451,7 @@ export class SessionManager {
         opened: {
           session,
           store,
-          variables: schemaVariables(saved.summary.schema),
+          variables: saved.summary.schema,
           robot,
           summary: saved.summary,
           blocks: saved.blocks,

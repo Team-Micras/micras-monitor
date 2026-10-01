@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { TypeCode } from '@/protocol';
+import type { ValueType } from '@/core/variables';
 import type { BitmaskType, EnumType } from '@/robot-kit';
 
 import {
@@ -19,45 +19,45 @@ const PROFILE: BitmaskType = {
 
 describe('editorControl', () => {
   test('picks the control by type and labels', () => {
-    expect(editorControl(TypeCode.BOOL, null)).toEqual({ kind: 'bool' });
-    expect(editorControl(TypeCode.U8, STATE)).toEqual({ kind: 'enum', labels: STATE, wide: false });
-    expect(editorControl(TypeCode.U8, PROFILE)).toEqual({
+    expect(editorControl('bool', null)).toEqual({ kind: 'bool' });
+    expect(editorControl('u8', STATE)).toEqual({ kind: 'enum', labels: STATE, wide: false });
+    expect(editorControl('u8', PROFILE)).toEqual({
       kind: 'bitmask',
       labels: PROFILE,
       wide: false,
     });
-    expect(editorControl(TypeCode.U64, PROFILE)).toMatchObject({ kind: 'bitmask', wide: true });
-    expect(editorControl(TypeCode.F32, null)).toEqual({ kind: 'number', type: TypeCode.F32 });
-    expect(editorControl(TypeCode.BLOB, STATE)).toEqual({ kind: 'none' });
+    expect(editorControl('u64', PROFILE)).toMatchObject({ kind: 'bitmask', wide: true });
+    expect(editorControl('f32', null)).toEqual({ kind: 'number', type: 'f32' });
+    expect(editorControl('bytes', STATE)).toEqual({ kind: 'none' });
   });
 });
 
 describe('parseValue', () => {
-  test.each([
-    [TypeCode.U8, '255', 255],
-    [TypeCode.I8, '-128', -128],
-    [TypeCode.U16, ' 65535 ', 65_535],
-    [TypeCode.I32, '+17', 17],
-    [TypeCode.U32, '4294967295', 4_294_967_295],
-    [TypeCode.F32, '-1.5e3', -1500],
-    [TypeCode.F64, '0.1', 0.1],
-    [TypeCode.U64, '18446744073709551615', 18_446_744_073_709_551_615n],
-    [TypeCode.I64, '-9223372036854775808', -9_223_372_036_854_775_808n],
+  test.each<[ValueType, string, number | bigint]>([
+    ['u8', '255', 255],
+    ['i8', '-128', -128],
+    ['u16', ' 65535 ', 65_535],
+    ['i32', '+17', 17],
+    ['u32', '4294967295', 4_294_967_295],
+    ['f32', '-1.5e3', -1500],
+    ['f64', '0.1', 0.1],
+    ['u64', '18446744073709551615', 18_446_744_073_709_551_615n],
+    ['i64', '-9223372036854775808', -9_223_372_036_854_775_808n],
   ])('takes a value its type holds (%s, %s)', (type, text, value) => {
     expect(parseValue(text, type)).toEqual({ ok: true, value });
   });
 
-  test.each([
-    [TypeCode.U8, '256', 'Enter 0 to 255'],
-    [TypeCode.I8, '-129', 'Enter -128 to 127'],
-    [TypeCode.U32, '-1', 'Enter 0 to 4294967295'],
-    [TypeCode.I16, '1.5', 'Enter a whole number'],
-    [TypeCode.U64, '18446744073709551616', 'Enter 0 to 18446744073709551615'],
-    [TypeCode.F32, '1e39', 'Too large for an f32'],
-    [TypeCode.F64, 'NaN', 'Enter a finite number'],
-    [TypeCode.F64, 'Infinity', 'Enter a finite number'],
-    [TypeCode.F32, '  ', 'Enter a value'],
-    [TypeCode.BOOL, '1', 'This type cannot be typed in'],
+  test.each<[ValueType, string, string]>([
+    ['u8', '256', 'Enter 0 to 255'],
+    ['i8', '-129', 'Enter -128 to 127'],
+    ['u32', '-1', 'Enter 0 to 4294967295'],
+    ['i16', '1.5', 'Enter a whole number'],
+    ['u64', '18446744073709551616', 'Enter 0 to 18446744073709551615'],
+    ['f32', '1e39', 'Too large for an f32'],
+    ['f64', 'NaN', 'Enter a finite number'],
+    ['f64', 'Infinity', 'Enter a finite number'],
+    ['f32', '  ', 'Enter a value'],
+    ['bool', '1', 'This type cannot be typed in'],
   ])('refuses a value its type cannot hold (%s, %s)', (type, text, error) => {
     expect(parseValue(text, type)).toEqual({ ok: false, error });
   });

@@ -7,7 +7,6 @@ import type { FakeRobot, FakeRobotOptions, FakeVariable } from '@/app/fake/fake-
 import { createShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
 import type { ShellWindow } from '@/app/windows/types';
-import { TypeCode, decodeAccess } from '@/protocol';
 import { RobotRegistry } from '@/robot-kit';
 import { createDesktop, createWorkspace, leaf } from '@/tiling';
 import { micras } from '@robots/micras';
@@ -27,8 +26,8 @@ const MAZE_WINDOW: ShellWindow = {
 
 const f32 = (name: string, value: number): FakeVariable => ({
   name,
-  type: TypeCode.F32,
-  access: decodeAccess(0x01),
+  type: 'f32',
+  access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
   signal: () => value,
 });
 
@@ -75,21 +74,26 @@ describe('the Micras package in the app', () => {
     let blob = FRESH_16;
     let revision = 1;
     const robot = await openMaze([
-      { name: 'state', type: TypeCode.U8, access: decodeAccess(0x01), signal: () => 3 },
+      {
+        name: 'state',
+        type: 'u8',
+        access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
+        signal: () => 3,
+      },
       f32('pose/x', 0.09),
       f32('pose/y', 0.27),
       f32('pose/orientation', Math.PI / 2),
       {
         name: 'maze',
-        type: TypeCode.BLOB,
-        access: decodeAccess(0x08),
-        typeTag: 'maze-grid',
+        type: 'bytes',
+        access: { stream: false, write: false, writeNeedsIdle: false, persists: true },
+        tag: 'maze-grid',
         bytes: () => blob,
       },
       {
         name: 'maze/revision',
-        type: TypeCode.U32,
-        access: decodeAccess(0x01),
+        type: 'u32',
+        access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
         signal: () => revision,
       },
     ]);
@@ -113,9 +117,9 @@ describe('the Micras package in the app', () => {
     await openMaze([
       {
         name: 'maze',
-        type: TypeCode.BLOB,
-        access: decodeAccess(0x08),
-        typeTag: 'maze-grid',
+        type: 'bytes',
+        access: { stream: false, write: false, writeNeedsIdle: false, persists: true },
+        tag: 'maze-grid',
         bytes: () => FRESH_16,
       },
     ]);
@@ -138,8 +142,8 @@ describe('the Micras package in the app', () => {
       [
         {
           name: 'state',
-          type: TypeCode.U8,
-          access: decodeAccess(0x01),
+          type: 'u8',
+          access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
           signal: (seconds) => (seconds < 0.4 ? 3 : 1),
         },
       ],

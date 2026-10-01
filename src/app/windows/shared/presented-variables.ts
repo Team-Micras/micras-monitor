@@ -7,16 +7,16 @@
 
 import type { ReactNode } from 'react';
 
+import type { Variable } from '@/core/variables';
 import { presentVariable, type VariablePresentation } from '@/robot-kit';
 
 import { useRobotPackage, useVariables } from '../../monitor-context';
-import type { RobotVariable } from '../../ports';
 
 /** A variable of a window, found in the schema or not. */
 export interface PresentedVariable {
   readonly name: string;
   /** Its schema entry, or undefined when the connected robot has no such variable. */
-  readonly variable: RobotVariable | undefined;
+  readonly variable: Variable | undefined;
   /** How the package presents it, or null when it is not in the schema. */
   readonly presentation: VariablePresentation<ReactNode> | null;
   /** The CSS color of its series. */
