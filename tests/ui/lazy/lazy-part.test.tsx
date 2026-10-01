@@ -3,7 +3,7 @@ import { render } from 'vitest-browser-react';
 
 import { lazyWithRetry } from '@/ui/lazy/lazy-with-retry';
 
-import { LazyPart } from '@/ui/lib/lazy-part';
+import { LazyPart } from '@/ui/lazy/lazy-part';
 
 function Hello() {
   return <p>Hello</p>;
@@ -81,5 +81,28 @@ describe('LazyPart', () => {
       </LazyPart>
     );
     await expect.element(second.getByText('Hello')).toBeVisible();
+  });
+
+  test('mounts nothing until it is first wanted, and stays mounted after', async () => {
+    const screen = await render(
+      <LazyPart fallback={<p>Not loaded</p>} loadWhen={false}>
+        <Hello />
+      </LazyPart>
+    );
+    expect(screen.container.textContent).toBe('');
+
+    await screen.rerender(
+      <LazyPart fallback={<p>Not loaded</p>} loadWhen>
+        <Hello />
+      </LazyPart>
+    );
+    await expect.element(screen.getByText('Hello')).toBeVisible();
+
+    await screen.rerender(
+      <LazyPart fallback={<p>Not loaded</p>} loadWhen={false}>
+        <Hello />
+      </LazyPart>
+    );
+    await expect.element(screen.getByText('Hello')).toBeVisible();
   });
 });

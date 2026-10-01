@@ -1,6 +1,6 @@
-import { Component, Suspense, type ReactNode } from 'react';
+import { Component, Suspense, useState, type ReactNode } from 'react';
 
-import { retryFailedLoads } from '../lazy/lazy-with-retry';
+import { retryFailedLoads } from './lazy-with-retry';
 
 interface LazyPartProps {
   /** What stands in while the code loads, and if it cannot load. */
@@ -11,7 +11,22 @@ interface LazyPartProps {
   readonly retryOnMount?: boolean;
   /** Called when the code fails to load. */
   readonly onError?: () => void;
+  /**
+   * Mounts the part the first time this is true, such as an overlay opened once, and keeps it
+   * mounted from then on; without it the part is mounted at once.
+   */
+  readonly loadWhen?: boolean;
   readonly children: ReactNode;
+}
+
+function useEver(value: boolean): boolean {
+  const [ever, setEver] = useState(value);
+
+  if (value && !ever) {
+    setEver(true);
+  }
+
+  return ever || value;
 }
 
 interface LoadGuardState {
@@ -58,7 +73,20 @@ class LoadGuard extends Component<LazyPartProps, LoadGuardState> {
  * Shows a part of the shell whose code loads on demand. While it loads, or if it fails, the
  * fallback stays in its place, so a chunk that does not arrive never takes the app down.
  */
-export function LazyPart({ fallback, resetKey, retryOnMount, onError, children }: LazyPartProps) {
+export function LazyPart({
+  fallback,
+  resetKey,
+  retryOnMount,
+  onError,
+  loadWhen = true,
+  children,
+}: LazyPartProps) {
+  const loaded = useEver(loadWhen);
+
+  if (!loaded) {
+    return null;
+  }
+
   return (
     <LoadGuard
       fallback={fallback}

@@ -14,8 +14,7 @@ import type { RecordingManager } from '@/recording/library/recording-manager';
 import { lazyWithRetry } from '../lazy/lazy-with-retry';
 
 import { formatBytes, formatDuration } from '../lib/format';
-import { LazyPart } from '../lib/lazy-part';
-import { useEver } from '../lib/use-ever';
+import { LazyPart } from '../lazy/lazy-part';
 import { useLiveMonitor } from '../monitor-context';
 import { Button } from '../primitives/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../primitives/popover';
@@ -91,8 +90,6 @@ export function RecordingControls() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [recordingsOpen, setRecordingsOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const sessionsWanted = useEver(recordingsOpen);
-  const resetWanted = useEver(confirmReset);
   const recording = state?.recording ?? null;
   const now = useNow(recording !== null);
   const memory = useLiveMemory(manager);
@@ -195,21 +192,17 @@ export function RecordingControls() {
           </MenuButton>
         </PopoverContent>
       </Popover>
-      {resetWanted ? (
-        <LazyPart fallback={null} resetKey={confirmReset} retryOnMount>
-          <LazyResetDialog
-            open={confirmReset}
-            onOpenChange={setConfirmReset}
-            manager={manager}
-            recording={recording !== null}
-          />
-        </LazyPart>
-      ) : null}
-      {sessionsWanted ? (
-        <LazyPart fallback={null} resetKey={recordingsOpen} retryOnMount>
-          <LazyRecordingsDialog open={recordingsOpen} onOpenChange={setRecordingsOpen} />
-        </LazyPart>
-      ) : null}
+      <LazyPart fallback={null} resetKey={confirmReset} retryOnMount loadWhen={confirmReset}>
+        <LazyResetDialog
+          open={confirmReset}
+          onOpenChange={setConfirmReset}
+          manager={manager}
+          recording={recording !== null}
+        />
+      </LazyPart>
+      <LazyPart fallback={null} resetKey={recordingsOpen} retryOnMount loadWhen={recordingsOpen}>
+        <LazyRecordingsDialog open={recordingsOpen} onOpenChange={setRecordingsOpen} />
+      </LazyPart>
       <div className="pointer-events-none fixed bottom-14 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
         <MemoryNotice />
         <RecoveryNotice onOpenList={() => setRecordingsOpen(true)} />

@@ -18,8 +18,7 @@ import {
   noRobotFor,
   spaceUnbound,
 } from './shell/commands/command-outcome';
-import { LazyPart } from './lib/lazy-part';
-import { useEver } from './lib/use-ever';
+import { LazyPart } from './lazy/lazy-part';
 import {
   MonitorContext,
   PackageChooser,
@@ -165,18 +164,14 @@ function Shell({
   const keyOverrides = useShell((state) => state.keyOverrides);
   const drawerOpen = useShell((state) => state.overlay === 'drawer');
   const launcherOpen = useShell((state) => state.overlay === 'launcher');
-  const launcherWanted = useEver(launcherOpen);
   const undoable = useShell(
     (state) => state.deletedPreset !== null || state.removedVariable !== null
   );
-  const undoWanted = useEver(undoable);
   const closing = useShell((state) => state.closingWorkspace !== null);
-  const closingAsked = useEver(closing);
   const presses = useRef(0);
   const [confirming, setConfirming] = useState<PendingCommand | null>(null);
   const [asking, setAsking] = useState(false);
   const [asks, setAsks] = useState(0);
-  const askedOnce = useEver(asking);
   const phone = usePhone();
   const livePackage = useRobotPackage(live)?.package ?? null;
   const status = useStatus(live);
@@ -330,36 +325,28 @@ function Shell({
               </main>
             </ShownMonitor>
             <StatusBar />
-            {launcherWanted ? (
-              <LazyPart fallback={null} resetKey={launcherOpen}>
-                <LazyLauncher onAction={onAction} />
-              </LazyPart>
-            ) : null}
+            <LazyPart fallback={null} resetKey={launcherOpen} loadWhen={launcherOpen}>
+              <LazyLauncher onAction={onAction} />
+            </LazyPart>
             <DragGhost />
           </div>
         )}
         <Announcements />
-        {closingAsked ? (
-          <LazyPart fallback={null} resetKey={closing}>
-            <LazyCloseWorkspaceDialog />
-          </LazyPart>
-        ) : null}
-        {undoWanted ? (
-          <LazyPart fallback={null} resetKey={undoable}>
-            <LazyUndoNotices />
-          </LazyPart>
-        ) : null}
+        <LazyPart fallback={null} resetKey={closing} loadWhen={closing}>
+          <LazyCloseWorkspaceDialog />
+        </LazyPart>
+        <LazyPart fallback={null} resetKey={undoable} loadWhen={undoable}>
+          <LazyUndoNotices />
+        </LazyPart>
         <UpdateNotice updates={updates} blockedBy={blockedBy} />
-        {askedOnce ? (
-          <LazyPart fallback={null} resetKey={asks} onError={confirmFailed}>
-            <LazyCommandConfirm
-              open={asking}
-              command={confirming?.command ?? null}
-              onOpenChange={setAsking}
-              onConfirm={(command) => (confirming?.run ?? ((sent) => void send(sent)))(command)}
-            />
-          </LazyPart>
-        ) : null}
+        <LazyPart fallback={null} resetKey={asks} onError={confirmFailed} loadWhen={asking}>
+          <LazyCommandConfirm
+            open={asking}
+            command={confirming?.command ?? null}
+            onOpenChange={setAsking}
+            onConfirm={(command) => (confirming?.run ?? ((sent) => void send(sent)))(command)}
+          />
+        </LazyPart>
       </SendCommandContext>
     </CommandTrackerContext>
   );
