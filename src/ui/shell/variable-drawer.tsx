@@ -38,44 +38,13 @@ import { useShell, useShellStore } from '../state/shell-store';
 import { startPointerDrag, surroundingsAt } from '../tiling/pointer-drag';
 import { PLOT_KIND, windowKind } from '../windows/registry';
 import { trapTab } from './a11y/focus-trap';
-
-type Filter = 'all' | 'plotted' | 'writable';
-
-interface Group {
-  readonly name: string | null;
-  readonly variables: readonly Variable[];
-}
-
-function groupOf(name: string): string | null {
-  const slash = name.indexOf('/');
-  return slash === -1 ? null : name.slice(0, slash);
-}
-
-function groupVariables(variables: readonly Variable[]): readonly Group[] {
-  const groups = new Map<string, Variable[]>();
-  const order: Group[] = [];
-
-  for (const variable of variables) {
-    const name = groupOf(variable.name);
-
-    if (name === null) {
-      order.push({ name: null, variables: [variable] });
-      continue;
-    }
-
-    const members = groups.get(name);
-
-    if (members === undefined) {
-      const created = [variable];
-      groups.set(name, created);
-      order.push({ name, variables: created });
-    } else {
-      members.push(variable);
-    }
-  }
-
-  return order;
-}
+import {
+  filterCounts,
+  filterVariables,
+  groupVariables,
+  VARIABLE_FILTERS,
+  type VariableFilter,
+} from './variable-groups';
 
 /**
  * The variables drawer (`/`): the schema's variables grouped by prefix, searchable, with their
@@ -93,20 +62,13 @@ export function VariableDrawer() {
   const selection = useRobotPackage(monitor);
   const windows = useShell((state) => state.desktop.windows);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<VariableFilter>('all');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const panel = useRef<HTMLElement>(null);
 
   const plotted = new Set([...windows.values()].flatMap((window) => window.payload.variables));
-  const needle = query.trim().toLowerCase();
-  const writable = variables.filter((variable) => variable.access.write);
-  const shown = variables.filter(
-    (variable) =>
-      (needle === '' || variable.name.toLowerCase().includes(needle)) &&
-      (filter !== 'plotted' || plotted.has(variable.name)) &&
-      (filter !== 'writable' || variable.access.write)
-  );
-  const groups = groupVariables(shown);
+  const searching = query.trim() !== '';
+  const groups = groupVariables(filterVariables(variables, query, filter, plotted));
   const pkg = selection?.package ?? null;
 
   const close = () => store.getState().setOverlay(null);
@@ -165,11 +127,7 @@ export function VariableDrawer() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [store]);
 
-  const counts: Readonly<Record<Filter, number>> = {
-    all: variables.length,
-    plotted: variables.filter((variable) => plotted.has(variable.name)).length,
-    writable: writable.length,
-  };
+  const counts = filterCounts(variables, plotted);
 
   return (
     <aside
@@ -215,7 +173,7 @@ export function VariableDrawer() {
           <Kbd>/</Kbd>
         </label>
         <div className="mt-3 grid grid-cols-3 rounded-lg border p-0.5">
-          {(['all', 'plotted', 'writable'] as const).map((option) => (
+          {VARIABLE_FILTERS.map((option) => (
             <button
               key={option}
               type="button"
@@ -246,7 +204,7 @@ export function VariableDrawer() {
             <li key={`group:${group.name}`}>
               <button
                 type="button"
-                aria-expanded={needle !== '' || !collapsed.has(group.name)}
+                aria-expanded={searching || !collapsed.has(group.name)}
                 onClick={() => toggle(group.name ?? '')}
                 className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-accent/50"
               >
@@ -254,13 +212,13 @@ export function VariableDrawer() {
                   aria-hidden
                   className={cn(
                     'size-4 text-muted-foreground transition-transform',
-                    (needle !== '' || !collapsed.has(group.name)) && 'rotate-90'
+                    (searching || !collapsed.has(group.name)) && 'rotate-90'
                   )}
                 />
                 <span className="flex-1 font-medium">{group.name}</span>
                 <span className="text-xs text-muted-foreground">{group.variables.length}</span>
               </button>
-              {needle !== '' || !collapsed.has(group.name) ? (
+              {searching || !collapsed.has(group.name) ? (
                 <ul className="pl-4">
                   {group.variables.map((variable) => (
                     <VariableRow
