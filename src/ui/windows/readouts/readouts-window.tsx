@@ -1,6 +1,6 @@
 import { useLiveValue, useShownMonitor } from '../../monitor-context';
 import { cn } from '../../primitives/utils';
-import { READOUT_RATE_HZ } from '../rates';
+import { READOUT_RATE_HZ } from '../stream-rates';
 import { usePresentedVariables, type PresentedVariable } from '../shared/presented-variables';
 import { useLinkLive, useSessionEnd, useStaleAfter } from '../shared/session-end';
 import { formatReading, isStale } from '../shared/value-text';

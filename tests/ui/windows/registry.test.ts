@@ -7,7 +7,7 @@ import {
   FOLLOW_RATE_HZ,
   READOUT_RATE_HZ,
   REVISION_RATE_HZ,
-} from '@/ui/windows/rates';
+} from '@/ui/windows/stream-rates';
 import { windowDemand } from '@/ui/windows/registry';
 import type { ShellWindow } from '@/ui/windows/types';
 

@@ -19,8 +19,8 @@ export const BATTERY_RATE_HZ = 1;
 /** Samples per second an editor asks for, to see the confirmed value soon after a write. */
 export const EDITOR_RATE_HZ = 5;
 
-/** Samples per second a type view asks of the revision of its blob, to read it again soon. */
+/** Samples per second a blob view asks of the revision of its blob, to read it again soon. */
 export const REVISION_RATE_HZ = 2;
 
-/** Samples per second a type view asks of each role it follows, such as the pose over a map. */
+/** Samples per second a blob view asks of each role it follows, such as the pose over a map. */
 export const FOLLOW_RATE_HZ = 10;

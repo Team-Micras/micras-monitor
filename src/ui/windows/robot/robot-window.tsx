@@ -15,7 +15,7 @@ import {
   type AppMonitor,
 } from '../../monitor-context';
 import { cn } from '../../primitives/utils';
-import { READOUT_RATE_HZ } from '../rates';
+import { READOUT_RATE_HZ } from '../stream-rates';
 import { usePresentedVariables } from '../shared/presented-variables';
 import { useLinkLive, useSessionEnd, useStaleAfter } from '../shared/session-end';
 import { isStale } from '../shared/value-text';

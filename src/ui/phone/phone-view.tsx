@@ -12,7 +12,7 @@ import { SessionClock } from '../shell/session-clock';
 import { useShell, useShellStore } from '../state/shell-store';
 import { WindowErrorBoundary } from '../tiling/window-error-boundary';
 import { CommandsWindow } from '../windows/commands/commands-window';
-import { READOUT_RATE_HZ } from '../windows/rates';
+import { READOUT_RATE_HZ } from '../windows/stream-rates';
 import { windowKind } from '../windows/registry';
 import { usePresentedVariables } from '../windows/shared/presented-variables';
 import { useLinkLive, useSessionEnd, useStaleAfter } from '../windows/shared/session-end';

@@ -34,7 +34,7 @@ import {
   FOLLOW_RATE_HZ,
   READOUT_RATE_HZ,
   REVISION_RATE_HZ,
-} from './rates';
+} from './stream-rates';
 import { RobotWindow } from './robot/robot-window';
 import type { ShellWindow, WindowViewProps } from './types';
 
