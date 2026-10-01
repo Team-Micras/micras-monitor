@@ -41,7 +41,7 @@ import {
   type KeyOverrides,
 } from '../keyboard/keymap';
 import { presetWorkspace, workspacePreset } from '../layouts/presets';
-import type { CommandNotice } from '../lib/command-outcome';
+import type { CommandNotice } from '../shell/commands/command-outcome';
 import { PLOT_KIND, windowKind } from '../windows/registry';
 import type { WindowPayload } from '../windows/types';
 import { defaultDesktop } from './default-desktop';

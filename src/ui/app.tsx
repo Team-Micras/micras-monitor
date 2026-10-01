@@ -12,7 +12,12 @@ import type { LayoutStorage } from './layouts/saved-layouts';
 import { useLayouts } from './layouts/use-layouts';
 import { whenIdle } from './lazy/idle';
 import { prefetchAll } from './lazy/lazy-with-retry';
-import { commandAnswered, commandSent, noRobotFor, spaceUnbound } from './lib/command-outcome';
+import {
+  commandAnswered,
+  commandSent,
+  noRobotFor,
+  spaceUnbound,
+} from './shell/commands/command-outcome';
 import { LazyPart } from './lib/lazy-part';
 import { useEver } from './lib/use-ever';
 import {
@@ -37,6 +42,7 @@ import { Announcer } from './shell/announcer';
 import { DRAWER_SEARCH_SELECTOR } from './tiling/keyboard-order';
 import {
   LazyCloseWorkspaceDialog,
+  LazyCommandConfirm,
   LazyLauncher,
   LazyUndoNotices,
   LazyVariableDrawer,
@@ -61,7 +67,6 @@ import { applyTheme, initialTheme } from './state/theme';
 import { useStreamDemand } from './stream-demand';
 import { DragGhost } from './tiling/drag-ghost';
 import { TilingView } from './tiling/tiling-view';
-import { LazyCommandConfirm } from './windows/commands/lazy-command-confirm';
 import type { WindowPayload } from './windows/types';
 
 /** What the composition root gives the app. */

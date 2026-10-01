@@ -3,15 +3,15 @@ import { createElement, useEffect } from 'react';
 import type { CommandSpec } from '@/core/robot';
 
 import { formatChord } from '@/core/chords';
-import type { CommandNotice, CommandTone } from '../lib/command-outcome';
-import { useLiveMonitor, useRobotPackage, useStatus } from '../monitor-context';
-import { useShell, useShellStore } from '../state/shell-store';
-import { commandIcon } from '../windows/commands/command-icons';
-import { useSendCommand } from './shell-contexts';
+import type { CommandNotice, CommandTone } from './command-outcome';
+import { useLiveMonitor, useRobotPackage, useStatus } from '../../monitor-context';
+import { useShell, useShellStore } from '../../state/shell-store';
+import { commandIcon } from '../../windows/commands/command-icons';
+import { useSendCommand } from '../shell-contexts';
 
-import { commandAction } from '../keyboard/keymap';
-import { Kbd } from '../primitives/kbd';
-import { cn } from '../primitives/utils';
+import { commandAction } from '../../keyboard/keymap';
+import { Kbd } from '../../primitives/kbd';
+import { cn } from '../../primitives/utils';
 
 const NOTICE_MS = 4000;
 

@@ -10,7 +10,7 @@ import { demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor
 import { App } from '@/ui/app';
 import '@/ui/styles.css';
 import { createShellStore } from '@/ui/state/shell-store';
-import type { CommandConfirmProps } from '@/ui/windows/commands/command-confirm';
+import type { CommandConfirmProps } from '@/ui/shell/commands/command-confirm';
 
 const PACKAGE = mouse({
   id: 'micras',
@@ -38,8 +38,8 @@ const PACKAGE = mouse({
 
 const dialog = vi.hoisted(() => ({ broken: true }));
 
-vi.mock('@/ui/windows/commands/command-confirm', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/ui/windows/commands/command-confirm')>();
+vi.mock('@/ui/shell/commands/command-confirm', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/ui/shell/commands/command-confirm')>();
 
   return {
     CommandConfirm: (props: CommandConfirmProps) => {

@@ -7,7 +7,7 @@ import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../mon
 import { Button } from '../primitives/button';
 import { cn } from '../primitives/utils';
 import { ConnectionPopover } from '../shell/connection-popover';
-import { PinnedCommands } from '../shell/pinned-commands';
+import { PinnedCommands } from '../shell/commands/pinned-commands';
 import { SessionClock } from '../shell/session-clock';
 import { useShell, useShellStore } from '../state/shell-store';
 import { WindowErrorBoundary } from '../tiling/window-error-boundary';

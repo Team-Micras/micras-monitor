@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { commandAnswered, commandSent, noRobotFor } from '@/ui/lib/command-outcome';
+import { commandAnswered, commandSent, noRobotFor } from '@/ui/shell/commands/command-outcome';
 import type { CommandSpec } from '@/core/robot';
 import { mouse } from '@tests/support/core/robot/packages';
 

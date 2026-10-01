@@ -19,3 +19,8 @@ export const LazyCloseWorkspaceDialog = lazyWithRetry(() =>
 export const LazyUndoNotices = lazyWithRetry(() =>
   import('./notices/undo-notices').then((module) => ({ default: module.UndoNotices }))
 ).Component;
+
+/** The dialog that asks before a dangerous command, loaded when the first one is asked. */
+export const LazyCommandConfirm = lazyWithRetry(() =>
+  import('./commands/command-confirm').then((module) => ({ default: module.CommandConfirm }))
+).Component;
