@@ -1,16 +1,15 @@
 /**
- * How the state of a transport and of the session over it read as the shell's connection status.
+ * How the state of a transport and of the session over it read as a source's status.
  *
  * @module
  */
 
+import type { SourceIdentity, SourceStatus, Target } from '@/core/source';
 import type { RobotInfo, SessionState, TransportState } from '@/link';
-
-import type { ConnectionStatus, ConnectionTarget, LinkPhase } from '../ports';
 
 /** Where a live connection is, as {@link connectionStatus} reads it. */
 export interface LinkSnapshot {
-  readonly target: ConnectionTarget;
+  readonly target: Target;
   readonly transport: TransportState;
   readonly session: SessionState;
   readonly robot: RobotInfo | undefined;
@@ -18,18 +17,26 @@ export interface LinkSnapshot {
   readonly since: number;
 }
 
-const PHASES: Partial<Record<SessionState['kind'], LinkPhase>> = {
-  loadingSchema: 'schema',
-  configuring: 'configuring',
-  streaming: 'streaming',
-};
+const UP_STATES: ReadonlySet<SessionState['kind']> = new Set([
+  'loadingSchema',
+  'configuring',
+  'streaming',
+]);
 
-/** The phase of a session whose link is up, or null while it is not. */
-export function linkPhase(state: SessionState): LinkPhase | null {
-  return PHASES[state.kind] ?? null;
+/** Whether a session's link is up: the robot said who it is and takes commands. */
+export function isLinkUp(state: SessionState): boolean {
+  return UP_STATES.has(state.kind);
 }
 
-function transportStatus(target: ConnectionTarget, state: TransportState): ConnectionStatus {
+/** The identity of a robot as HELLO_ACK gave it, with its schema hash in hex. */
+export function identityOf(robot: RobotInfo): SourceIdentity {
+  return {
+    name: robot.robotName,
+    schema: (robot.schemaHash >>> 0).toString(16).padStart(8, '0'),
+  };
+}
+
+function transportStatus(target: Target, state: TransportState): SourceStatus {
   if (state.kind !== 'closed' || state.retryInMs !== undefined) {
     return { kind: 'connecting', target };
   }
@@ -50,22 +57,15 @@ function transportStatus(target: ConnectionTarget, state: TransportState): Conne
 }
 
 /**
- * The connection status of a live link. A session that is up is `linked` in the phase it is in;
- * one that lost its transport is `connecting` while the transport retries and `failed` once it
- * gave up; a session in error is `failed` with the error's message.
+ * The status of a live link. A session that is up is `linked`; one that lost its transport is
+ * `connecting` while the transport retries and `failed` once it gave up; a session in error is
+ * `failed` with the error's message.
  */
-export function connectionStatus(link: LinkSnapshot): ConnectionStatus {
+export function connectionStatus(link: LinkSnapshot): SourceStatus {
   const { target, session, robot } = link;
-  const phase = linkPhase(session);
 
-  if (phase !== null && robot !== undefined) {
-    return {
-      kind: 'linked',
-      target,
-      robot: { name: robot.robotName, schemaHash: robot.schemaHash },
-      phase,
-      since: link.since,
-    };
+  if (isLinkUp(session) && robot !== undefined) {
+    return { kind: 'linked', target, identity: identityOf(robot), since: link.since };
   }
 
   switch (session.kind) {
@@ -80,18 +80,17 @@ export function connectionStatus(link: LinkSnapshot): ConnectionStatus {
   }
 }
 
-/** Whether two statuses read the same, so the shell keeps the object it has. */
-export function sameStatus(a: ConnectionStatus, b: ConnectionStatus): boolean {
+/** Whether two statuses read the same, so the source does not report a change that is none. */
+export function sameStatus(a: SourceStatus, b: SourceStatus): boolean {
   if (a.kind !== b.kind) {
     return false;
   }
 
   if (a.kind === 'linked' && b.kind === 'linked') {
     return (
-      a.phase === b.phase &&
       a.since === b.since &&
-      a.robot.name === b.robot.name &&
-      a.robot.schemaHash === b.robot.schemaHash &&
+      a.identity.name === b.identity.name &&
+      a.identity.schema === b.identity.schema &&
       a.target === b.target
     );
   }

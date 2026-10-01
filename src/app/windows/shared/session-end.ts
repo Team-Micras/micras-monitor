@@ -7,8 +7,9 @@
 
 import { useSyncExternalStore } from 'react';
 
-import { useConnectionStatus, useMonitor } from '../../monitor-context';
-import type { LinkStats } from '../../ports';
+import type { MonitorState } from '@/core/monitor';
+
+import { useMonitorState, type AppMonitor } from '../../monitor-context';
 import { staleAfterUs } from './readings';
 
 /** How often the end of the session is read again. */
@@ -19,37 +20,40 @@ function subscribeInterval(listener: () => void): () => void {
   return () => clearInterval(timer);
 }
 
-/** The end of the session's history on its timeline, or undefined before the first sample. */
-export function useSessionEnd(): number | undefined {
-  const { history } = useMonitor().ports;
+/** The end of a monitor's history on its timeline, or undefined before the first sample. */
+export function useSessionEnd(monitor: AppMonitor): number | undefined {
+  const { history } = monitor;
   return useSyncExternalStore(subscribeInterval, () => history.timeRange()?.endUs);
 }
 
-/** Whether the link is up past its schema, so values keep arriving or are about to again. */
-export function useLinkLive(): boolean {
-  const status = useConnectionStatus();
-  return status.kind === 'linked' && status.phase !== 'schema';
+/**
+ * Whether a monitor's robot is linked with its variables known, so values keep arriving or are
+ * about to again.
+ */
+export function useLinkLive(monitor: AppMonitor): boolean {
+  return useMonitorState(
+    monitor,
+    (state) => state.status.kind === 'linked' && state.variables.length > 0
+  );
 }
 
-/** The rate the stream planner granted a variable, or zero when it did not plan it. */
-export function grantedRate(stats: LinkStats, name: string): number {
-  return stats.budget.planned.find((stream) => stream.variable === name)?.grantedHz ?? 0;
+/** The rate the source granted a variable, by name, or zero when it does not stream it. */
+export function grantedRate(state: MonitorState, name: string): number {
+  const id = state.variables.find((variable) => variable.name === name)?.id;
+  return state.stats.streams.find((stream) => stream.variableId === id)?.grantedHz ?? 0;
 }
 
 /**
- * How old a variable's sample may get before it is stale: by the rate the planner granted it,
- * or by the rate the window asks for when the planner has not planned it.
+ * How old a variable's sample may get before it is stale: by the rate the source granted it,
+ * or by the rate the window asks for when the source does not stream it yet.
  *
+ * @param monitor The monitor that shows the variable.
  * @param name The variable, or null for none.
  * @param askedHz The rate the window asks for.
  */
-export function useStaleAfter(name: string | null, askedHz: number): number {
-  const { link } = useMonitor().ports;
-  return useSyncExternalStore(
-    (listener) => link.subscribe(listener),
-    () => {
-      const granted = name === null ? 0 : grantedRate(link.stats(), name);
-      return staleAfterUs(granted > 0 ? granted : askedHz);
-    }
-  );
+export function useStaleAfter(monitor: AppMonitor, name: string | null, askedHz: number): number {
+  return useMonitorState(monitor, (state) => {
+    const granted = name === null ? 0 : grantedRate(state, name);
+    return staleAfterUs(granted > 0 ? granted : askedHz);
+  });
 }

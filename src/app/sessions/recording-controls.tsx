@@ -17,7 +17,7 @@ import { formatBytes, formatDuration } from '../lib/format';
 import { LazyPart } from '../lib/lazy-part';
 import { useEver } from '../lib/use-ever';
 import { cn } from '../lib/utils';
-import { useMonitor } from '../monitor-context';
+import { useLiveMonitor } from '../monitor-context';
 import { MemoryNotice } from './memory-notice';
 import { RecoveryNotice } from './recovery-notice';
 import { downloadSession } from './download';
@@ -76,8 +76,7 @@ function MemoryLine({ manager }: { readonly manager: SessionManager }) {
 }
 
 function LiveSpan() {
-  const { history } = useMonitor().ports;
-  const range = history.timeRange();
+  const range = useLiveMonitor().history.timeRange();
   return formatDuration(range ? (range.endUs - range.startUs) / 1000 : 0);
 }
 

@@ -34,7 +34,7 @@ export {
   type CreditGrant,
   type CreditPolicy,
 } from './credit';
-export { Emitter, type Listener, type Unsubscribe } from './emitter';
+export { Emitter, type Listener, type Unsubscribe } from '@/core/emitter';
 export { RobotError, SessionError, TimeoutError, type SessionErrorReason } from './errors';
 export {
   EpochRegistry,

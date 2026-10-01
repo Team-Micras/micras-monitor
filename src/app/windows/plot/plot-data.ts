@@ -7,7 +7,7 @@
 
 import { liveWindow, toLineSeries, type LineSeries, type PlotValue } from '@/telemetry';
 
-import type { Decimation, HistoryPort, TimeRange } from '../../ports';
+import type { Decimation, TelemetryStore, TimeRange } from '@/telemetry';
 
 /** A variable of a plot, as it is drawn. */
 export interface PlotVariable {
@@ -80,7 +80,7 @@ export function layoutAxes(variables: readonly PlotVariable[]): PlotLayout {
 }
 
 /** Where the newest sample of any of the variables is, as an exclusive end; undefined for none. */
-export function latestEnd(history: HistoryPort, names: readonly string[]): number | undefined {
+export function latestEnd(history: TelemetryStore, names: readonly string[]): number | undefined {
   let end: number | undefined;
 
   for (const name of names) {
@@ -99,7 +99,7 @@ export function latestEnd(history: HistoryPort, names: readonly string[]): numbe
  * so that the lines do not shimmer. Undefined while none of the variables has a sample.
  */
 export function followWindow(
-  history: HistoryPort,
+  history: TelemetryStore,
   names: readonly string[],
   spanUs: number,
   pixels: number
@@ -114,7 +114,7 @@ export function followWindow(
  * spent outside any stream only breaks its line.
  */
 export function visibleGaps(
-  history: HistoryPort,
+  history: TelemetryStore,
   names: readonly string[],
   window: TimeRange
 ): VisibleGaps {
@@ -156,12 +156,12 @@ export function visibleGaps(
  * arrays of the previous frame so that a live plot allocates nothing once it runs.
  */
 export class PlotData {
-  readonly #history: HistoryPort;
+  readonly #history: TelemetryStore;
   readonly #decimations = new Map<string, Decimation>();
   readonly #lines = new Map<string, LineSeries>();
   readonly #x: number[] = [];
 
-  constructor(history: HistoryPort) {
+  constructor(history: TelemetryStore) {
     this.#history = history;
   }
 

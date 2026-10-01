@@ -1,12 +1,20 @@
 import { BatteryMediumIcon } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 
+import type { LogEntry } from '@/core/log';
 import { enumLabel, roleVariable, type EnumType } from '@/robot-kit';
+import type { TelemetryStore } from '@/telemetry';
 
 import { formatClock, formatValue } from '../../lib/format';
 import { cn } from '../../lib/utils';
-import { useLinkUp, useLiveValue, useMonitor, useRobotPackage } from '../../monitor-context';
-import type { HistoryPort, LogEntry } from '../../ports';
+import {
+  useLinkUp,
+  useLiveValue,
+  useMonitorState,
+  useRobotPackage,
+  useShownMonitor,
+  type AppMonitor,
+} from '../../monitor-context';
 import { usePresentedVariables } from '../shared/presented-variables';
 import { isStale } from '../shared/readings';
 import { READOUT_RATE_HZ } from '../rates';
@@ -17,9 +25,9 @@ import { TransitionTracker, type Transition } from './transitions';
 
 const SHOWN_TRANSITIONS = 5;
 const NO_TRANSITIONS: readonly Transition[] = [];
-const trackers = new WeakMap<HistoryPort, Map<string, TransitionTracker>>();
+const trackers = new WeakMap<TelemetryStore, Map<string, TransitionTracker>>();
 
-function trackerFor(history: HistoryPort, name: string): TransitionTracker {
+function trackerFor(history: TelemetryStore, name: string): TransitionTracker {
   let byName = trackers.get(history);
 
   if (byName === undefined) {
@@ -37,8 +45,8 @@ function trackerFor(history: HistoryPort, name: string): TransitionTracker {
   return tracker;
 }
 
-function useTransitions(name: string | null): readonly Transition[] {
-  const { history } = useMonitor().ports;
+function useTransitions(monitor: AppMonitor, name: string | null): readonly Transition[] {
+  const { history } = monitor;
   return useSyncExternalStore(
     (listener) => (name === null ? () => undefined : history.subscribe([name], listener)),
     () => (name === null ? NO_TRANSITIONS : trackerFor(history, name).update())
@@ -47,12 +55,8 @@ function useTransitions(name: string | null): readonly Transition[] {
 
 const NO_ENTRIES: readonly LogEntry[] = [];
 
-function useLogEntries(follow: boolean): readonly LogEntry[] {
-  const { log } = useMonitor().ports;
-  return useSyncExternalStore(
-    (listener) => (follow ? log.subscribe(listener) : () => undefined),
-    () => (follow ? log.entries() : NO_ENTRIES)
-  );
+function useLogEntries(monitor: AppMonitor, follow: boolean): readonly LogEntry[] {
+  return useMonitorState(monitor, (state) => (follow ? state.log : NO_ENTRIES));
 }
 
 function timelineOf(
@@ -73,21 +77,22 @@ function labelOf(labels: EnumType | null, value: number): string {
  * and from the sampled state otherwise and where the log has gaps; and the battery.
  */
 export function RobotWindow(_props: WindowViewProps) {
-  const pkg = useRobotPackage()?.package ?? null;
+  const monitor = useShownMonitor();
+  const pkg = useRobotPackage(monitor)?.package ?? null;
   const stateName = roleVariable(pkg, 'state');
   const batteryName = roleVariable(pkg, 'battery');
-  const [state, battery] = usePresentedVariables([stateName ?? '', batteryName ?? '']);
+  const [state, battery] = usePresentedVariables(monitor, [stateName ?? '', batteryName ?? '']);
   const stateLabels =
     state.presentation?.labels?.kind === 'enum' ? state.presentation.labels : null;
-  const current = useLiveValue(stateName);
-  const sampled = useTransitions(stateName);
+  const current = useLiveValue(monitor, stateName);
+  const sampled = useTransitions(monitor, stateName);
   const read = pkg?.stateLog;
-  const entries = useLogEntries(read !== undefined);
+  const entries = useLogEntries(monitor, read !== undefined);
   const transitions = timelineOf(sampled, entries, read);
-  const sessionEndUs = useSessionEnd();
-  const live = useLinkLive();
-  const linked = useLinkUp();
-  const stateStaleAfterUs = useStaleAfter(stateName, READOUT_RATE_HZ);
+  const sessionEndUs = useSessionEnd(monitor);
+  const live = useLinkLive(monitor);
+  const linked = useLinkUp(monitor);
+  const stateStaleAfterUs = useStaleAfter(monitor, stateName, READOUT_RATE_HZ);
 
   if (pkg === null) {
     return (
@@ -172,9 +177,10 @@ function Battery({
   readonly sessionEndUs: number | undefined;
   readonly live: boolean;
 }) {
-  const latest = useLiveValue(name);
+  const monitor = useShownMonitor();
+  const latest = useLiveValue(monitor, name);
   const value = latest?.value;
-  const staleAfterUs = useStaleAfter(name, READOUT_RATE_HZ);
+  const staleAfterUs = useStaleAfter(monitor, name, READOUT_RATE_HZ);
   const stale = isStale(latest, sessionEndUs, live, staleAfterUs);
 
   return (

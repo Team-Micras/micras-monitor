@@ -1,24 +1,22 @@
 import { TriangleAlertIcon } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
+
+import type { Gauge } from '@/core/source';
 
 import { cn } from '../../lib/utils';
-import { useMonitor } from '../../monitor-context';
-import type { LinkStats } from '../../ports';
+import { useMonitorState, useShownMonitor, useVariables } from '../../monitor-context';
 import type { WindowViewProps } from '../types';
 import { formatHz, formatRate, isCut, orderedStreams, share } from './link-summary';
 
 /**
- * The link's health: the rate it carries, its credit, what it lost and its round trip, and the
- * stream planner's budget with the rates it granted against the ones the windows asked for.
+ * The connection's health: the rate it carries, what it lost and its round trip, the gauges the
+ * source measures, such as credit and budget, and the rates it granted against the ones the
+ * windows asked for.
  */
 export function LinkWindow(_props: WindowViewProps) {
-  const { link } = useMonitor().ports;
-  const stats = useSyncExternalStore(
-    (listener) => link.subscribe(listener),
-    () => link.stats()
-  );
-  const { budget } = stats;
-  const streams = orderedStreams(budget);
+  const monitor = useShownMonitor();
+  const stats = useMonitorState(monitor, (state) => state.stats);
+  const streams = orderedStreams(stats.streams, useVariables(monitor));
+  const cut = streams.filter(isCut).length;
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-hidden px-5 pt-1 pb-5">
@@ -39,18 +37,10 @@ export function LinkWindow(_props: WindowViewProps) {
           warn={stats.framesDiscarded > 0}
         />
       </dl>
-      <Meter
-        label="Credit"
-        detail={`${stats.creditOutstanding} / ${stats.creditWindow} B`}
-        ratio={share(stats.creditOutstanding, stats.creditWindow)}
-      />
-      <Meter
-        label="Budget"
-        detail={`${formatRate(budget.used)} of ${formatRate(budget.bytesPerSecond)}`}
-        ratio={share(budget.used, budget.bytesPerSecond)}
-        warn={budget.overBudget}
-      />
-      {budget.overBudget ? <OverBudget stats={stats} /> : null}
+      {stats.gauges.map((gauge) => (
+        <Meter key={gauge.label} gauge={gauge} />
+      ))}
+      {cut > 0 ? <OverBudget cut={cut} /> : null}
       {streams.length === 0 ? null : (
         <section
           aria-label="Streams"
@@ -71,7 +61,7 @@ export function LinkWindow(_props: WindowViewProps) {
                 <tr key={stream.variable} data-cut={isCut(stream)}>
                   <td className="truncate py-1 pr-3">{stream.variable}</td>
                   <td className="py-1 text-right text-muted-foreground">
-                    {formatHz(stream.rateHz)}
+                    {formatHz(stream.askedHz)}
                   </td>
                   <td className={cn('py-1 text-right', isCut(stream) && 'text-amber-500')}>
                     {formatHz(stream.grantedHz)}
@@ -105,17 +95,17 @@ function Figure({
   );
 }
 
-function Meter({
-  label,
-  detail,
-  ratio,
-  warn = false,
-}: {
-  readonly label: string;
-  readonly detail: string;
-  readonly ratio: number;
-  readonly warn?: boolean;
-}) {
+function gaugeDetail({ used, capacity, unit }: Gauge): string {
+  return unit === 'B/s'
+    ? `${formatRate(used)} of ${formatRate(capacity)}`
+    : `${Math.round(used)} / ${Math.round(capacity)} B`;
+}
+
+function Meter({ gauge }: { readonly gauge: Gauge }) {
+  const { label, used, capacity, warn } = gauge;
+  const ratio = share(used, capacity);
+  const detail = gaugeDetail(gauge);
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between text-xs">
@@ -135,9 +125,7 @@ function Meter({
   );
 }
 
-function OverBudget({ stats }: { readonly stats: LinkStats }) {
-  const cut = stats.budget.planned.filter(isCut).length;
-
+function OverBudget({ cut }: { readonly cut: number }) {
   return (
     <p
       role="alert"

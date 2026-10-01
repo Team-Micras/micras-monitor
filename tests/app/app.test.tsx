@@ -8,21 +8,22 @@ import { mouse } from '@tests/support/robot-kit/packages';
 import { activeWorkspace, focusedWindow, leafIds, type Point, type Rect } from '@/tiling';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import { settled } from '@tests/support/app/animations';
-import { recordStopOutcomes } from '@tests/support/app/stop-outcomes';
-import type { FakeRobot, FakeRobotOptions } from '@/app/fake/fake-robot';
 import { isTextField } from '@/app/keymap/use-keymap';
-import type { CommandOutcome, MonitorPorts } from '@/app/ports';
+import type { AppMonitor } from '@/app/monitor-context';
 import '@/app/styles.css';
 import { createShellStore, type ShellStore } from '@/app/state/shell-store';
+import type { CommandOutcome } from '@/core/source';
+import type { DemoRobot } from '@/sources/demo/demo-source';
+import { settled } from '@tests/support/app/animations';
+import { recordStopOutcomes } from '@tests/support/app/stop-outcomes';
+import { demoMonitor } from '@tests/support/sources/demo-monitor';
 
 const STOP = 5;
 const MICRAS = mouse({ id: 'micras', displayName: 'Micras' });
 
 interface SetupOptions {
   readonly packages?: readonly RobotPackage<ReactNode>[];
-  readonly robot?: Partial<FakeRobotOptions>;
+  readonly robot?: Partial<DemoRobot>;
   readonly send?: (code: number) => Promise<CommandOutcome>;
   /** Lets the app create its own store, from what the browser remembers. */
   readonly remembered?: boolean;
@@ -30,7 +31,7 @@ interface SetupOptions {
 
 interface Setup {
   readonly store: ShellStore | null;
-  readonly robot: FakeRobot;
+  readonly monitor: AppMonitor;
   readonly sent: number[];
   readonly screen: Awaited<ReturnType<typeof render>>;
   /** Every text the Stop outcome showed since the app came up. */
@@ -38,27 +39,18 @@ interface Setup {
 }
 
 async function setup(options: SetupOptions = {}): Promise<Setup> {
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs: 10,
-    configureMs: 5,
-    commandMs: 5,
-    ...options.robot,
-  });
   const sent: number[] = [];
-  const ports: MonitorPorts = {
-    ...robot.ports,
-    commands: {
-      send: (code, argument) => {
-        sent.push(code);
-        return options.send?.(code) ?? robot.ports.commands.send(code, argument);
-      },
+  const monitor = demoMonitor({
+    robot: options.robot,
+    command: (code, argument, inner) => {
+      sent.push(code);
+      return options.send?.(code) ?? inner.command(code, argument);
     },
-  };
+  });
   const store = options.remembered === true ? null : createShellStore({ theme: 'dark' });
   const screen = await render(
     <App
-      ports={ports}
+      monitor={monitor}
       robots={new RobotRegistry(options.packages ?? [MICRAS])}
       store={store ?? undefined}
       synthetic
@@ -68,7 +60,7 @@ async function setup(options: SetupOptions = {}): Promise<Setup> {
   await settled();
   return {
     store,
-    robot,
+    monitor,
     sent,
     screen,
     outcomes: recordStopOutcomes(screen.getByRole('status', { name: 'Stop outcome' })),
@@ -169,18 +161,6 @@ describe('connection', () => {
       .toBeVisible();
   });
 
-  test('keeps the robot in the top bar while the link reconfigures', async () => {
-    const context = await setup({ robot: { configureMs: 2000 } });
-    await connect(context);
-    context.robot.reconfigure();
-    await expect
-      .poll(() => context.robot.ports.connection.status())
-      .toMatchObject({ phase: 'configuring' });
-    await expect
-      .element(context.screen.getByRole('banner').getByText('Micras', { exact: true }))
-      .toBeVisible();
-  });
-
   test('the launcher opens the connection popover', async () => {
     const { screen } = await setup();
     await userEvent.keyboard('{Control>}k{/Control}');
@@ -250,18 +230,6 @@ describe('STOP', () => {
     await userEvent.keyboard(' ');
     await expect.poll(context.outcomes).toContain('Nothing to stop');
     expect(context.sent).toEqual([]);
-  });
-
-  test('is still sent while the link reconfigures', async () => {
-    const context = await setup({ robot: { configureMs: 2000 } });
-    await connect(context);
-    context.robot.reconfigure();
-    await expect
-      .poll(() => context.robot.ports.connection.status())
-      .toMatchObject({ phase: 'configuring' });
-    await context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }).click();
-    expect(context.sent).toEqual([STOP]);
-    await expect.poll(context.outcomes).toContain('Stop accepted');
   });
 
   test('shows a refusal with its reason in the package words', async () => {

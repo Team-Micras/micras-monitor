@@ -5,7 +5,7 @@ import { emergencyCommand, roleVariable } from '@/robot-kit';
 
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
-import { useConnectionStatus, useLiveValue, useRobotPackage } from '../monitor-context';
+import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../monitor-context';
 import { ConnectionPopover } from '../shell/connection-popover';
 import { SessionClock } from '../shell/session-clock';
 import { useStopAction } from '../shell/stop-action';
@@ -63,19 +63,20 @@ function Cell({
 }
 
 function Status() {
-  const status = useConnectionStatus();
-  const selection = useRobotPackage();
+  const monitor = useLiveMonitor();
+  const status = useStatus(monitor);
+  const selection = useRobotPackage(monitor);
   const pkg = selection?.package ?? null;
   const stateName = roleVariable(pkg, 'state');
   const batteryName = roleVariable(pkg, 'battery');
-  const [state, battery] = usePresentedVariables([stateName ?? '', batteryName ?? '']);
-  const current = useLiveValue(stateName);
-  const voltage = useLiveValue(batteryName);
-  const sessionEndUs = useSessionEnd();
-  const live = useLinkLive();
-  const stateStaleAfterUs = useStaleAfter(stateName, READOUT_RATE_HZ);
-  const batteryStaleAfterUs = useStaleAfter(batteryName, READOUT_RATE_HZ);
-  const robot = status.kind === 'linked' ? status.robot.name : null;
+  const [state, battery] = usePresentedVariables(monitor, [stateName ?? '', batteryName ?? '']);
+  const current = useLiveValue(monitor, stateName);
+  const voltage = useLiveValue(monitor, batteryName);
+  const sessionEndUs = useSessionEnd(monitor);
+  const live = useLinkLive(monitor);
+  const stateStaleAfterUs = useStaleAfter(monitor, stateName, READOUT_RATE_HZ);
+  const batteryStaleAfterUs = useStaleAfter(monitor, batteryName, READOUT_RATE_HZ);
+  const robot = status.kind === 'linked' ? status.identity.name : null;
 
   return (
     <Card label="Status">
@@ -154,8 +155,9 @@ function Windowed({
 }
 
 function PhoneStop() {
-  const status = useConnectionStatus();
-  const stop = emergencyCommand(useRobotPackage()?.package ?? null);
+  const monitor = useLiveMonitor();
+  const status = useStatus(monitor);
+  const stop = emergencyCommand(useRobotPackage(monitor)?.package ?? null);
   const notice = useShell((state) => state.stopNotice);
   const onStop = useStopAction();
   const connected = status.kind !== 'disconnected' && status.kind !== 'failed';

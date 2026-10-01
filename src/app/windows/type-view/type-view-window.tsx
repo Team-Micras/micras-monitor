@@ -8,10 +8,11 @@ import {
   subscribeThrottled,
   useLinkUp,
   useLiveValue,
-  useMonitor,
   useRobotPackage,
+  useShownMonitor,
+  type AppMonitor,
+  type ReactRobotPackage,
 } from '../../monitor-context';
-import type { ReactRobotPackage } from '../../monitor-context';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
 import { CoalescedReads } from './coalesced-reads';
@@ -40,10 +41,11 @@ const NO_ROLES: readonly Role[] = [];
  * second while they change; a role without a variable or a numeric value is absent.
  */
 function useFollowedRoles(
+  monitor: AppMonitor,
   pkg: ReactRobotPackage | null,
   follows: readonly Role[]
 ): Partial<Record<Role, number>> {
-  const { values } = useMonitor().ports;
+  const values = monitor.history;
   const followed = follows.flatMap((role) => {
     const variable = roleVariable(pkg, role);
     return variable === null ? [] : [[role, variable] as const];
@@ -77,15 +79,20 @@ function useFollowedRoles(
  * of the roles its type follows.
  */
 export function TypeViewWindow({ window }: WindowViewProps) {
-  const { reads, values } = useMonitor().ports;
-  const pkg = useRobotPackage()?.package ?? null;
-  const [entry] = usePresentedVariables(window.payload.variables.slice(0, 1));
+  const monitor = useShownMonitor();
+  const values = monitor.history;
+  const pkg = useRobotPackage(monitor)?.package ?? null;
+  const [entry] = usePresentedVariables(monitor, window.payload.variables.slice(0, 1));
   const name = entry?.name ?? null;
-  const latest = useLiveValue(name)?.value;
+  const latest = useLiveValue(monitor, name)?.value;
   const revision = name === null ? null : revisionOf(pkg, name);
-  const revisionValue = useLiveValue(revision)?.value;
-  const roles = useFollowedRoles(pkg, entry?.presentation?.serializable?.follows ?? NO_ROLES);
-  const linked = useLinkUp();
+  const revisionValue = useLiveValue(monitor, revision)?.value;
+  const roles = useFollowedRoles(
+    monitor,
+    pkg,
+    entry?.presentation?.serializable?.follows ?? NO_ROLES
+  );
+  const linked = useLinkUp(monitor);
   const [failure, setFailure] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
 
@@ -105,7 +112,7 @@ export function TypeViewWindow({ window }: WindowViewProps) {
 
     let cancelled = false;
     const blob = new CoalescedReads(() =>
-      reads.read(name).then((outcome) => {
+      monitor.read(name).then((outcome) => {
         if (!cancelled) {
           setReading(false);
           setFailure(outcome.status === 'failed' ? outcome.message : null);
@@ -119,7 +126,7 @@ export function TypeViewWindow({ window }: WindowViewProps) {
       blob.close();
       reader.current = null;
     };
-  }, [reads, linked, name, variableId]);
+  }, [monitor, linked, name, variableId]);
 
   useEffect(() => {
     if (!linked || revision === null) {

@@ -18,9 +18,10 @@ import {
 import { micras } from '@robots/micras';
 
 import { App } from '@/app/app';
-import { DEMO_VARIABLES, createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot } from '@/app/fake/fake-robot';
-import type { CommandOutcome, MonitorPorts } from '@/app/ports';
+import type { AppMonitor } from '@/app/monitor-context';
+import type { CommandOutcome } from '@/core/source';
+import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';
+import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
 import { describeRobot } from '@/app/sessions/browser-sessions';
 import { MemorySessionLibrary } from '@/app/sessions/memory-library';
 import { MemoryLocks } from '@/app/sessions/session-library';
@@ -36,11 +37,11 @@ import { ManualScheduler } from '@/telemetry';
 const IDLE = 1;
 const RUN = 3;
 
-const robots: FakeRobot[] = [];
+const monitors: AppMonitor[] = [];
 const state = { value: IDLE };
 
 afterEach(async () => {
-  robots.splice(0).forEach((robot) => robot.disconnect());
+  monitors.splice(0).forEach((monitor) => monitor.disconnect());
   await cdp().send('Emulation.setEmulatedMedia', { features: [] });
 });
 
@@ -61,29 +62,20 @@ interface Options {
 async function open(options: Options = {}) {
   state.value = IDLE;
   const [first, ...others] = DEMO_VARIABLES;
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs: 10,
-    configureMs: 5,
-    commandMs: 5,
-    tickMs: 20,
-    variables: [{ ...first, signal: () => state.value }, ...others],
+  const monitor = demoMonitor({
+    sampleRateHz: 50,
+    robot: { variables: [{ ...first, signal: () => state.value }, ...others] },
+    command: (code, argument, inner) => options.send?.(code) ?? inner.command(code, argument),
   });
-  robots.push(robot);
-  const ports: MonitorPorts = {
-    ...robot.ports,
-    commands: {
-      send: (code, argument) => options.send?.(code) ?? robot.ports.commands.send(code, argument),
-    },
-  };
+  monitors.push(monitor);
   const sessions =
     options.sessions === true
       ? new SessionManager({
-          store: robot.store,
+          store: monitor.history,
           library: new MemorySessionLibrary(),
           locks: new MemoryLocks(),
           scheduler: new ManualScheduler(),
-          describe: () => describeRobot(robot.ports),
+          describe: () => describeRobot(monitor),
         })
       : undefined;
   await sessions?.start();
@@ -97,7 +89,7 @@ async function open(options: Options = {}) {
   });
   const screen = await render(
     <App
-      ports={ports}
+      monitor={monitor}
       robots={new RobotRegistry([micras])}
       store={store}
       sessions={sessions}
@@ -106,12 +98,12 @@ async function open(options: Options = {}) {
     />
   );
   await expect.element(screen.getByRole('region', { name: /^Workspace / })).toBeVisible();
-  return { robot, store, screen, sessions };
+  return { monitor, store, screen, sessions };
 }
 
 async function linked(options: Options = {}) {
   const opened = await open(options);
-  opened.robot.connect({ transport: 'websocket', url: 'ws://robot' });
+  opened.monitor.connect(DEMO_TARGET);
   await expect.element(opened.screen.getByText('· connected')).toBeVisible();
   return opened;
 }
@@ -229,7 +221,7 @@ describe('splitters', () => {
 
 describe('announcements', () => {
   test('say the connection and the robot state once, not every sample', async () => {
-    const { robot } = await linked();
+    const { monitor } = await linked();
     await expect.poll(() => announced('polite')).toBe('Connected to micras');
 
     state.value = RUN;
@@ -237,7 +229,7 @@ describe('announcements', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(announced('polite')).toBe('Robot state: RUN');
 
-    robot.disconnect();
+    monitor.disconnect();
     await expect.poll(() => announced('polite')).toBe('Disconnected');
   });
 
@@ -478,13 +470,13 @@ describe('axe', () => {
   }
 
   test('the connection and confirmation dialogs have none', async () => {
-    const { screen, robot } = await open();
+    const { screen, monitor } = await open();
     await screen.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect.element(screen.getByRole('dialog')).toBeVisible();
     expect(await seriousViolations()).toEqual([]);
     await userEvent.keyboard('{Escape}');
 
-    robot.connect({ transport: 'websocket', url: 'ws://robot' });
+    monitor.connect(DEMO_TARGET);
     await expect.element(screen.getByText('· connected')).toBeVisible();
     state.value = IDLE;
     await screen.getByRole('button', { name: 'Save', exact: true }).click();

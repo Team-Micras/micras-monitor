@@ -4,7 +4,7 @@ import type { SchemaEntry } from '@/link';
 import { decodeAccess, TypeCode } from '@/protocol';
 
 import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
-import { StoredSchemaCache } from '@/app/live/stored-schema-cache';
+import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
 
 const SCHEMA: readonly SchemaEntry[] = [
   { id: 0, name: 'state', type: TypeCode.U8, access: decodeAccess(0x01) },

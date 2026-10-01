@@ -1,4 +1,4 @@
-import { Emitter, type Listener, type Unsubscribe } from './emitter';
+import { Emitter, type Listener, type Unsubscribe } from '@/core/emitter';
 
 /** Why a transport is not open. */
 export type CloseReason =

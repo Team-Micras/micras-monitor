@@ -58,7 +58,6 @@ function rig(
     epochId: 1,
     groupId: 0,
     variables: [{ id: 0, type: 'f32' }],
-    firstSequence: 0,
   });
   const manager = new SessionManager({
     store,
@@ -76,7 +75,7 @@ function rig(
   const stream = (seconds: number) =>
     each(seconds, async () => {
       for (let sample = 0; sample < 100; sample++) {
-        store.append(1, next & 0xffff, next * SAMPLE_US, [Math.sin(next / 50)]);
+        store.append(1, next * SAMPLE_US, [Math.sin(next / 50)]);
         next++;
       }
 
@@ -568,7 +567,7 @@ test('tells about the memory cap nearing, dropping the oldest history, and pausi
   manager.subscribe(() => kinds.push(manager.state.memory?.kind ?? 'none'));
 
   for (let index = 0; index < 40_000; index++) {
-    store.append(1, index & 0xffff, index * SAMPLE_US, [index]);
+    store.append(1, index * SAMPLE_US, [index]);
   }
 
   expect(kinds).toContain('warning');

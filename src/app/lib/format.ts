@@ -34,11 +34,6 @@ export function formatClock(milliseconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${tenths % 10}`;
 }
 
-/** A schema hash as eight hexadecimal digits. */
-export function formatHash(hash: number): string {
-  return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
 /** A size in bytes, in the largest unit that keeps it at least 1, with one decimal past KB. */
 export function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];

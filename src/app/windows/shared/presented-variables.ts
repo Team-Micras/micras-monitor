@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import type { Variable } from '@/core/variables';
 import { presentVariable, type VariablePresentation } from '@/robot-kit';
 
-import { useRobotPackage, useVariables } from '../../monitor-context';
+import { useRobotPackage, useVariables, type AppMonitor } from '../../monitor-context';
 
 /** A variable of a window, found in the schema or not. */
 export interface PresentedVariable {
@@ -37,9 +37,12 @@ export function seriesColor(index: number, override: string | null = null): stri
 }
 
 /** The variables of a window by name, in order, with their presentation and series color. */
-export function usePresentedVariables(names: readonly string[]): readonly PresentedVariable[] {
-  const variables = useVariables();
-  const pkg = useRobotPackage()?.package ?? null;
+export function usePresentedVariables(
+  monitor: AppMonitor,
+  names: readonly string[]
+): readonly PresentedVariable[] {
+  const variables = useVariables(monitor);
+  const pkg = useRobotPackage(monitor)?.package ?? null;
 
   return names.map((name, index) => {
     const variable = variables.find((entry) => entry.name === name);

@@ -1,20 +1,20 @@
 import { afterEach, expect, test } from 'vitest';
 
-import type { FakeRobot } from '@/app/fake/fake-robot';
+import type { AppMonitor } from '@/app/monitor-context';
 import { PLOTS, RATE_HZ, renderEightPlots, storedSamples } from '@tests/support/app/eight-plots';
 
 const RUN_MS = 1000;
 
-let robot: FakeRobot | undefined;
+let monitor: AppMonitor | undefined;
 
 afterEach(() => {
-  robot?.disconnect();
-  robot = undefined;
+  monitor?.disconnect();
+  monitor = undefined;
 });
 
 test('eight live plots of 1 kHz signals all draw, and the store keeps their samples', async () => {
-  robot = await renderEightPlots();
-  const live = robot;
+  monitor = await renderEightPlots();
+  const live = monitor;
   await expect.poll(() => document.querySelectorAll('[data-plot] canvas').length).toBe(PLOTS);
 
   const before = storedSamples(live);

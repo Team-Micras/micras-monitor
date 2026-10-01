@@ -28,7 +28,6 @@ function store(): TelemetryStore {
       { id: 0, type: 'f32' },
       { id: 1, type: 'f32' },
     ],
-    firstSequence: 0,
   });
   return telemetry;
 }
@@ -39,9 +38,14 @@ function fill(
   stepUs: number,
   skip = new Set<number>()
 ) {
+  let missed = 0;
+
   for (let index = 0; index < samples; index++) {
-    if (!skip.has(index)) {
-      telemetry.append(1, index, index * stepUs, [index % 10 === 5 ? Number.NaN : index, 1]);
+    if (skip.has(index)) {
+      missed++;
+    } else {
+      telemetry.append(1, index * stepUs, [index % 10 === 5 ? Number.NaN : index, 1], missed);
+      missed = 0;
     }
   }
 }

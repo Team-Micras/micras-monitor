@@ -6,36 +6,36 @@ import { RobotRegistry } from '@/robot-kit';
 import { micras } from '@robots/micras';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot } from '@/app/fake/fake-robot';
+import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore } from '@/app/state/shell-store';
 import type { Theme } from '@/app/state/theme';
 import '@/app/styles.css';
 import { seriousViolations } from '@tests/support/axe-check';
+import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
 
-const robots: FakeRobot[] = [];
+const monitors: AppMonitor[] = [];
 
 beforeEach(async () => {
   await page.viewport(390, 844);
 });
 
 afterEach(async () => {
-  robots.splice(0).forEach((robot) => robot.disconnect());
+  monitors.splice(0).forEach((monitor) => monitor.disconnect());
   await page.viewport(1440, 900);
 });
 
 async function open(theme: Theme) {
-  const robot = createDemoRobot({ connectMs: 5, handshakeMs: 10, configureMs: 5, commandMs: 5 });
-  robots.push(robot);
+  const monitor = demoMonitor();
+  monitors.push(monitor);
   const screen = await render(
     <App
-      ports={robot.ports}
+      monitor={monitor}
       robots={new RobotRegistry([micras])}
       store={createShellStore({ theme })}
       synthetic
     />
   );
-  robot.connect({ transport: 'websocket', url: 'ws://robot' });
+  monitor.connect(DEMO_TARGET);
   await expect.element(screen.getByRole('region', { name: 'Status' })).toBeVisible();
   await expect.poll(() => document.querySelector('[data-battery]')?.textContent).toMatch(/^12\./);
   return screen;

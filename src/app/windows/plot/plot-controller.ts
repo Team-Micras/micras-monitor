@@ -7,8 +7,9 @@
 
 import uPlot from 'uplot';
 
+import type { HistoryMark, TelemetryStore, TimeRange } from '@/telemetry';
+
 import { formatClock } from '../../lib/format';
-import type { HistoryMark, HistoryPort, TimeRange } from '../../ports';
 import {
   followWindow,
   layoutAxes,
@@ -49,7 +50,7 @@ export interface PlotStatus {
 
 /** How to set up a plot. */
 export interface PlotControllerOptions {
-  readonly history: HistoryPort;
+  readonly history: TelemetryStore;
   readonly variables: readonly PlotVariable[];
   /** How long the live window is. */
   readonly spanUs: number;

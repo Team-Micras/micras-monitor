@@ -4,6 +4,9 @@
  * @module
  */
 
+/** Samples per second a window asks for when its kind does not say. */
+export const DEFAULT_STREAM_RATE_HZ = 10;
+
 /** Samples per second a plot asks for: a control loop's signals, drawn smoothly. */
 export const PLOT_RATE_HZ = 100;
 

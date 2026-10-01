@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { decodeAccess, ErrorCode, TypeCode } from '@/protocol';
-import { Emitter } from '@/link/emitter';
+import { Emitter } from '@/core/emitter';
 import { RobotError, SessionError } from '@/link/errors';
 import type { Epoch, GroupRequest } from '@/link/groups';
 import type { SchemaEntry } from '@/link/schema';

@@ -154,27 +154,31 @@ the browser tests over the workspace, the phone view and the open dialogs.
 The app is a single package. Folders are layers, and `no-restricted-imports` rules in `.oxlintrc.json`
 keep their dependencies pointing one way.
 
-| Path              | Layer                                                                                                                                 | May import                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `src/core/`       | The monitor's own model: value types, access, variables, values, integer bits                                                         | nothing else in the monitor                                      |
-| `src/protocol/`   | COBS, frames, message layouts and value codecs                                                                                        | nothing else in the monitor                                      |
-| `src/link/`       | Transports, the session and the stream planner                                                                                        | `protocol`, `core`                                               |
-| `src/telemetry/`  | Session store, history, decimation and recording format                                                                               | `core`                                                           |
-| `src/tiling/`     | Tiling window engine, no DOM                                                                                                          | nothing else in the monitor                                      |
-| `src/robot-kit/`  | Contracts for robot packages and the helpers that read them                                                                           | `core`                                                           |
-| `src/lazy/`       | Idle and retrying dynamic imports                                                                                                     | nothing else in the monitor                                      |
-| `src/app/`        | React: shell, windows, sessions, phone view, theme                                                                                    | every layer above; only `app/live` reaches `protocol` and `link` |
-| `robots/<robot>/` | Robot packages: types, views, commands, presets                                                                                       | `robot-kit`, `core`, React for the views                         |
-| `scripts/`        | Simulated robot, live checks, bench and bundle size                                                                                   | `protocol`, `link`, `core`, `telemetry`                          |
-| `tests/`          | Every test, mirroring `src/`, `robots/` and `scripts/`; `tests/support/` holds their fixtures and helpers, `tests/e2e/` the PWA check | everything                                                       |
+| Path               | Layer                                                                                                                                 | May import                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `src/core/`        | The monitor's own model and the `Monitor`: variables, values, the `Source` boundary, log, timeline                                    | nothing else in the monitor                                            |
+| `src/protocol/`    | COBS, frames, message layouts and value codecs                                                                                        | nothing else in the monitor                                            |
+| `src/link/`        | Transports, the session and the stream planner                                                                                        | `protocol`, `core`                                                     |
+| `src/telemetry/`   | Session store, history, decimation and recording format                                                                               | `core`                                                                 |
+| `src/tiling/`      | Tiling window engine, no DOM                                                                                                          | nothing else in the monitor                                            |
+| `src/robot-kit/`   | Contracts for robot packages and the helpers that read them                                                                           | `core`                                                                 |
+| `src/lazy/`        | Idle and retrying dynamic imports                                                                                                     | nothing else in the monitor                                            |
+| `src/sources/<s>/` | Where robot data comes from: `micras-comm` over the link, `demo` in memory                                                            | `core`; `micras-comm` also `protocol` and `link`; never another source |
+| `src/app/`         | React: shell, windows, sessions, phone view, theme                                                                                    | every layer above but `sources`, `protocol` and `link`                 |
+| `robots/<robot>/`  | Robot packages: types, views, commands, presets                                                                                       | `robot-kit`, `core`, React for the views                               |
+| `scripts/`         | Simulated robot, live checks, bench and bundle size                                                                                   | `protocol`, `link`, `core`, `telemetry`                                |
+| `tests/`           | Every test, mirroring `src/`, `robots/` and `scripts/`; `tests/support/` holds their fixtures and helpers, `tests/e2e/` the PWA check | everything                                                             |
 
 Only `src/app/` and the `src/main.tsx` entry point may import React. `src/main.tsx` is the composition
-root: it is the only file that imports the robot packages, and it hands them to the app, so nothing
-else in `src/` depends on `robots/`. Aliases: `@/…` for `src/…` and `@robots/…` for `robots/…`. Inside
-`src/app/`, the UI reaches the robot through the ports in `src/app/ports/` (connection, schema,
-values, history, commands, reads, writes, log), which `src/app/live/` implements over the link and
-`src/app/fake/` over an in-memory robot. Above the link, everything speaks the model of `src/core/`;
-`src/link/value-types.ts` is the one place that maps the wire's type codes and access flags onto it.
+root: it is the only file that imports the robot packages and the sources, and it hands them to the
+app, so nothing else in `src/` depends on `robots/` or `src/sources/`. Aliases: `@/…` for `src/…` and
+`@robots/…` for `robots/…`. Data flows one way: a source (`src/core/source.ts`) pushes status,
+variables, samples, values and log lines into the sink the `Monitor` (`src/core/monitor.ts`) gives
+it; the monitor feeds the history store and is what the UI reads, through `useLiveMonitor()` for
+what acts on the robot and `useShownMonitor()` for the windows, which show a recording when one is
+open. The UI only calls back into the monitor: connect, request streams, command, write, read.
+Above the link, everything speaks the model of `src/core/`; `src/link/value-types.ts` is the one
+place that maps the wire's type codes and access flags onto it.
 File names are kebab-case throughout.
 
 The frame vectors in `tests/support/protocol/` are the bytes the firmware's own codec produces

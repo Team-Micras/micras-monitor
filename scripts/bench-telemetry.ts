@@ -46,7 +46,7 @@ function fill(
       row[signal] = Math.sin(phase) + 0.25 * Math.sin(11 * phase) + 0.02 * ((index * 7919) % 13);
     }
 
-    store.append(epochId, index & 0xffff, index * periodUs, row);
+    store.append(epochId, index * periodUs, row);
   }
 }
 

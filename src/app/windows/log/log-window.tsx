@@ -1,10 +1,11 @@
 import { ArrowDownIcon } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+
+import type { LogEntry, LogSeverity } from '@/core/log';
 
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
-import { useConnectionStatus, useMonitor } from '../../monitor-context';
-import type { LogEntry, LogSeverity } from '../../ports';
+import { useMonitorState, useShownMonitor } from '../../monitor-context';
 import type { WindowViewProps } from '../types';
 import { SEVERITIES, entryTime, filterLog } from './log-filter';
 
@@ -42,17 +43,15 @@ function keyOf(entry: LogEntry): number {
  * follows new lines until scrolled up, and a paused window keeps the lines it had.
  */
 export function LogWindow({ paused }: WindowViewProps) {
-  const { log } = useMonitor().ports;
-  const live = useSyncExternalStore(
-    (listener) => log.subscribe(listener),
-    () => log.entries()
-  );
+  const monitor = useShownMonitor();
+  const live = useMonitorState(monitor, (state) => state.log);
   const [frozen, setFrozen] = useState<readonly LogEntry[] | null>(null);
   const [minimum, setMinimum] = useState<LogSeverity>('debug');
   const [following, setFollowing] = useState(true);
   const list = useRef<HTMLOListElement>(null);
-  const status = useConnectionStatus();
-  const since = status.kind === 'linked' ? status.since : null;
+  const since = useMonitorState(monitor, (state) =>
+    state.status.kind === 'linked' ? state.status.since : null
+  );
 
   if (paused && frozen === null) {
     setFrozen(live);

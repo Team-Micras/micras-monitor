@@ -8,12 +8,13 @@ import { mouse } from '@tests/support/robot-kit/packages';
 import { activeWorkspace, leafIds } from '@/tiling';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot, FakeRobotOptions, FakeVariable } from '@/app/fake/fake-robot';
+import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore, type ShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
 import { LayoutBook, STORAGE_PREFIX } from '@/app/layouts/layout-book';
+import type { DemoRobot, DemoVariable } from '@/sources/demo/demo-source';
 import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
+import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
 
 const STREAM = { stream: true, write: false, writeNeedsIdle: false, persists: false };
 const NAMES = Array.from({ length: 12 }, (_, index) => `sensor/s${index}`);
@@ -26,57 +27,52 @@ const PRESETS: LayoutPreset[] = [
   },
 ];
 
-function variables(...names: string[]): FakeVariable[] {
+function variables(...names: string[]): DemoVariable[] {
   return names.map((name) => ({ name, type: 'f32', access: STREAM }));
 }
 
 interface Mounted {
   readonly store: ShellStore;
-  readonly robot: FakeRobot;
+  readonly monitor: AppMonitor;
   readonly storage: MemoryStorage;
   readonly screen: Awaited<ReturnType<typeof render>>;
 }
 
 interface Options {
   readonly storage?: MemoryStorage;
-  readonly robot?: Partial<FakeRobotOptions>;
+  readonly robot?: Partial<DemoRobot>;
   readonly packages?: readonly RobotPackage<ReactNode>[];
 }
 
-const robots: FakeRobot[] = [];
+const monitors: AppMonitor[] = [];
 
 afterEach(() => {
-  robots.splice(0).forEach((robot) => robot.disconnect());
+  monitors.splice(0).forEach((monitor) => monitor.disconnect());
 });
 
 async function mount(options: Options = {}): Promise<Mounted> {
   const storage = options.storage ?? new MemoryStorage();
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs: 10,
-    configureMs: 5,
-    tickMs: 20,
-    name: 'rover',
-    variables: variables(...NAMES),
-    ...options.robot,
+  const monitor = demoMonitor({
+    sampleRateHz: 50,
+    robot: { name: 'rover', variables: variables(...NAMES), ...options.robot },
   });
-  robots.push(robot);
+  monitors.push(monitor);
   const store = createShellStore({ theme: 'dark' });
   const screen = await render(
     <App
-      ports={robot.ports}
+      monitor={monitor}
       robots={new RobotRegistry(options.packages ?? [])}
       store={store}
       layouts={storage}
       synthetic
     />
   );
-  return { store, robot, storage, screen };
+  return { store, monitor, storage, screen };
 }
 
-async function connect({ robot }: Mounted): Promise<void> {
-  robot.connect({ transport: 'websocket', url: 'ws://robot' });
-  await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
+async function connect({ monitor }: Mounted): Promise<void> {
+  monitor.connect(DEMO_TARGET);
+  await expect.poll(() => monitor.state.status.kind).toBe('linked');
 }
 
 function workspaceNames({ store }: Pick<Mounted, 'store'>): string[] {
@@ -147,8 +143,8 @@ describe('the layout of a robot', () => {
     const mounted = await mount();
     await connect(mounted);
     await mounted.screen.getByRole('button', { name: 'Add a workspace' }).click();
-    mounted.robot.disconnect();
-    await expect.poll(() => mounted.robot.ports.connection.status().kind).toBe('disconnected');
+    mounted.monitor.disconnect();
+    await expect.poll(() => mounted.monitor.state.status.kind).toBe('disconnected');
     expect(workspaceNames(mounted)).toEqual(['Overview', 'Sensor', 'Workspace 3']);
 
     await mounted.screen.getByRole('button', { name: 'Add a workspace' }).click();

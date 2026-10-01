@@ -41,7 +41,7 @@ function valueAt(index: number): number {
 
 function appendRange(store: TelemetryStore, from: number, to: number): void {
   for (let index = from; index < to; index++) {
-    store.append(1, index & 0xffff, index * 1000, [valueAt(index), index]);
+    store.append(1, index * 1000, [valueAt(index), index]);
   }
 }
 
@@ -429,7 +429,7 @@ describe('writing while recording', () => {
 
     expect(types(events)).toContain('history-stopped');
     const before = store.variable(1);
-    store.append(1, 7 * BLOCK_SIZE, 7 * BLOCK_SIZE * 1000, [1, 2]);
+    store.append(1, 7 * BLOCK_SIZE * 1000, [1, 2], BLOCK_SIZE);
     const after = store.variable(1);
 
     expect(after?.droppedSamples).toBe((before?.droppedSamples ?? 0) + BLOCK_SIZE);
@@ -485,7 +485,7 @@ describe('writing while recording', () => {
     const { store } = cappedStore(5, { now: () => clock });
     const other = (from: number, to: number) => {
       for (let index = from; index < to; index++) {
-        store.append(2, index, index * 1000, [valueAt(index), index]);
+        store.append(2, index * 1000, [valueAt(index), index]);
       }
     };
     store.startRecording(flaky);
@@ -541,7 +541,7 @@ describe('writing while recording', () => {
     store.openEpoch({ epochId: 2, groupId: 1, variables: [{ id: 3, type: 'f32' }] });
 
     for (let index = 0; index < 5; index++) {
-      store.append(2, index, 10_000_000 + index, [1]);
+      store.append(2, 10_000_000 + index, [1]);
     }
 
     expect(store.gaps(3, 0, Number.POSITIVE_INFINITY)).toEqual([
@@ -560,7 +560,7 @@ describe('short epochs', () => {
       store.openEpoch({ epochId: epoch, groupId: 0, variables });
 
       for (let index = 0; index < 100; index++) {
-        store.append(epoch, index, (epoch * 100 + index) * 1000, row);
+        store.append(epoch, (epoch * 100 + index) * 1000, row);
       }
     }
 

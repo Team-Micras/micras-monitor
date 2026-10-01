@@ -1,4 +1,4 @@
-import { useConnectionStatus, useRobotPackage } from '../monitor-context';
+import { useLiveMonitor, useRobotPackage, useStatus } from '../monitor-context';
 import { RecordingControls } from '../sessions/recording-controls';
 import { ViewingIndicator } from '../sessions/viewing-indicator';
 import { ConnectionPopover } from './connection-popover';
@@ -12,9 +12,10 @@ import { WorkspaceTabs } from './workspace-tabs';
  * clock, REC and STOP.
  */
 export function TopBar({ onStop }: { readonly onStop: () => void }) {
-  const selection = useRobotPackage();
-  const status = useConnectionStatus();
-  const robotName = status.kind === 'linked' ? status.robot.name : null;
+  const monitor = useLiveMonitor();
+  const selection = useRobotPackage(monitor);
+  const status = useStatus(monitor);
+  const robotName = status.kind === 'linked' ? status.identity.name : null;
 
   return (
     <header className="grid h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 px-3.5">

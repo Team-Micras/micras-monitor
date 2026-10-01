@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { formatDuration } from '../lib/format';
-import { useMonitor } from '../monitor-context';
+import { useLiveMonitor } from '../monitor-context';
 import type { SessionManager } from './session-manager';
 
 interface ResetDialogProps {
@@ -21,7 +21,7 @@ interface ResetDialogProps {
 
 /** Asks before forgetting the live history, which cannot be undone. */
 export function ResetDialog({ open, onOpenChange, manager, recording }: ResetDialogProps) {
-  const range = useMonitor().ports.history.timeRange();
+  const range = useLiveMonitor().history.timeRange();
   const liveMs = range ? (range.endUs - range.startUs) / 1000 : 0;
 
   return (

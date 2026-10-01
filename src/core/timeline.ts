@@ -6,10 +6,10 @@
  */
 
 /**
- * Places the robot's times on the session timeline. Each run of the robot's clock, a link
- * timeline, gets an offset the first time one of its times is placed: none for the very first,
- * and for later ones whatever puts it after the latest time placed by as long as passed on the
- * host, so the timeline never goes back and its gaps last as long as they did.
+ * Places the robot's times on the session timeline. Each run of the robot's clock gets an offset
+ * the first time one of its times is placed: none for the very first, and for later ones whatever
+ * puts it after the latest time placed by as long as passed on the host, so the timeline never
+ * goes back and its gaps last as long as they did.
  */
 export class SessionTimeline {
   readonly #now: () => number;
@@ -32,19 +32,19 @@ export class SessionTimeline {
   /**
    * Place a time of the robot's.
    *
-   * @param timeline The run of the robot's clock it belongs to, as the session numbers them.
+   * @param clock The run of the robot's clock it belongs to, as the source numbers them.
    * @param robotUs The robot's time, in microseconds, unwrapped.
    * @returns The time on the session timeline.
    */
-  place(timeline: number, robotUs: number): number {
+  place(clock: number, robotUs: number): number {
     const hostMs = this.#now();
-    let offset = this.#offsets.get(timeline);
+    let offset = this.#offsets.get(clock);
 
     if (offset === undefined) {
       offset = Number.isFinite(this.#lastUs)
         ? this.#lastUs + Math.max(1, (hostMs - this.#lastHostMs) * 1000) - robotUs
         : 0;
-      this.#offsets.set(timeline, offset);
+      this.#offsets.set(clock, offset);
     }
 
     const timeUs = robotUs + offset;
@@ -57,7 +57,7 @@ export class SessionTimeline {
     return timeUs;
   }
 
-  /** Start numbering timelines over, as a new session does, keeping the times placed so far. */
+  /** Starts numbering the runs of the clock over, as a new connection does, keeping the times placed. */
   rebase(): void {
     this.#offsets = new Map();
   }

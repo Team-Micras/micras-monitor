@@ -2,6 +2,8 @@ import { ChevronDownIcon, Undo2Icon } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import 'uplot/dist/uPlot.min.css';
 
+import type { TelemetryStore } from '@/telemetry';
+
 import { Button } from '../../components/ui/button';
 import {
   DropdownMenu,
@@ -10,11 +12,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
-import { useMonitor } from '../../monitor-context';
+import { useShownMonitor } from '../../monitor-context';
 import { useShellStore } from '../../state/shell-store';
 import { useResolvedColors } from '../shared/document-theme';
 import { usePresentedVariables } from '../shared/presented-variables';
-import type { HistoryPort } from '../../ports';
 import type { WindowViewProps } from '../types';
 import { PlotController, type PlotStatus, type PlotTheme } from './plot-controller';
 import { layoutAxes, type PlotVariable } from './plot-data';
@@ -38,9 +39,10 @@ const PLOT_FONT = '11px "Geist Mono Variable", ui-monospace, monospace';
  * pauses it; End or Live follow the newest samples again.
  */
 export function PlotWindow({ window, paused, visible }: WindowViewProps) {
-  const { history } = useMonitor().ports;
+  const monitor = useShownMonitor();
+  const { history } = monitor;
   const shell = useShellStore();
-  const presented = usePresentedVariables(window.payload.variables);
+  const presented = usePresentedVariables(monitor, window.payload.variables);
   const [spanS, setSpanS] = useState<number>(DEFAULT_PLOT_SPAN_S);
   const [status, setStatus] = useState<PlotStatus>(NO_STATUS);
   const host = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
     '\n'
   );
 
-  const create = useEffectEvent((element: HTMLElement, source: HistoryPort) => {
+  const create = useEffectEvent((element: HTMLElement, source: TelemetryStore) => {
     const plot = new PlotController(element, {
       history: source,
       variables,

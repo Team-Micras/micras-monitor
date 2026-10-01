@@ -5,10 +5,9 @@ import { render } from 'vitest-browser-react';
 
 import { RobotRegistry } from '@/robot-kit';
 import { mouse } from '@tests/support/robot-kit/packages';
+import { DEMO_TARGET, demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { MonitorPorts } from '@/app/ports';
 import '@/app/styles.css';
 import { createShellStore } from '@/app/state/shell-store';
 
@@ -37,27 +36,18 @@ const STOP = 5;
 
 describe('the shell before its lazy chunks arrive', () => {
   test('sends STOP on Space, and opens the launcher and the drawer once their chunks arrive', async () => {
-    const robot = createDemoRobot({ connectMs: 5, handshakeMs: 10, configureMs: 5, commandMs: 5 });
     const sent: number[] = [];
-    const ports: MonitorPorts = {
-      ...robot.ports,
-      commands: {
-        send: (code, argument) => {
-          sent.push(code);
-          return robot.ports.commands.send(code, argument);
-        },
-      },
-    };
+    const monitor = demoMonitor({ command: recordCommands(sent) });
     const store = createShellStore({ theme: 'dark' });
     const screen = await render(
       createElement(App, {
-        ports,
+        monitor,
         robots: new RobotRegistry<ReactNode>([mouse({ id: 'micras', displayName: 'Micras' })]),
         store,
         synthetic: true,
       })
     );
-    robot.ports.connection.connect({ transport: 'websocket', url: 'ws://robot' });
+    monitor.connect(DEMO_TARGET);
     await expect.element(screen.getByText('· connected')).toBeVisible();
 
     await userEvent.keyboard(' ');

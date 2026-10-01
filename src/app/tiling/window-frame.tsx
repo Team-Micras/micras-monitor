@@ -26,9 +26,10 @@ import {
 import { formatChord } from '../keymap/chords';
 import type { KeyAction } from '../keymap/keymap';
 import { cn } from '../lib/utils';
-import { useConnectionStatus } from '../monitor-context';
+import { useShownMonitor } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowKind, windowTitle } from '../windows/registry';
+import { useLinkLive } from '../windows/shared/session-end';
 import type { ShellWindow } from '../windows/types';
 import { windowElementId } from './dom-ids';
 import { startPointerDrag, surroundingsAt } from './pointer-drag';
@@ -59,8 +60,7 @@ export function WindowFrame({ window, placed, focused, maximized, stackIndex }: 
   const animate = useShell((state) => !state.resizing && state.drag === null);
   const workspaces = useShell((state) => state.desktop.workspaces);
   const bindings = useShell((state) => state.bindings);
-  const status = useConnectionStatus();
-  const live = status.kind === 'linked' && status.phase !== 'schema';
+  const live = useLinkLive(useShownMonitor());
   const kind = windowKind(window.kind);
   const View = kind.component;
   const Icon = kind.icon;

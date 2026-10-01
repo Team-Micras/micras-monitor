@@ -13,11 +13,11 @@ import type { Scheduler } from '@/telemetry';
 import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/tiling';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot } from '@/app/fake/fake-robot';
+import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
 import type { ShellWindow } from '@/app/windows/types';
+import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
 
 /** How many plots, each with two signals. */
 export const PLOTS = 8;
@@ -51,21 +51,14 @@ function grid(ids: readonly string[]): TileNode {
 }
 
 /**
- * Renders the app with the eight plots and connects the demo robot, sending a batch of 16
- * samples every 16 ms.
+ * Renders the app with the eight plots and connects the demo robot, streaming at 1 kHz in a
+ * batch of 16 samples every 16 ms.
  *
  * @param scheduler When the store tells the plots about new samples; every animation frame by default.
- * @returns The robot, streaming.
+ * @returns The live monitor, streaming.
  */
-export async function renderEightPlots(scheduler?: Scheduler): Promise<FakeRobot> {
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs: 10,
-    configureMs: 5,
-    tickMs: 16,
-    samplesPerTick: 16,
-    scheduler,
-  });
+export async function renderEightPlots(scheduler?: Scheduler): Promise<AppMonitor> {
+  const monitor = demoMonitor({ sampleRateHz: RATE_HZ, scheduler });
   const windows: ShellWindow[] = SIGNALS.map((variables, index) => ({
     id: `plot-${index}`,
     kind: 'plot',
@@ -78,13 +71,13 @@ export async function renderEightPlots(scheduler?: Scheduler): Promise<FakeRobot
       windows
     ),
   });
-  await render(<App ports={robot.ports} robots={new RobotRegistry([])} store={store} synthetic />);
-  robot.connect({ transport: 'websocket', url: 'ws://robot' });
-  await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
-  return robot;
+  await render(<App monitor={monitor} robots={new RobotRegistry([])} store={store} synthetic />);
+  monitor.connect(DEMO_TARGET);
+  await expect.poll(() => monitor.state.status.kind).toBe('linked');
+  return monitor;
 }
 
-/** The samples the store holds of the counted signal. */
-export function storedSamples(robot: FakeRobot): number {
-  return robot.store.variable(COUNTED_SIGNAL)?.storedSamples ?? 0;
+/** The samples the history holds of the counted signal. */
+export function storedSamples(monitor: AppMonitor): number {
+  return monitor.history.variable(COUNTED_SIGNAL)?.storedSamples ?? 0;
 }

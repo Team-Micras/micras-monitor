@@ -5,10 +5,9 @@ import { render } from 'vitest-browser-react';
 
 import { RobotRegistry } from '@/robot-kit';
 import { mouse } from '@tests/support/robot-kit/packages';
+import { demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { MonitorPorts } from '@/app/ports';
 import '@/app/styles.css';
 import { createShellStore } from '@/app/state/shell-store';
 import type { WindowViewProps } from '@/app/windows/types';
@@ -34,20 +33,11 @@ vi.mock('@/app/windows/plot/plot-window', async (importOriginal) => {
 const STOP = 5;
 
 async function mount() {
-  const robot = createDemoRobot({ connectMs: 5, handshakeMs: 10, configureMs: 5, commandMs: 5 });
   const sent: number[] = [];
-  const ports: MonitorPorts = {
-    ...robot.ports,
-    commands: {
-      send: (code, argument) => {
-        sent.push(code);
-        return robot.ports.commands.send(code, argument);
-      },
-    },
-  };
+  const monitor = demoMonitor({ command: recordCommands(sent) });
   const screen = await render(
     <App
-      ports={ports}
+      monitor={monitor}
       robots={new RobotRegistry<ReactNode>([mouse({ id: 'micras', displayName: 'Micras' })])}
       store={createShellStore({ theme: 'dark' })}
       synthetic

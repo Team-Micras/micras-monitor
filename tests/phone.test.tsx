@@ -3,15 +3,15 @@ import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
 import { App } from '@/app/app';
-import { DEMO_VARIABLES, createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot } from '@/app/fake/fake-robot';
-import type { MonitorPorts } from '@/app/ports';
+import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
 import { RobotRegistry } from '@/robot-kit';
 import type { AppUpdates } from '@/app/pwa/app-updates';
 
 import { micras } from '@robots/micras';
+import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';
+import { DEMO_TARGET, demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 
 const PHONE = { width: 390, height: 844 };
 const DESKTOP = { width: 1440, height: 900 };
@@ -19,14 +19,14 @@ const STOP_CODE = 5;
 const IDLE = 1;
 const RUN = 3;
 
-const robots: FakeRobot[] = [];
+const monitors: AppMonitor[] = [];
 
 beforeEach(async () => {
   await page.viewport(PHONE.width, PHONE.height);
 });
 
 afterEach(async () => {
-  robots.splice(0).forEach((robot) => robot.disconnect());
+  monitors.splice(0).forEach((monitor) => monitor.disconnect());
   await page.viewport(DESKTOP.width, DESKTOP.height);
 });
 
@@ -40,39 +40,23 @@ async function open(options: Options = {}) {
   const sent: number[] = [];
   const state = options.state;
   const [first, ...others] = DEMO_VARIABLES;
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs: 10,
-    configureMs: 5,
-    commandMs: 5,
-    tickMs: 20,
-    ...(state === undefined
-      ? {}
-      : {
-          variables: [{ ...first, signal: () => state }, ...others],
-        }),
+  const monitor = demoMonitor({
+    sampleRateHz: 50,
+    command: recordCommands(sent),
+    robot: state === undefined ? {} : { variables: [{ ...first, signal: () => state }, ...others] },
   });
-  robots.push(robot);
-  const ports: MonitorPorts = {
-    ...robot.ports,
-    commands: {
-      send: (code, argument) => {
-        sent.push(code);
-        return robot.ports.commands.send(code, argument);
-      },
-    },
-  };
+  monitors.push(monitor);
   const screen = await render(
     <App
-      ports={ports}
+      monitor={monitor}
       robots={options.registry ?? new RobotRegistry([micras])}
       store={createShellStore({ theme: 'dark' })}
       updates={options.updates}
       synthetic
     />
   );
-  robot.connect({ transport: 'websocket', url: 'ws://robot' });
-  return { screen, sent, robot };
+  monitor.connect(DEMO_TARGET);
+  return { screen, sent, monitor };
 }
 
 function rect(selector: string): DOMRect {

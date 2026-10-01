@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { LogEntry } from '@/app/ports';
+import type { LogEntry } from '@/core/log';
 import { entryTime, filterLog, SHOWN_ENTRIES } from '@/app/windows/log/log-filter';
 
 const entry = (severity: LogEntry['severity'], hostTime = 0): LogEntry => ({

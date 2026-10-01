@@ -5,9 +5,9 @@
  * @module
  */
 
-import type { Scheduler, TelemetryStore } from '@/telemetry';
+import type { Scheduler } from '@/telemetry';
 
-import type { MonitorPorts } from '../ports';
+import type { AppMonitor } from '../monitor-context';
 import { MemorySessionLibrary } from './memory-library';
 import { MessageTransport, OpfsSessionLibrary, type StorageManagerLike } from './opfs-library';
 import {
@@ -56,46 +56,42 @@ function locks(): SessionLocks {
   return manager === undefined ? new MemoryLocks() : new WebLocks(manager);
 }
 
-/** What a recording's header says of the robot the ports reach, as it is now. */
-export function describeRobot(ports: MonitorPorts): RobotDescription {
-  const status = ports.connection.status();
-  const identity = status.kind === 'linked' ? status.robot : null;
+/** What a recording's header says of the robot a monitor reaches, as it is now. */
+export function describeRobot(monitor: AppMonitor): RobotDescription {
+  const { status, identity, variables } = monitor.state;
   return {
     name: identity?.name ?? null,
     robot: {
       name: identity?.name ?? null,
-      schemaHash: identity?.schemaHash ?? null,
+      schema: identity?.schema ?? null,
       transport: 'target' in status ? status.target.transport : null,
     },
-    schema: ports.schema.variables(),
+    schema: variables,
   };
 }
 
 /**
- * The sessions of the robot behind the ports, recovering what a closed tab left behind as they
- * start.
+ * The sessions of the live robot, recovering what a closed tab left behind as they start.
  *
- * @param store The live store.
- * @param ports The live robot's ports.
+ * @param monitor The live monitor, whose history REC records.
  * @param scheduler When opened sessions tell their readers about changes.
  * @param worker The storage worker started with the page, if the browser has a file system for
  *   sessions; they are kept in memory otherwise.
  * @param viewCapBytes The memory cap of an opened session; a share of the live store's otherwise.
  */
 export function browserSessions(
-  store: TelemetryStore,
-  ports: MonitorPorts,
+  monitor: AppMonitor,
   scheduler: Scheduler,
   worker: Worker | undefined,
   viewCapBytes?: number
 ): SessionManager {
   const manager = new SessionManager({
-    store,
+    store: monitor.history,
     library: library(worker),
     locks: locks(),
     scheduler,
     viewCapBytes,
-    describe: () => describeRobot(ports),
+    describe: () => describeRobot(monitor),
   });
   void manager.start();
   return manager;

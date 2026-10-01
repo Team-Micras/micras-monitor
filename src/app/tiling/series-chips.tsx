@@ -6,7 +6,7 @@ import type { WindowId } from '@/tiling';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { formatValue } from '../lib/format';
 import { cn } from '../lib/utils';
-import { useLinkUp, useLiveValue } from '../monitor-context';
+import { useLinkUp, useLiveValue, useShownMonitor } from '../monitor-context';
 import { useShellStore } from '../state/shell-store';
 import { windowElementId } from './dom-ids';
 
@@ -89,8 +89,9 @@ interface SeriesChipProps {
 }
 
 function SeriesChip({ name, title, color, onRemove, listed = false }: SeriesChipProps) {
-  const value = useLiveValue(name)?.value;
-  const linked = useLinkUp();
+  const monitor = useShownMonitor();
+  const value = useLiveValue(monitor, name)?.value;
+  const linked = useLinkUp(monitor);
 
   const onKeyDown = (event: ReactKeyboardEvent) => {
     if (event.key === 'Delete' || event.key === 'Backspace') {

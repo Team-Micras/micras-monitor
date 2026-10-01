@@ -7,7 +7,7 @@
 
 import { nextUp } from '@/telemetry';
 
-import type { HistoryPort } from '../../ports';
+import type { TelemetryStore } from '@/telemetry';
 
 /** A moment the value changed. */
 export interface Transition {
@@ -22,7 +22,7 @@ export const TRANSITION_LIMIT = 64;
 
 /** Finds the transitions of one variable, keeping its place in the history between scans. */
 export class TransitionTracker {
-  readonly #history: HistoryPort;
+  readonly #history: TelemetryStore;
   readonly #name: string;
   #transitions: readonly Transition[] = [];
   #lastValue: number | undefined;
@@ -30,7 +30,7 @@ export class TransitionTracker {
   #firstUs = Number.POSITIVE_INFINITY;
   #generation: number;
 
-  constructor(history: HistoryPort, name: string) {
+  constructor(history: TelemetryStore, name: string) {
     this.#history = history;
     this.#name = name;
     this.#generation = history.generation;

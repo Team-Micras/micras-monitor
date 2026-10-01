@@ -1,5 +1,5 @@
 /**
- * A fake robot shaped like the team's micromouse, with its real variable names and plausible
+ * The demo robot, shaped like the team's micromouse, with its real variable names and plausible
  * signals, so the shell can be developed and shown without a robot or the simulation.
  *
  * @module
@@ -8,7 +8,7 @@
 import type { Access, ValueType } from '@/core/variables';
 
 import { demoMazePosition, demoMazeRecord, demoMazeRevision } from './demo-maze';
-import { FakeRobot, type FakeRobotOptions, type FakeVariable } from './fake-robot';
+import type { DemoRobot, DemoVariable } from './demo-source';
 
 const STREAM: Access = { stream: true, write: false, writeNeedsIdle: false, persists: false };
 const STREAM_WRITE: Access = { stream: true, write: true, writeNeedsIdle: false, persists: false };
@@ -30,21 +30,21 @@ const WAIT_FOR_RUN = 2;
 
 const bootSequence = (t: number) => (t < 0.4 ? INIT : t < 3 ? IDLE : t < 6 ? WAIT_FOR_RUN : RUN);
 
-const f32 = (name: string, signal?: (t: number) => number): FakeVariable => ({
+const f32 = (name: string, signal?: (t: number) => number): DemoVariable => ({
   name,
   type: 'f32',
   access: STREAM,
   signal,
 });
 
-const counter = (name: string, rate: number, start = 0): FakeVariable => ({
+const counter = (name: string, rate: number, start = 0): DemoVariable => ({
   name,
   type: 'u32',
   access: STREAM,
   signal: (t) => start + t * rate,
 });
 
-const quiet = (name: string, type: ValueType, value: number): FakeVariable => ({
+const quiet = (name: string, type: ValueType, value: number): DemoVariable => ({
   name,
   type,
   access: NONE,
@@ -56,7 +56,7 @@ const wall = (phase: number) => (t: number) =>
   0.14 + 0.1 * Math.sin(t * 0.9 + phase) + 0.004 * Math.sin(t * 13 + phase);
 
 /** The variables of the demo robot. */
-export const DEMO_VARIABLES: readonly FakeVariable[] = [
+export const DEMO_VARIABLES: readonly DemoVariable[] = [
   { name: 'state', type: 'u8', access: STREAM, signal: bootSequence },
   ...[0, 1, 2, 3].map((i) => f32(`wall/${i}`, wall(i * 1.7))),
   ...[0, 1, 2, 3].map((i) => f32(`wall_dark/${i}`, (t) => 0.01 + 0.002 * Math.sin(t + i))),
@@ -132,42 +132,37 @@ export const DEMO_VARIABLES: readonly FakeVariable[] = [
 ];
 
 /**
- * Creates the demo robot. It boots through IDLE into an exploration, during which every command
- * but STOP is refused as not idle, and so are writes of variables that need the robot idle; STOP
- * brings it to IDLE with the wheels still, after which it accepts everything.
- *
- * @param options Overrides, such as shorter delays for tests.
+ * The demo robot. It boots through IDLE into an exploration, during which every command but STOP
+ * is refused as not idle, and so are writes of variables that need the robot idle; STOP brings it
+ * to IDLE with the wheels still, after which it accepts everything.
  */
-export function createDemoRobot(options: Partial<FakeRobotOptions> = {}): FakeRobot {
-  return new FakeRobot({
-    name: 'micras',
-    schemaHash: 0x3f9a1c07,
-    variables: DEMO_VARIABLES,
-    answer: (code, _argument, robot) => {
-      if (code === STOP) {
-        robot.log('info', 'STOP: braking to a standstill');
-        robot.hold('state', IDLE);
-        robot.hold('pose/linear_speed', 0);
-        robot.hold('reference/linear_speed', 0);
-        return { status: 'ok', reason: 0 };
-      }
+export const DEMO_ROBOT: DemoRobot = {
+  name: 'micras',
+  schema: '3f9a1c07',
+  variables: DEMO_VARIABLES,
+  answer: (code, _argument, robot) => {
+    if (code === STOP) {
+      robot.log('info', 'STOP: braking to a standstill');
+      robot.hold('state', IDLE);
+      robot.hold('pose/linear_speed', 0);
+      robot.hold('reference/linear_speed', 0);
+      return { status: 'ok', reason: 0 };
+    }
 
-      return robot.valueOf('state') === IDLE
-        ? { status: 'ok', reason: 0 }
-        : { status: 'refused', reason: NOT_IDLE };
-    },
-    answerWrite: (name, _value, robot) =>
-      DEMO_VARIABLES.find((variable) => variable.name === name)?.access.writeNeedsIdle === true &&
-      robot.valueOf('state') !== IDLE
-        ? { status: 'refused', reason: 'needs-idle' }
-        : { status: 'confirmed' },
-    logs: [
-      { atSeconds: 0.2, severity: 'info', text: 'boot: micras ready' },
-      { atSeconds: 6, severity: 'info', text: 'explore: leaving the start cell' },
-      { atSeconds: 9, severity: 'debug', text: 'localizer: wall edge accepted at 1,0' },
-      { atSeconds: 14, severity: 'warning', text: 'localizer: innovation above the gate' },
-      { atSeconds: 18, severity: 'debug', text: 'maze: revision 14 saved to RAM' },
-    ],
-    ...options,
-  });
-}
+    return robot.valueOf('state') === IDLE
+      ? { status: 'ok', reason: 0 }
+      : { status: 'refused', reason: NOT_IDLE };
+  },
+  answerWrite: (name, _value, robot) =>
+    DEMO_VARIABLES.find((variable) => variable.name === name)?.access.writeNeedsIdle === true &&
+    robot.valueOf('state') !== IDLE
+      ? { status: 'refused', reason: 'needs-idle' }
+      : { status: 'confirmed' },
+  logs: [
+    { atSeconds: 0.2, severity: 'info', text: 'boot: micras ready' },
+    { atSeconds: 6, severity: 'info', text: 'explore: leaving the start cell' },
+    { atSeconds: 9, severity: 'debug', text: 'localizer: wall edge accepted at 1,0' },
+    { atSeconds: 14, severity: 'warning', text: 'localizer: innovation above the gate' },
+    { atSeconds: 18, severity: 'debug', text: 'maze: revision 14 saved to RAM' },
+  ],
+};

@@ -20,15 +20,15 @@ import {
 } from 'lucide-react';
 import { type ComponentType } from 'react';
 
+import type { VariableDemand } from '@/core/monitor';
 import { lazyWithRetry } from '@/lazy/lazy-with-retry';
 import { roleVariable, type RobotPackage, type Role } from '@/robot-kit';
-
-import { DEFAULT_STREAM_RATE_HZ, type StreamDemand } from '../ports/streams';
 
 import { CommandsWindow } from './commands/commands-window';
 import { ViewPlaceholder } from './placeholder-window';
 import {
   BATTERY_RATE_HZ,
+  DEFAULT_STREAM_RATE_HZ,
   EDITOR_RATE_HZ,
   PLOT_RATE_HZ,
   FOLLOW_RATE_HZ,
@@ -51,17 +51,21 @@ export interface WindowKind {
    * What the window wants streamed, given the connected robot's package, or null in raw mode;
    * without it, each of its variables at the default rate.
    */
-  readonly demand?: (window: ShellWindow, pkg: RobotPackage | null) => readonly StreamDemand[];
+  readonly demand?: (window: ShellWindow, pkg: RobotPackage | null) => readonly VariableDemand[];
 }
 
-const NOTHING: readonly StreamDemand[] = [];
+const NOTHING: readonly VariableDemand[] = [];
 const nothing = () => NOTHING;
 
-function rate(window: ShellWindow, rateHz: number): readonly StreamDemand[] {
+function rate(window: ShellWindow, rateHz: number): readonly VariableDemand[] {
   return window.payload.variables.map((variable) => ({ variable, rateHz }));
 }
 
-function roles(pkg: RobotPackage | null, wanted: readonly Role[], rateHz: number): StreamDemand[] {
+function roles(
+  pkg: RobotPackage | null,
+  wanted: readonly Role[],
+  rateHz: number
+): VariableDemand[] {
   return wanted.flatMap((role) => {
     const variable = roleVariable(pkg, role);
     return variable === null ? [] : [{ variable, rateHz }];
@@ -73,7 +77,7 @@ function followedRoles(pkg: RobotPackage | null, blob: string): readonly Role[] 
   return pkg?.types.find((type) => type.tag === tag)?.follows ?? [];
 }
 
-function typeViewDemand(window: ShellWindow, pkg: RobotPackage | null): readonly StreamDemand[] {
+function typeViewDemand(window: ShellWindow, pkg: RobotPackage | null): readonly VariableDemand[] {
   const [blob] = window.payload.variables;
 
   if (blob === undefined) {
@@ -211,7 +215,7 @@ export function windowTitle(window: ShellWindow): string {
 export function windowDemand(
   window: ShellWindow,
   pkg: RobotPackage | null = null
-): readonly StreamDemand[] {
+): readonly VariableDemand[] {
   const demand = windowKind(window.kind).demand;
 
   return demand

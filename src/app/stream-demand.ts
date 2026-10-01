@@ -1,17 +1,17 @@
 /**
- * What the app asks the link to stream: the demands of the windows on screen and the roles the
- * robot package pins, handed to the stream port whenever they change.
+ * What the app asks the live robot to stream: the demands of the windows on screen and the roles
+ * the robot package pins, handed to the live monitor whenever they change.
  *
  * @module
  */
 
 import { useEffect } from 'react';
 
+import type { VariableDemand } from '@/core/monitor';
 import type { Role, RobotPackage } from '@/robot-kit';
 import { activeWorkspace, windowIds, type Desktop } from '@/tiling';
 
-import { useMonitor, useRobotPackage } from './monitor-context';
-import type { PinnedDemand, StreamDemand, StreamRequest } from './ports';
+import { useLiveMonitor, useRobotPackage } from './monitor-context';
 import { useShell } from './state/shell-store';
 import { windowDemand } from './windows/registry';
 import type { ShellWindow, WindowPayload } from './windows/types';
@@ -33,40 +33,35 @@ export function visibleWindows(desktop: Desktop<WindowPayload>): readonly string
     : [workspace.maximized, ...workspace.floating.map((entry) => entry.id)];
 }
 
-/** What to stream for a desktop and the package of the connected robot, if any. */
-export function streamRequest(
-  desktop: Desktop<WindowPayload>,
+/**
+ * What to stream for windows that are on screen and the package of the connected robot, if any:
+ * the roles the package pins first, which the source cuts last, then what the windows ask for.
+ */
+export function streamDemands(
+  shown: readonly ShellWindow[],
   pkg: RobotPackage | null
-): StreamRequest {
-  return requestFor(
-    visibleWindows(desktop).flatMap((id) => desktop.windows.get(id) ?? []),
-    pkg
-  );
-}
-
-/** What to stream for windows that are on screen and the package of the connected robot, if any. */
-export function requestFor(shown: readonly ShellWindow[], pkg: RobotPackage | null): StreamRequest {
-  const windows: StreamDemand[] = shown.flatMap((window) => windowDemand(window, pkg));
-  const pinned: PinnedDemand[] = PINNED_RATES_HZ.flatMap(([role, rateHz]) => {
+): VariableDemand[] {
+  const pinned = PINNED_RATES_HZ.flatMap(([role, rateHz]) => {
     const variable = pkg?.roles[role];
-    return variable === undefined ? [] : [{ role, variable, rateHz }];
+    return variable === undefined ? [] : [{ variable, rateHz, role }];
   });
 
-  return { windows, pinned };
+  return [...pinned, ...shown.flatMap((window) => windowDemand(window, pkg))];
 }
 
 /**
- * Keeps the stream port told what the visible windows and the pinned roles want, again after
- * every change of the desktop or the package; the planner leaves the robot alone when the groups
- * come out the same.
+ * Keeps the live monitor told what the visible windows and the pinned roles want, again after
+ * every change of the desktop or the package; the source leaves the robot alone when the plan
+ * comes out the same.
  *
  * @param phone The windows of the phone view, which stand for the desktop while it is drawn.
  */
 export function useStreamDemand(phone: readonly ShellWindow[] | null = null): void {
-  const { streams } = useMonitor().ports;
+  const live = useLiveMonitor();
   const desktop = useShell((state) => state.desktop);
-  const pkg = useRobotPackage()?.package ?? null;
-  const request = phone === null ? streamRequest(desktop, pkg) : requestFor(phone, pkg);
+  const pkg = useRobotPackage(live)?.package ?? null;
+  const shown = phone ?? visibleWindows(desktop).flatMap((id) => desktop.windows.get(id) ?? []);
+  const demands = streamDemands(shown, pkg);
 
-  useEffect(() => streams.request(request), [streams, request]);
+  useEffect(() => live.request(demands), [live, demands]);
 }

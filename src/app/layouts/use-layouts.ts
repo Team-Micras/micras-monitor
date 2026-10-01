@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useState } from 'react';
 
-import { useConnectionStatus, useRobotPackage, useVariables } from '../monitor-context';
+import { useLiveMonitor, useRobotPackage, useStatus, useVariables } from '../monitor-context';
 import { useShellStore } from '../state/shell-store';
 import { LayoutBook, type LayoutStorage } from './layout-book';
 import { layoutKey } from './layout-key';
@@ -15,17 +15,18 @@ import { LayoutSession } from './layout-session';
  */
 export function useLayouts(storage: LayoutStorage | null): void {
   const store = useShellStore();
-  const status = useConnectionStatus();
-  const variables = useVariables();
-  const selection = useRobotPackage();
+  const monitor = useLiveMonitor();
+  const status = useStatus(monitor);
+  const variables = useVariables(monitor);
+  const selection = useRobotPackage(monitor);
   const [session] = useState(() =>
     storage === null ? null : new LayoutSession(store, new LayoutBook(storage))
   );
   const key =
-    status.kind === 'linked' && status.phase !== 'schema'
+    status.kind === 'linked' && variables.length > 0
       ? layoutKey({
           packageId: selection?.package.id ?? null,
-          name: status.robot.name,
+          name: status.identity.name,
           variables: variables.map(({ name }) => name),
         })
       : null;

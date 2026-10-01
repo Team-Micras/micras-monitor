@@ -66,9 +66,6 @@ export interface TelemetryStoreOptions {
   /** The share of the cap at which to warn; 0.8 by default. */
   readonly warningRatio?: number;
 
-  /** Where the robot's sequence numbers wrap; 2¹⁶, a `u16` on the wire, by default. */
-  readonly sequenceModulus?: number;
-
   /** How many values to keep for variables not stored numerically, such as blobs; 32. */
   readonly historyLength?: number;
 
@@ -101,7 +98,7 @@ export interface VariableInfo {
   /** How many of its samples are kept. */
   readonly storedSamples: number;
 
-  /** How many of its samples the sequence numbers show as lost. */
+  /** How many of its samples the source lost. */
   readonly droppedSamples: number;
 
   /** How many epochs it was part of. */
@@ -176,7 +173,6 @@ function overlaps(startUs: number, endUs: number, fromUs: number, toUs: number):
  */
 export class TelemetryStore {
   private readonly blockSize: number;
-  private readonly sequenceModulus: number;
   private readonly registry: ChannelRegistry;
   private readonly epochs = new Map<number, OpenEpoch>();
   private readonly openByGroup = new Map<number, Epoch>();
@@ -201,7 +197,6 @@ export class TelemetryStore {
    */
   constructor(options: TelemetryStoreOptions) {
     this.blockSize = checkBlockSize(options.blockSize ?? DEFAULT_BLOCK_SIZE);
-    this.sequenceModulus = options.sequenceModulus ?? 2 ** 16;
     this.registry = new ChannelRegistry(options.historyLength ?? 32);
     this.notifier = new ChangeNotifier(options.scheduler);
     this.residency = new BlockResidency({
@@ -291,14 +286,8 @@ export class TelemetryStore {
     }
 
     const epoch = new Epoch(
-      {
-        epochId: spec.epochId,
-        groupId: spec.groupId,
-        variables,
-        firstSequence: spec.firstSequence,
-      },
+      { epochId: spec.epochId, groupId: spec.groupId, variables },
       this.blockSize,
-      this.sequenceModulus,
       this.host
     );
 
@@ -351,19 +340,20 @@ export class TelemetryStore {
    * which also raises a `time-backwards` event.
    *
    * @param epochId The epoch.
-   * @param sequence The sample's sequence number; a jump marks dropped samples.
    * @param timeUs When the robot took it, on the session timeline.
    * @param values One value per variable, in the epoch's order.
+   * @param missedBefore How many samples of the epoch the source lost just before this one,
+   *   which the history keeps as a gap of dropped samples.
    * @throws If the epoch is not open or the number of values is wrong.
    */
-  append(epochId: number, sequence: number, timeUs: number, values: ArrayLike<Value>): void {
+  append(epochId: number, timeUs: number, values: ArrayLike<Value>, missedBefore = 0): void {
     const { epoch, records } = this.openEpochOf(epochId);
 
     if (values.length !== records.length) {
       throw new RangeError(`Epoch ${epochId} takes ${records.length} values, got ${values.length}`);
     }
 
-    const received = epoch.receive(sequence, timeUs);
+    const received = epoch.receive(timeUs, missedBefore);
 
     if (received === RECEIVED_BACKWARDS) {
       this.emit({ type: 'time-backwards', epochId, timeUs, lastUs: epoch.lastTimeUs });
@@ -970,7 +960,7 @@ export class TelemetryStore {
       throw new Error(`Epoch ${recorded.epochId} appears twice in the session`);
     }
 
-    const epoch = new Epoch(recorded, this.blockSize, this.sequenceModulus, this.host);
+    const epoch = new Epoch(recorded, this.blockSize, this.host);
     const records = recorded.variables.map(({ id, name, type }) => {
       const record = this.registry.recordFor(name, type);
       this.lastIds.set(record, id);

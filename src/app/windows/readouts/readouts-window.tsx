@@ -1,4 +1,4 @@
-import { useLiveValue } from '../../monitor-context';
+import { useLiveValue, useShownMonitor } from '../../monitor-context';
 import { cn } from '../../lib/utils';
 import { usePresentedVariables, type PresentedVariable } from '../shared/presented-variables';
 import { formatReading, isStale } from '../shared/readings';
@@ -11,9 +11,10 @@ import type { WindowViewProps } from '../types';
  * A value that stopped arriving fades and says so.
  */
 export function ReadoutsWindow({ window }: WindowViewProps) {
-  const presented = usePresentedVariables(window.payload.variables);
-  const sessionEndUs = useSessionEnd();
-  const live = useLinkLive();
+  const monitor = useShownMonitor();
+  const presented = usePresentedVariables(monitor, window.payload.variables);
+  const sessionEndUs = useSessionEnd(monitor);
+  const live = useLinkLive(monitor);
 
   if (presented.length === 0) {
     return (
@@ -41,8 +42,9 @@ function Readout({
   readonly sessionEndUs: number | undefined;
   readonly live: boolean;
 }) {
-  const latest = useLiveValue(entry.name);
-  const staleAfterUs = useStaleAfter(entry.name, READOUT_RATE_HZ);
+  const monitor = useShownMonitor();
+  const latest = useLiveValue(monitor, entry.name);
+  const staleAfterUs = useStaleAfter(monitor, entry.name, READOUT_RATE_HZ);
   const stale = isStale(latest, sessionEndUs, live, staleAfterUs);
   const unit = entry.presentation?.unit ?? null;
 

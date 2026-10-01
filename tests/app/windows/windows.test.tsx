@@ -7,14 +7,19 @@ import { mouse } from '@tests/support/robot-kit/packages';
 import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/tiling';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot, FakeRobotOptions } from '@/app/fake/fake-robot';
-import { settled } from '@tests/support/app/animations';
-import { recordStopOutcomes } from '@tests/support/app/stop-outcomes';
-import type { CommandOutcome, MonitorPorts, ReadOutcome } from '@/app/ports';
+import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore, type ShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
 import type { ShellWindow } from '@/app/windows/types';
+import type { CommandOutcome, ReadOutcome } from '@/core/source';
+import type { DemoRobot } from '@/sources/demo/demo-source';
+import { settled } from '@tests/support/app/animations';
+import { recordStopOutcomes } from '@tests/support/app/stop-outcomes';
+import {
+  DEMO_TARGET,
+  demoMonitor,
+  type DemoMonitorOptions,
+} from '@tests/support/sources/demo-monitor';
 
 const STATE: EnumType = {
   kind: 'enum',
@@ -77,13 +82,14 @@ interface Options {
   readonly root: TileNode;
   /** A second workspace, opened in the background. */
   readonly hidden?: TileNode;
-  readonly robot?: Partial<FakeRobotOptions>;
+  readonly robot?: Partial<DemoRobot>;
+  readonly demo?: Pick<DemoMonitorOptions, 'answerMs' | 'drops' | 'stats'>;
   readonly send?: (code: number) => Promise<CommandOutcome>;
   readonly read?: (name: string) => Promise<ReadOutcome> | undefined;
 }
 
 interface Harness {
-  readonly robot: FakeRobot;
+  readonly monitor: AppMonitor;
   readonly sent: number[];
   readonly readsOf: (name: string) => number;
   readonly store: ShellStore;
@@ -92,10 +98,10 @@ interface Harness {
   readonly outcomes: () => string;
 }
 
-const robots: FakeRobot[] = [];
+const monitors: AppMonitor[] = [];
 
 afterEach(() => {
-  robots.splice(0).forEach((robot) => robot.disconnect());
+  monitors.splice(0).forEach((monitor) => monitor.disconnect());
 });
 
 function win(id: string, kind: string, variables: readonly string[] = []): ShellWindow {
@@ -106,36 +112,28 @@ async function open({
   windows,
   root,
   hidden,
-  robot: overrides,
+  robot,
+  demo,
   send,
   read: customRead,
 }: Options): Promise<Harness> {
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs: 10,
-    configureMs: 5,
-    commandMs: 5,
-    tickMs: 20,
-    ...overrides,
-  });
-  robots.push(robot);
   const sent: number[] = [];
   const reads: string[] = [];
-  const ports: MonitorPorts = {
-    ...robot.ports,
-    reads: {
-      read: (name) => {
-        reads.push(name);
-        return customRead?.(name) ?? robot.ports.reads.read(name);
-      },
+  const monitor: AppMonitor = demoMonitor({
+    sampleRateHz: 50,
+    ...demo,
+    robot,
+    read: (variableId, inner) => {
+      const name = monitor.state.variables[variableId]?.name ?? String(variableId);
+      reads.push(name);
+      return customRead?.(name) ?? inner.read(variableId);
     },
-    commands: {
-      send: (code, argument) => {
-        sent.push(code);
-        return send?.(code) ?? robot.ports.commands.send(code, argument);
-      },
+    command: (code, argument, inner) => {
+      sent.push(code);
+      return send?.(code) ?? inner.command(code, argument);
     },
-  };
+  });
+  monitors.push(monitor);
   const store = createShellStore({
     theme: 'dark',
     desktop: createDesktop(
@@ -146,13 +144,13 @@ async function open({
     ),
   });
   const screen = await render(
-    <App ports={ports} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
+    <App monitor={monitor} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
   );
   const outcomes = recordStopOutcomes(screen.getByRole('status', { name: 'Stop outcome' }));
-  robot.connect({ transport: 'websocket', url: 'ws://robot' });
-  await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
+  monitor.connect(DEMO_TARGET);
+  await expect.poll(() => monitor.state.status.kind).toBe('linked');
   const readsOf = (name: string) => reads.filter((read) => read === name).length;
-  return { robot, sent, readsOf, store, screen, outcomes };
+  return { monitor, sent, readsOf, store, screen, outcomes };
 }
 
 function query(selector: string): HTMLElement | null {
@@ -185,7 +183,7 @@ describe('Plot', () => {
     const { screen } = await open({
       windows: [win('plot', 'plot', ['pose/linear_speed', 'pose/angular_speed'])],
       root: leaf('plot'),
-      robot: { drops: (sequence) => sequence >= 10 && sequence < 25 },
+      demo: { drops: (index) => index >= 10 && index < 25 },
     });
     await expect.poll(() => query('[data-plot]')?.dataset.empty, { timeout: 5000 }).toBe('false');
     await expect.element(screen.getByText('15 dropped')).toBeVisible();
@@ -280,7 +278,7 @@ describe('Plot', () => {
 
 describe('Readouts', () => {
   test('update with the values, with units and labels, and go stale without a link', async () => {
-    const { robot } = await open({
+    const { monitor } = await open({
       windows: [win('values', 'readouts', ['battery_voltage', 'state'])],
       root: leaf('values'),
     });
@@ -289,7 +287,7 @@ describe('Readouts', () => {
     await expect.poll(batteryReadout).not.toBe(first);
     await expect.poll(() => query('[data-readout="state"] dd')?.textContent).toMatch(/IDLE|INIT/);
 
-    robot.disconnect();
+    monitor.disconnect();
     await expect.poll(() => query('[data-readout="battery_voltage"]')?.dataset.stale).toBe('true');
   });
 });
@@ -299,7 +297,7 @@ describe('Editor', () => {
     const { screen } = await open({
       windows: [win('edit', 'editor', ['run_profile'])],
       root: leaf('edit'),
-      robot: { commandMs: 400 },
+      demo: { answerMs: 400 },
     });
     const racing = screen.getByRole('switch').nth(1);
     await expect.element(racing).toHaveAttribute('data-state', 'unchecked');
@@ -509,7 +507,7 @@ describe('A variable missing from the schema', () => {
   });
 
   test('is not called missing before any schema is loaded', async () => {
-    const robot = createDemoRobot();
+    const monitor = demoMonitor();
     const store = createShellStore({
       theme: 'dark',
       desktop: createDesktop(
@@ -518,7 +516,7 @@ describe('A variable missing from the schema', () => {
       ),
     });
     const screen = await render(
-      <App ports={robot.ports} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
+      <App monitor={monitor} robots={new RobotRegistry([PACKAGE])} store={store} synthetic />
     );
     await expect.element(screen.getByRole('term')).toHaveTextContent('battery_voltage');
     expect(query('[data-readout]')?.dataset.missing).toBe('false');
@@ -593,15 +591,13 @@ describe('Commands', () => {
     await expect.poll(outcomes).toContain('Stop');
   });
 
-  test('keeps the buttons through a reconfiguration and hides them without a robot', async () => {
-    const { screen, robot } = await open({
+  test('hides the buttons without a robot', async () => {
+    const { screen, monitor } = await open({
       windows: [win('commands', 'commands')],
       root: leaf('commands'),
     });
     await expect.element(screen.getByRole('button', { name: 'Explore' })).toBeEnabled();
-    robot.reconfigure();
-    await expect.element(screen.getByRole('button', { name: 'Explore' })).toBeEnabled();
-    robot.disconnect();
+    monitor.disconnect();
     await expect.element(screen.getByText('Connect to a robot to send its commands')).toBeVisible();
     await expect.element(screen.getByRole('button', { name: 'Explore' })).not.toBeInTheDocument();
   });
@@ -622,13 +618,21 @@ describe('Robot, Log, Link and Type view', () => {
         split('column', 0.5, leaf('robot'), leaf('log')),
         split('column', 0.5, leaf('link'), leaf('maze'))
       ),
-      robot: { budgetBytesPerSecond: 500 },
+      demo: {
+        stats: (stats) => ({
+          ...stats,
+          gauges: [{ label: 'Budget', used: 500, capacity: 500, unit: 'B/s', warn: true }],
+          streams: stats.streams.map((stream) => ({ ...stream, grantedHz: stream.askedHz / 2 })),
+        }),
+      },
     });
     await expect.poll(() => query('[data-robot-state]')?.textContent).toMatch(/INIT|IDLE/);
     await expect.poll(() => query('[data-battery]')?.textContent).toMatch(/^Battery12\.\d{2}V$/);
-    await expect.element(screen.getByText('schema loaded, 78 variables')).toBeVisible();
+    await expect.element(screen.getByText('micras answered with 78 variables')).toBeVisible();
     await screen.getByRole('button', { name: 'Warnings' }).click();
-    await expect.element(screen.getByText('schema loaded, 78 variables')).not.toBeInTheDocument();
+    await expect
+      .element(screen.getByText('micras answered with 78 variables'))
+      .not.toBeInTheDocument();
     await expect
       .element(screen.getByRole('alert'))
       .toHaveTextContent('The windows ask for more than the link carries');

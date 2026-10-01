@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { HistoryPort, TimeRange } from '../../ports';
+import type { TelemetryStore, TimeRange } from '@/telemetry';
 
 /** The shortest window a plot zooms in to: a millisecond. */
 export const MIN_SPAN_US = 1000;
@@ -27,7 +27,7 @@ export interface HistoryBounds {
 
 /** From the first to the last sample of any of the variables; undefined while none has one. */
 export function historyBounds(
-  history: HistoryPort,
+  history: TelemetryStore,
   names: readonly string[]
 ): HistoryBounds | undefined {
   let startUs = Number.POSITIVE_INFINITY;

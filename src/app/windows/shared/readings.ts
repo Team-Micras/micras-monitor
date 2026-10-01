@@ -8,9 +8,9 @@
 import { bitSet } from '@/core/integers';
 import type { Value, ValueType } from '@/core/variables';
 import { enumLabel, type BitmaskType, type EnumType } from '@/robot-kit';
+import type { LatestValue } from '@/telemetry';
 
 import { formatValue } from '../../lib/format';
-import type { LatestValue } from '../../ports';
 
 /** A sample older than this, against the newest of the session, is stale at the least. */
 export const STALE_AFTER_US = 1_500_000;

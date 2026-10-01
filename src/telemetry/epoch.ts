@@ -65,11 +65,9 @@ export interface EpochHost {
 /**
  * The samples of one definition of a stream group.
  *
- * The robot restarts a group's sequence numbers whenever the group is defined, so each epoch
- * tracks them on its own: a jump in the sequence is a gap of dropped samples, which is different
- * from the time outside any epoch, when the variable was not streamed at all. Time never goes
- * back inside an epoch, so a sample is a duplicate only when its time repeats; a sequence number
- * that looks behind the expected one, with a later time, wrapped over dropped samples.
+ * The source tells how many samples it lost before each one that arrives, which makes a gap of
+ * dropped samples, different from the time outside any epoch, when the variable was not streamed
+ * at all. Time never goes back inside an epoch, so a sample is a duplicate when its time repeats.
  */
 export class Epoch {
   /** The session's id for the epoch. */
@@ -105,14 +103,13 @@ export class Epoch {
   /** How many stored samples the memory cap later made the store let go of. */
   trimmedCount = 0;
 
-  /** How many samples the sequence numbers show as lost. */
+  /** How many samples the source lost. */
   droppedCount = 0;
 
   private readonly numericIds: readonly number[];
   private readonly kinds: readonly ColumnKind[];
   private readonly row: Float64Array;
   private readonly pending: EpochGap[] = [];
-  private expectedSequence: number | undefined;
   private capacity: number;
   private nextBlockIndex = 0;
   private pendingUnstored = 0;
@@ -123,19 +120,16 @@ export class Epoch {
   /**
    * @param spec The group layout, with names.
    * @param blockSize How many samples a block holds at most.
-   * @param sequenceModulus Where the robot's sequence numbers wrap.
    * @param host Where blocks come from and where changes go.
    */
   constructor(
-    spec: RecordedEpoch & { readonly firstSequence?: number },
+    spec: RecordedEpoch,
     private readonly blockSize: number,
-    private readonly sequenceModulus: number,
     private readonly host: EpochHost
   ) {
     this.id = spec.epochId;
     this.groupId = spec.groupId;
     this.variables = [...spec.variables];
-    this.expectedSequence = spec.firstSequence;
     this.capacity = Math.min(blockSize, FIRST_BLOCK_SIZE);
 
     const numericIds: number[] = [];
@@ -190,38 +184,28 @@ export class Epoch {
   }
 
   /**
-   * Account for an arriving sample before it is stored: its time and its sequence number. A
-   * sample the memory cap then keeps out of the history still moves the sequence on, since it did
-   * arrive. A duplicate or a sample from the past moves it on only when it carries the expected
-   * number, so that a stale sample does not look like a wrap over dropped ones.
+   * Account for an arriving sample before it is stored: its time and the samples the source lost
+   * just before it. A sample the memory cap then keeps out of the history still counts as arrived.
+   * A duplicate or a sample from the past is left out, and so is the loss it reports.
    *
-   * @param sequence The sample's sequence number.
    * @param timeUs When it was taken.
+   * @param missedBefore How many samples the source lost just before it.
    * @returns How many samples before it never arrived, or {@link RECEIVED_DUPLICATE} or
    *   {@link RECEIVED_BACKWARDS} for a sample to leave out of the history.
    */
-  receive(sequence: number, timeUs: number): number {
-    const modulus = this.sequenceModulus;
-    const expected = this.expectedSequence;
-
+  receive(timeUs: number, missedBefore: number): number {
     if (timeUs <= this.lastSeenUs) {
-      if (sequence === expected) {
-        this.expectedSequence = (sequence + 1) % modulus;
-      }
-
       return timeUs < this.lastSeenUs ? RECEIVED_BACKWARDS : RECEIVED_DUPLICATE;
     }
 
-    const missing = expected === undefined ? 0 : (sequence - expected + modulus) % modulus;
-    this.expectedSequence = (sequence + 1) % modulus;
     this.lastSeenUs = timeUs;
 
-    if (missing > 0) {
-      this.droppedCount += missing;
-      this.addGap('dropped', missing, this.lastTimeUs, true);
+    if (missedBefore > 0) {
+      this.droppedCount += missedBefore;
+      this.addGap('dropped', missedBefore, this.lastTimeUs, true);
     }
 
-    return missing;
+    return missedBefore;
   }
 
   /**
@@ -346,8 +330,7 @@ export class Epoch {
   }
 
   /**
-   * Forget every sample and gap, keeping the sequence, so that an open epoch carries on from
-   * nothing.
+   * Forget every sample and gap, so that an open epoch carries on from nothing.
    */
   clearHistory(): void {
     this.host.account(-GAP_BYTES * this.gaps.length);

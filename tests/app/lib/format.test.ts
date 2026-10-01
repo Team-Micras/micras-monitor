@@ -1,12 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import {
-  formatBytes,
-  formatClock,
-  formatDuration,
-  formatHash,
-  formatValue,
-} from '@/app/lib/format';
+import { formatBytes, formatClock, formatDuration, formatValue } from '@/app/lib/format';
 
 describe('formatValue', () => {
   test('shows integers whole and other numbers with three decimals', () => {
@@ -36,11 +30,6 @@ describe('formatClock', () => {
   test('clamps negative durations to zero', () => {
     expect(formatClock(-5)).toBe('00:00.0');
   });
-});
-
-test('formatHash pads to eight digits', () => {
-  expect(formatHash(0x3f9a1c07)).toBe('3f9a1c07');
-  expect(formatHash(0xab)).toBe('000000ab');
 });
 
 test('formatBytes picks the unit and keeps a decimal below a hundred', () => {

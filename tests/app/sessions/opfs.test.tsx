@@ -36,7 +36,6 @@ function tab(clock: { ms: number }) {
     epochId: 1,
     groupId: 0,
     variables: [{ id: 0, type: 'f32' }],
-    firstSequence: 0,
   });
   const manager = new SessionManager({
     store,
@@ -68,7 +67,7 @@ async function stream(
   const end = Math.min(to, from + 10);
 
   for (let index = from; index < end; index++) {
-    store.append(1, index & 0xffff, index * SAMPLE_US, [Math.sin(index / 40)]);
+    store.append(1, index * SAMPLE_US, [Math.sin(index / 40)]);
   }
 
   clock.ms += 100;

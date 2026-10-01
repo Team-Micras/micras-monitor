@@ -8,7 +8,7 @@
 import { isFloat, isWide, VALUE_TYPES, type ValueType } from '@/core/variables';
 import type { BitmaskType, EnumType } from '@/robot-kit';
 
-import type { WriteRefusal, WriteValue } from '../../ports';
+import type { WriteRefusal, WriteValue } from '@/core/source';
 
 /** The control a variable is edited with. */
 export type EditorControl =

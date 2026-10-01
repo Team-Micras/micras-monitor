@@ -1,3 +1,5 @@
+import { Emitter, type Listener, type Unsubscribe } from '@/core/emitter';
+
 import {
   ErrorCode,
   FrameReader,
@@ -13,7 +15,6 @@ import {
 import { Backoff } from './backoff';
 import { TimestampUnwrapper } from './clock';
 import { CumulativeCredit, isMetered, wireSize, type CreditPolicy } from './credit';
-import { Emitter, type Listener, type Unsubscribe } from './emitter';
 import { SessionError } from './errors';
 import { GroupConfigurator } from './group-configurator';
 import {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { LogEntry } from '@/app/ports';
+import type { LogEntry } from '@/core/log';
 import { loggedTransitions, mergeTransitions } from '@/app/windows/robot/logged-transitions';
 
 const STATES = ['IDLE', 'RUN', 'SAVE'];

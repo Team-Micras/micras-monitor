@@ -14,7 +14,7 @@ import { activeWorkspace } from '@/tiling';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
-import { useRobotPackage } from '../monitor-context';
+import { useLiveMonitor, useRobotPackage } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 
 /**
@@ -28,7 +28,7 @@ export function LayoutsMenu() {
   const intent = useShell((state) => state.layoutsIntent);
   const presets = useShell((state) => state.presets);
   const workspaceName = useShell((state) => activeWorkspace(state.desktop).name);
-  const pkg = useRobotPackage()?.package ?? null;
+  const pkg = useRobotPackage(useLiveMonitor())?.package ?? null;
   const [name, setName] = useState('');
   const wanted = useRef<string | null | undefined>(undefined);
   const field = useRef<HTMLInputElement>(null);

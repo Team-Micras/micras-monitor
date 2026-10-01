@@ -50,7 +50,7 @@ function spikySignal(count: number, blockSize: number, seed: number): Fixture {
       value = Number.NaN;
     }
 
-    store.append(1, index & 0xffff, timeUs, [value]);
+    store.append(1, timeUs, [value]);
     samples.push({ timeUs, value: Math.fround(value) });
   }
 
@@ -142,7 +142,7 @@ describe('decimation', () => {
     const store = newStore(1024);
 
     for (let index = 0; index < 100; index++) {
-      store.append(1, index, index * MS, [index >= 40 && index < 60 ? Number.NaN : index]);
+      store.append(1, index * MS, [index >= 40 && index < 60 ? Number.NaN : index]);
     }
 
     const line = toLineSeries(store.decimate(1, 0, 100 * MS, 10));
@@ -156,9 +156,7 @@ describe('decimation', () => {
     const store = newStore(65_536);
 
     for (let index = 0; index < 200_000; index++) {
-      store.append(1, index & 0xffff, index * MS, [
-        index % 50 === 0 ? Number.NaN : Math.sin(index),
-      ]);
+      store.append(1, index * MS, [index % 50 === 0 ? Number.NaN : Math.sin(index)]);
     }
 
     const decimation = store.decimate(1, 0, 200_000 * MS, 1600);
@@ -217,7 +215,7 @@ describe('breaks at gaps', () => {
       const skip = random() < 0.3 ? 1 + Math.floor(random() * 30) : 0;
       sequence += skip;
       const timeUs = (index + sequence) * MS;
-      store.append(1, sequence & 0xffff, timeUs, [index]);
+      store.append(1, timeUs, [index], skip);
 
       if (skip > 0 && !Number.isNaN(previous)) {
         gaps.push({ afterUs: previous, untilUs: timeUs });
@@ -253,7 +251,7 @@ describe('live decimation', () => {
     const push = (from: number, to: number) => {
       for (let index = from; index < to; index++) {
         const value = index % 997 === 3 ? Number.NaN : Math.cos(index / 40);
-        store.append(1, index & 0xffff, index * MS, [value]);
+        store.append(1, index * MS, [value]);
         samples.push({ timeUs: index * MS, value: Math.fround(value) });
       }
     };
@@ -279,7 +277,7 @@ describe('live decimation', () => {
     const store = newStore(1024);
 
     for (let index = 0; index < 5000; index++) {
-      store.append(1, index, index * MS, [1]);
+      store.append(1, index * MS, [1]);
     }
 
     const cached = store.decimate(1, 0, 8192 * MS, 64);

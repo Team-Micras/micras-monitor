@@ -6,13 +6,13 @@ import { Button } from '../components/ui/button';
 import { Kbd } from '../components/ui/kbd';
 import { Separator } from '../components/ui/separator';
 import { formatChord } from '../keymap/chords';
-import { useMonitor } from '../monitor-context';
+import { useMonitorScope } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 
 /** The bar below the tiling: the variables drawer, the tiling's size and the theme. */
 export function StatusBar() {
   const store = useShellStore();
-  const { synthetic } = useMonitor();
+  const { synthetic } = useMonitorScope();
   const count = useShell((state) => windowIds(activeWorkspace(state.desktop)).length);
   const theme = useShell((state) => state.theme);
   const drawerOpen = useShell((state) => state.overlay === 'drawer');

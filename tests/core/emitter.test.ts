@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { Emitter, type Unsubscribe } from '@/link/emitter';
+import { Emitter, type Unsubscribe } from '@/core/emitter';
 
 test('an emit calls the listeners registered when it started', () => {
   const emitter = new Emitter<{ tick: number }>();

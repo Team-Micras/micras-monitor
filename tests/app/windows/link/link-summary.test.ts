@@ -18,17 +18,23 @@ describe('link summary', () => {
     expect(share(1, 0)).toBe(0);
   });
 
-  test('lists the streams the planner cut first', () => {
-    const streams = orderedStreams({
-      bytesPerSecond: 3000,
-      used: 3000,
-      overBudget: true,
-      planned: [
-        { variable: 'b', rateHz: 10, grantedHz: 10 },
-        { variable: 'c', rateHz: 100, grantedHz: 25 },
-        { variable: 'a', rateHz: 10, grantedHz: 10 },
+  test('lists the streams the source cut first, by name', () => {
+    const access = { stream: true, write: false, writeNeedsIdle: false, persists: false };
+    const variables = ['a', 'b', 'c'].map((name, id) => ({
+      id,
+      name,
+      type: 'f32' as const,
+      access,
+    }));
+    const streams = orderedStreams(
+      [
+        { variableId: 1, askedHz: 10, grantedHz: 10 },
+        { variableId: 2, askedHz: 100, grantedHz: 25 },
+        { variableId: 0, askedHz: 10, grantedHz: 10 },
+        { variableId: 9, askedHz: 10, grantedHz: 1 },
       ],
-    });
+      variables
+    );
     expect(streams.map((stream) => stream.variable)).toEqual(['c', 'a', 'b']);
   });
 });

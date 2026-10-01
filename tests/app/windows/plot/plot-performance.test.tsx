@@ -20,7 +20,7 @@ test('eight live plots of 1 kHz signals draw in a few milliseconds a frame', asy
         work.push(performance.now() - started);
       }),
   };
-  const robot = await renderEightPlots(scheduler);
+  const monitor = await renderEightPlots(scheduler);
   await new Promise((resolve) => setTimeout(resolve, WARM_UP_MS));
   work.length = 0;
 
@@ -39,7 +39,7 @@ test('eight live plots of 1 kHz signals draw in a few milliseconds a frame', asy
     };
     requestAnimationFrame(frame);
   });
-  robot.disconnect();
+  monitor.disconnect();
 
   const fps =
     (1000 * intervals.length) / intervals.reduce((total, interval) => total + interval, 0);

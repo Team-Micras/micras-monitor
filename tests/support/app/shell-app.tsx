@@ -12,17 +12,17 @@ import { mouse } from '@tests/support/robot-kit/packages';
 import { activeWorkspace, createDesktop, leafIds, type Workspace } from '@/tiling';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot } from '@/app/fake/fake-robot';
 import type { LayoutStorage } from '@/app/layouts/layout-book';
+import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore, type ShellStore } from '@/app/state/shell-store';
 import type { ShellWindow } from '@/app/windows/types';
 import { settled } from '@tests/support/app/animations';
+import { demoMonitor } from '@tests/support/sources/demo-monitor';
 
-/** The app as mounted, with its store and robot. */
+/** The app as mounted, with its store and live monitor. */
 export interface ShellApp {
   readonly store: ShellStore;
-  readonly robot: FakeRobot;
+  readonly monitor: AppMonitor;
   readonly screen: Awaited<ReturnType<typeof render>>;
 }
 
@@ -44,11 +44,11 @@ export async function mountShell(
   windows: readonly ShellWindow[],
   layouts?: LayoutStorage
 ): Promise<ShellApp> {
-  const robot = createDemoRobot({ connectMs: 5, handshakeMs: 10, configureMs: 5 });
+  const monitor = demoMonitor();
   const store = createShellStore({ theme: 'dark', desktop: createDesktop(workspaces, windows) });
   const screen = await render(
     <App
-      ports={robot.ports}
+      monitor={monitor}
       robots={new RobotRegistry([mouse({ id: 'micras' })])}
       store={store}
       layouts={layouts}
@@ -56,7 +56,7 @@ export async function mountShell(
     />
   );
   await settled();
-  return { store, robot, screen };
+  return { store, monitor, screen };
 }
 
 /** The tiled windows of a workspace, the one shown by default, in tree order. */

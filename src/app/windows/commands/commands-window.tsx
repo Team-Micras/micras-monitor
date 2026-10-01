@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { createElement, useState } from 'react';
 
+import type { CommandOutcome } from '@/core/source';
 import { emergencyCommand, roleVariable, type CommandSpec } from '@/robot-kit';
 
 import { Button } from '../../components/ui/button';
@@ -14,13 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/too
 import { LazyPart } from '../../lib/lazy-part';
 import { useEver } from '../../lib/use-ever';
 import { cn } from '../../lib/utils';
-import {
-  useConnectionStatus,
-  useLiveValue,
-  useMonitor,
-  useRobotPackage,
-} from '../../monitor-context';
-import type { CommandOutcome } from '../../ports';
+import { useLiveValue, useRobotPackage, useShownMonitor, useStatus } from '../../monitor-context';
 import { useAnnounce } from '../../shell/announce';
 import { useStopAction } from '../../shell/stop-action';
 import { useCommandTracker } from '../shared/command-tracker';
@@ -48,13 +43,13 @@ export function CommandsWindow({
   window,
   showStop = true,
 }: WindowViewProps & { readonly showStop?: boolean }) {
-  const { commands } = useMonitor().ports;
+  const monitor = useShownMonitor();
   const track = useCommandTracker();
-  const pkg = useRobotPackage()?.package ?? null;
-  const status = useConnectionStatus();
+  const pkg = useRobotPackage(monitor)?.package ?? null;
+  const status = useStatus(monitor);
   const stateName = roleVariable(pkg, 'state');
-  const [state] = usePresentedVariables(stateName === null ? [] : [stateName]);
-  const stateValue = useLiveValue(stateName)?.value;
+  const [state] = usePresentedVariables(monitor, stateName === null ? [] : [stateName]);
+  const stateValue = useLiveValue(monitor, stateName)?.value;
   const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
   const [answer, setAnswer] = useState<OutcomeMessage | null>(null);
   const [answers, setAnswers] = useState(0);
@@ -92,8 +87,8 @@ export function CommandsWindow({
   const send = async (command: CommandSpec) => {
     setInFlight((current) => new Set(current).add(command.code));
     track(window.id, 1);
-    const outcome: CommandOutcome = await commands
-      .send(command.code, command.argument?.default)
+    const outcome: CommandOutcome = await monitor
+      .command(command.code, command.argument?.default)
       .catch((error: unknown) => ({
         status: 'failed' as const,
         message: error instanceof Error ? error.message : String(error),

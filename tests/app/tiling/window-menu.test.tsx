@@ -17,7 +17,7 @@ import '@/app/styles.css';
 const apps: ShellApp[] = [];
 
 afterEach(() => {
-  apps.splice(0).forEach(({ robot }) => robot.disconnect());
+  apps.splice(0).forEach(({ monitor }) => monitor.disconnect());
 });
 
 async function open(): Promise<ShellApp> {

@@ -7,7 +7,6 @@ import { mouse } from '@tests/support/robot-kit/packages';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
 import type { AppUpdates } from '@/app/pwa/app-updates';
 import '@/app/styles.css';
 import { createShellStore, type ShellStore } from '@/app/state/shell-store';
@@ -16,6 +15,7 @@ import { MemorySessionLibrary } from '@/app/sessions/memory-library';
 import { MemoryLocks } from '@/app/sessions/session-library';
 import { SessionManager } from '@/app/sessions/session-manager';
 import { ManualScheduler } from '@/telemetry';
+import { demoMonitor } from '@tests/support/sources/demo-monitor';
 
 const MICRAS = mouse({ id: 'micras', displayName: 'Micras' });
 const PLOTTED = 'imu/gyro_z';
@@ -28,20 +28,20 @@ afterEach(() => {
 });
 
 async function setup(updates?: AppUpdates) {
-  const robot = createDemoRobot({ connectMs: 5, handshakeMs: 10, configureMs: 5, commandMs: 5 });
+  const monitor = demoMonitor();
   const library = new MemorySessionLibrary();
   const sessions = new SessionManager({
-    store: robot.store,
+    store: monitor.history,
     library,
     locks: new MemoryLocks(),
     scheduler: new ManualScheduler(),
-    describe: () => describeRobot(robot.ports),
+    describe: () => describeRobot(monitor),
   });
   await sessions.start();
   const shell: ShellStore = createShellStore({ theme: 'dark' });
   const screen = await render(
     <App
-      ports={robot.ports}
+      monitor={monitor}
       robots={new RobotRegistry([MICRAS])}
       store={shell}
       sessions={sessions}
@@ -54,8 +54,8 @@ async function setup(updates?: AppUpdates) {
   await screen.getByRole('dialog').getByRole('button', { name: 'Connect' }).click();
   await expect.element(screen.getByText('· connected')).toBeVisible();
   await userEvent.keyboard('{Escape}');
-  stop = () => robot.ports.connection.disconnect();
-  return { robot, sessions, shell, screen, library };
+  stop = () => monitor.disconnect();
+  return { monitor, sessions, shell, screen, library };
 }
 
 function recButton(screen: Awaited<ReturnType<typeof render>>) {
@@ -137,22 +137,24 @@ describe('REC and the sessions', () => {
   });
 
   test('asks before resetting the live session', async () => {
-    const { robot, screen } = await setup();
-    await expect.poll(() => robot.store.timeRange() !== undefined, { timeout: 15_000 }).toBe(true);
+    const { monitor, screen } = await setup();
+    await expect
+      .poll(() => monitor.history.timeRange() !== undefined, { timeout: 15_000 })
+      .toBe(true);
     await recButton(screen).click();
     await screen.getByRole('button', { name: /Reset the live session/ }).click();
     await screen.getByRole('button', { name: 'Reset session' }).click();
 
-    await expect.poll(() => robot.store.generation).toBe(1);
+    await expect.poll(() => monitor.history.generation).toBe(1);
   });
 });
 
 describe('scrolling a plot back in time', () => {
   test('zooms and pauses the window on a wheel, moves it by keys and drag, and follows live again', async () => {
-    const { robot, shell, screen } = await setup();
+    const { monitor, shell, screen } = await setup();
     shell.getState().openWindow('plot', [PLOTTED]);
     await expect
-      .poll(() => robot.store.timeRange(PLOTTED)?.endUs ?? 0, { timeout: 15_000 })
+      .poll(() => monitor.history.timeRange(PLOTTED)?.endUs ?? 0, { timeout: 15_000 })
       .toBeGreaterThan(3e6);
     const plot = document.querySelector<HTMLElement>(
       `[data-window="${focusedId(shell)}"] [data-plot]`
@@ -186,7 +188,7 @@ describe('scrolling a plot back in time', () => {
     await userEvent.keyboard('{Home}');
     await expect
       .poll(() => Number(plot.dataset.windowStartUs))
-      .toBe(robot.store.timeRange(PLOTTED)!.startUs);
+      .toBe(monitor.history.timeRange(PLOTTED)!.startUs);
     await userEvent.keyboard('{+}{+}');
     const zoomed = Number(plot.dataset.windowStartUs);
     const left = (box?.left ?? 0) + 200;

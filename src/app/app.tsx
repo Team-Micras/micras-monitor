@@ -15,13 +15,19 @@ import { TooltipProvider } from './components/ui/tooltip';
 import { LazyPart } from './lib/lazy-part';
 import { useEver } from './lib/use-ever';
 import { nothingToStop, stopAnswered, stopSent } from './lib/stop-outcome';
-import { MonitorContext, useMonitor, useRobotPackage, useVariables } from './monitor-context';
-import { PackageSelector } from './package-selection';
+import {
+  MonitorContext,
+  PackageChooser,
+  useLiveMonitor,
+  useRobotPackage,
+  useVariables,
+  type AppMonitor,
+  type MonitorScope,
+} from './monitor-context';
 import { phonePlan, planWindows } from './phone/phone-plan';
 import { PhoneView } from './phone/phone-view';
 import { usePhone } from './phone/use-phone';
 import type { AppUpdates } from './pwa/app-updates';
-import type { MonitorPorts } from './ports';
 import type { SessionManager } from './sessions/session-manager';
 import { SessionsContext } from './sessions/sessions-context';
 import { SessionView } from './sessions/session-view';
@@ -56,9 +62,10 @@ import type { WindowPayload } from './windows/types';
 
 /** What the composition root gives the app. */
 export interface AppProps {
-  readonly ports: MonitorPorts;
+  /** The live monitor, which every command goes to. */
+  readonly monitor: AppMonitor;
   readonly robots: RobotRegistry<ReactNode>;
-  /** Whether the ports serve synthetic data, which the status bar then says. */
+  /** Whether the monitor's data is synthetic, which the status bar then says. */
   readonly synthetic?: boolean;
   /** The shell's state, for tests; a new store with the defaults otherwise. */
   readonly store?: ShellStore;
@@ -75,7 +82,7 @@ export interface AppProps {
 
 /** The monitor: top bar, tiling of workspaces, status bar, drawer and launcher. */
 export function App({
-  ports,
+  monitor,
   robots,
   synthetic = false,
   store: given,
@@ -86,10 +93,17 @@ export function App({
   const [store] = useState(
     () => given ?? createShellStore({ theme: initialTheme(), keyOverrides: initialKeyOverrides() })
   );
-  const [selection] = useState(() => new PackageSelector(ports.connection, ports.schema, robots));
+  const [packages] = useState(() => new PackageChooser(robots));
+  const [scope] = useState<MonitorScope>(() => ({
+    live: monitor,
+    shown: monitor,
+    recording: null,
+    packages,
+    synthetic,
+  }));
 
   return (
-    <MonitorContext value={{ ports, robots, selection, synthetic }}>
+    <MonitorContext value={scope}>
       <SessionsContext value={sessions ?? null}>
         <ShellStoreContext value={store}>
           <TooltipProvider>
@@ -131,7 +145,7 @@ function Shell({
   readonly updates: AppUpdates | undefined;
 }) {
   const store = useShellStore();
-  const { ports, selection } = useMonitor();
+  const live = useLiveMonitor();
   const theme = useShell((state) => state.theme);
   const bindings = useShell((state) => state.bindings);
   const keyOverrides = useShell((state) => state.keyOverrides);
@@ -146,7 +160,8 @@ function Shell({
   const closingAsked = useEver(closing);
   const presses = useRef(0);
   const phone = usePhone();
-  const plan = phonePlan(useRobotPackage()?.package ?? null, useVariables());
+  const livePackage = useRobotPackage(live)?.package ?? null;
+  const plan = phonePlan(livePackage, useVariables(live));
   const blockedBy = useReloadBlocked();
 
   useEffect(() => applyTheme(theme), [theme]);
@@ -157,7 +172,7 @@ function Shell({
     presses.current += 1;
     const id = presses.current;
     const { showStopNotice } = store.getState();
-    const pkg = selection.current()?.package ?? null;
+    const pkg = livePackage;
     const command = emergencyCommand(pkg);
 
     if (command === null) {
@@ -166,7 +181,7 @@ function Shell({
     }
 
     showStopNotice(stopSent(id, command));
-    const outcome = await ports.commands.send(command.code).catch((error: unknown) => ({
+    const outcome = await live.command(command.code).catch((error: unknown) => ({
       status: 'failed' as const,
       message: error instanceof Error ? error.message : String(error),
     }));

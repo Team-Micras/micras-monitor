@@ -5,9 +5,9 @@ import { render } from 'vitest-browser-react';
 
 import { RobotRegistry } from '@/robot-kit';
 import { mouse } from '@tests/support/robot-kit/packages';
+import { demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
 import '@/app/styles.css';
 import { createShellStore } from '@/app/state/shell-store';
 import type { CommandConfirmProps } from '@/app/windows/commands/command-confirm';
@@ -46,19 +46,10 @@ vi.mock('@/app/windows/commands/command-confirm', async (importOriginal) => {
 
 describe('the confirmation of a dangerous command whose code fails to load', () => {
   test('says so, sends nothing, and opens on the next press once the code loads', async () => {
-    const robot = createDemoRobot({ connectMs: 5, handshakeMs: 10, configureMs: 5, commandMs: 5 });
     const sent: number[] = [];
     const screen = await render(
       <App
-        ports={{
-          ...robot.ports,
-          commands: {
-            send: (code, argument) => {
-              sent.push(code);
-              return robot.ports.commands.send(code, argument);
-            },
-          },
-        }}
+        monitor={demoMonitor({ command: recordCommands(sent) })}
         robots={new RobotRegistry<ReactNode>([PACKAGE])}
         store={createShellStore({ theme: 'dark' })}
         synthetic

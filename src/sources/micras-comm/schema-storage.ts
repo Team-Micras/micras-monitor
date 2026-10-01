@@ -1,6 +1,6 @@
 /**
- * Schemas kept between page loads, so a monitor that reconnects to a robot running the same build
- * skips the paged schema.
+ * Schemas kept in `localStorage` between page loads, so a monitor that reconnects to a robot
+ * running the same build skips the paged schema.
  *
  * @module
  */

@@ -2,11 +2,11 @@ import { ClockIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { formatClock } from '../lib/format';
-import { useConnectionStatus } from '../monitor-context';
+import { useLiveMonitor, useStatus } from '../monitor-context';
 
 /** How long the link has been up, ticking every tenth of a second. */
 export function SessionClock() {
-  const status = useConnectionStatus();
+  const status = useStatus(useLiveMonitor());
   const since = status.kind === 'linked' ? status.since : null;
   const [now, setNow] = useState(() => Date.now());
 

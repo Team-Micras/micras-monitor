@@ -7,7 +7,7 @@ import { Kbd } from '../components/ui/kbd';
 import { formatChord } from '../keymap/chords';
 import type { StopNotice, StopTone } from '../lib/stop-outcome';
 import { cn } from '../lib/utils';
-import { useConnectionStatus, useRobotPackage } from '../monitor-context';
+import { useLiveMonitor, useRobotPackage, useStatus } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 
 const NOTICE_MS = 4000;
@@ -28,8 +28,9 @@ const TONE_DOTS: Readonly<Record<StopTone, string>> = {
  * @param onStop Sends the stop, shared with the keyboard.
  */
 export function StopButton({ onStop }: { readonly onStop: () => void }) {
-  const status = useConnectionStatus();
-  const stop = emergencyCommand(useRobotPackage()?.package ?? null);
+  const monitor = useLiveMonitor();
+  const status = useStatus(monitor);
+  const stop = emergencyCommand(useRobotPackage(monitor)?.package ?? null);
   const chord = useShell((state) => state.bindings.get('stop')?.[0]);
   const notice = useShell((state) => state.stopNotice);
   const connected = status.kind !== 'disconnected' && status.kind !== 'failed';

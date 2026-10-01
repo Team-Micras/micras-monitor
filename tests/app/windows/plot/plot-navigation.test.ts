@@ -58,8 +58,8 @@ describe('moving a paused plot through the history', () => {
       { id: 1, name: 'b', type: 'f32' },
     ]);
     store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: 'f32' }] });
-    store.append(1, 0, 1000, [1]);
-    store.append(1, 1, 5000, [2]);
+    store.append(1, 1000, [1]);
+    store.append(1, 5000, [2]);
 
     expect(historyBounds(store, ['a', 'b'])).toEqual({
       startUs: 1000,

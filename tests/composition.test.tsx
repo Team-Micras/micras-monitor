@@ -2,20 +2,21 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { App } from '@/app/app';
-import { createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot, FakeRobotOptions, FakeVariable } from '@/app/fake/fake-robot';
+import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
 import type { ShellWindow } from '@/app/windows/types';
 import { RobotRegistry } from '@/robot-kit';
 import { createDesktop, createWorkspace, leaf } from '@/tiling';
 import { micras } from '@robots/micras';
+import type { DemoRobot, DemoVariable } from '@/sources/demo/demo-source';
 import { EXPLORED_16, FRESH_16 } from '@tests/support/robots/micras/maze-vectors';
+import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
 
-const robots: FakeRobot[] = [];
+const monitors: AppMonitor[] = [];
 
 afterEach(() => {
-  robots.splice(0).forEach((robot) => robot.disconnect());
+  monitors.splice(0).forEach((monitor) => monitor.disconnect());
 });
 
 const MAZE_WINDOW: ShellWindow = {
@@ -24,7 +25,7 @@ const MAZE_WINDOW: ShellWindow = {
   payload: { variables: ['maze'] },
 };
 
-const f32 = (name: string, value: number): FakeVariable => ({
+const f32 = (name: string, value: number): DemoVariable => ({
   name,
   type: 'f32',
   access: { stream: true, write: false, writeNeedsIdle: false, persists: false },
@@ -34,29 +35,21 @@ const f32 = (name: string, value: number): FakeVariable => ({
 const ROBOT_WINDOW: ShellWindow = { id: 'robot', kind: 'robot', payload: { variables: [] } };
 
 async function openMaze(
-  variables: readonly FakeVariable[],
-  options: Partial<FakeRobotOptions> = {},
+  variables: readonly DemoVariable[],
+  robot: Partial<DemoRobot> = {},
   window: ShellWindow = MAZE_WINDOW
-): Promise<FakeRobot> {
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs: 10,
-    configureMs: 5,
-    commandMs: 5,
-    tickMs: 20,
-    variables,
-    ...options,
-  });
-  robots.push(robot);
+): Promise<AppMonitor> {
+  const monitor = demoMonitor({ sampleRateHz: 50, robot: { variables, ...robot } });
+  monitors.push(monitor);
   const store = createShellStore({
     theme: 'dark',
     desktop: createDesktop([createWorkspace('Test', leaf(window.id))], [window]),
   });
   await render(
-    <App ports={robot.ports} robots={new RobotRegistry([micras])} store={store} synthetic />
+    <App monitor={monitor} robots={new RobotRegistry([micras])} store={store} synthetic />
   );
-  robot.connect({ transport: 'websocket', url: 'ws://robot' });
-  return robot;
+  monitor.connect(DEMO_TARGET);
+  return monitor;
 }
 
 function maze(): SVGSVGElement | null {
@@ -73,7 +66,7 @@ describe('the Micras package in the app', () => {
   test('draws the maze the robot sends and reads it again when its revision moves', async () => {
     let blob = FRESH_16;
     let revision = 1;
-    const robot = await openMaze([
+    const monitor = await openMaze([
       {
         name: 'state',
         type: 'u8',
@@ -103,7 +96,7 @@ describe('the Micras package in the app', () => {
     await expect.poll(() => maze()?.dataset.robotCell).toBe('0,1');
 
     blob = EXPLORED_16;
-    const revisions = () => robot.store.variable('maze/revision')?.storedSamples ?? 0;
+    const revisions = () => monitor.history.variable('maze/revision')?.storedSamples ?? 0;
     const seen = revisions();
     await expect.poll(revisions).toBeGreaterThan(seen + 10);
     expect(maze()?.dataset.walls).toBe('65');

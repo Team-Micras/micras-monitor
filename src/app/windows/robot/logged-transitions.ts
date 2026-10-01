@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { LogEntry } from '../../ports';
+import type { LogEntry } from '@/core/log';
 import type { Transition } from './transitions';
 
 /** Reads a log line as the state it reports entering, or null for any other line. */

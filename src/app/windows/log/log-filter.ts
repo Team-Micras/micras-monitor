@@ -4,8 +4,9 @@
  * @module
  */
 
+import type { LogEntry, LogSeverity } from '@/core/log';
+
 import { formatClock } from '../../lib/format';
-import type { LogEntry, LogSeverity } from '../../ports';
 
 /** The severities from the least to the most serious. */
 export const SEVERITIES: readonly LogSeverity[] = ['debug', 'info', 'warning', 'error'];

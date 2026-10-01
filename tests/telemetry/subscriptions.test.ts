@@ -26,7 +26,7 @@ describe('subscriptions', () => {
     store.subscribe([1, 2], callback);
 
     for (let index = 0; index < 100; index++) {
-      store.append(1, index, index, [index, -index]);
+      store.append(1, index, [index, -index]);
     }
 
     expect(callback).not.toHaveBeenCalled();
@@ -47,7 +47,7 @@ describe('subscriptions', () => {
     const third = vi.fn<() => void>();
     store.subscribe([1], first);
     store.subscribe([3], third);
-    store.append(2, 0, 0, [5]);
+    store.append(2, 0, [5]);
     scheduler.flush();
 
     expect(first).not.toHaveBeenCalled();
@@ -59,13 +59,13 @@ describe('subscriptions', () => {
     const callback = vi.fn<() => void>();
     const unsubscribe = store.subscribe([1], callback);
     store.subscribe([1, 2], callback);
-    store.append(1, 0, 0, [1, 2]);
+    store.append(1, 0, [1, 2]);
     scheduler.flush();
 
     expect(callback).toHaveBeenCalledTimes(2);
 
     unsubscribe();
-    store.append(1, 1, 1, [1, 2]);
+    store.append(1, 1, [1, 2]);
     scheduler.flush();
 
     expect(callback).toHaveBeenCalledTimes(3);
@@ -74,9 +74,9 @@ describe('subscriptions', () => {
   test('see a version that changes with every change, and a stable latest value', () => {
     const { scheduler, store } = twoVariables();
     const before = store.version(1);
-    store.append(1, 0, 10, [1, 2]);
+    store.append(1, 10, [1, 2]);
     const latest = store.latest(1);
-    store.append(1, 1, 20, [3, 4]);
+    store.append(1, 20, [3, 4]);
 
     expect(store.version(1)).toBe(before + 2);
     expect(store.version(99)).toBe(0);
@@ -94,11 +94,11 @@ describe('subscriptions', () => {
     let sequence = 0;
     const callback = vi.fn<() => void>(() => {
       if (sequence < 3) {
-        store.append(1, sequence, sequence, [sequence++, 0]);
+        store.append(1, sequence, [sequence++, 0]);
       }
     });
     store.subscribe([1], callback);
-    store.append(1, sequence, sequence, [sequence++, 0]);
+    store.append(1, sequence, [sequence++, 0]);
     scheduler.flush();
 
     expect(callback).toHaveBeenCalledTimes(1);
@@ -118,7 +118,7 @@ describe('subscriptions', () => {
     const ends: (() => void)[] = [];
     store.subscribe([1], () => ends.forEach((end) => end()));
     ends.push(store.subscribe([1], late));
-    store.append(1, 0, 0, [1, 2]);
+    store.append(1, 0, [1, 2]);
     scheduler.flush();
 
     expect(late).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ describe('subscriptions', () => {
     store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 8, type: 'f32' }] });
     scheduler.flush();
     callback.mockClear();
-    store.append(1, 0, 0, [7.4]);
+    store.append(1, 0, [7.4]);
     scheduler.flush();
 
     expect(callback).toHaveBeenCalledTimes(1);

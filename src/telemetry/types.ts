@@ -32,8 +32,8 @@ export interface VariableSpec {
 }
 
 /**
- * A group layout the robot acknowledged, opened when its GROUP_ACK arrives. Every definition of a
- * group starts a new epoch, because the robot restarts the sequence numbers of the group.
+ * A stream the source opened: a layout of variables sampled together, from the moment the robot
+ * starts sending it until it stops.
  */
 export interface EpochSpec {
   /** Unique for the whole session; the session picks it. */
@@ -44,12 +44,6 @@ export interface EpochSpec {
 
   /** The variables in each sample, in wire order. */
   readonly variables: readonly VariableSpec[];
-
-  /**
-   * The sequence number the robot starts the group at, when known, so that samples lost before
-   * the first one that arrives count as dropped. Left out, the first sample sets the sequence.
-   */
-  readonly firstSequence?: number;
 }
 
 /**
@@ -73,7 +67,7 @@ export interface Boundary {
  * Why a stretch of a variable's history has no samples.
  *
  * - `not-streamed`: the variable was in no group at the time.
- * - `dropped`: it was in a group, and the sequence numbers show samples that never arrived.
+ * - `dropped`: it was in a group, and the source lost samples it knows the robot took.
  * - `not-stored`: they arrived, but the memory cap kept the store from keeping them, or made it
  *   let go of them later.
  */
@@ -92,7 +86,7 @@ export interface Gap {
   /** The time of the first sample after it, or NaN if none arrived yet. */
   readonly endUs: number;
 
-  /** How many samples are missing, when the sequence numbers tell (dropped and not stored). */
+  /** How many samples are missing, when known (dropped and not stored). */
   readonly count?: number;
 }
 

@@ -14,7 +14,7 @@ import {
   type RobotPackage,
 } from '@/robot-kit';
 
-import type { CommandOutcome } from '../../ports';
+import type { CommandOutcome } from '@/core/source';
 
 /** What the robot's state says about a command, per the package's mirror of the firmware table. */
 export type AcceptanceHint = 'accepted' | 'not-accepted' | 'unknown';

@@ -23,13 +23,14 @@ import { activeWorkspace, focusedWindow } from '@/tiling';
 
 import { Button } from '../components/ui/button';
 import { Kbd } from '../components/ui/kbd';
-import { formatHash, formatValue } from '../lib/format';
+import { formatValue } from '../lib/format';
 import { cn } from '../lib/utils';
 import {
-  useConnectionStatus,
   useLiveValue,
-  useMonitor,
+  useMonitorScope,
   useRobotPackage,
+  useShownMonitor,
+  useStatus,
   useVariables,
   type ReactRobotPackage,
 } from '../monitor-context';
@@ -85,10 +86,11 @@ function groupVariables(variables: readonly Variable[]): readonly Group[] {
  */
 export function VariableDrawer() {
   const store = useShellStore();
-  const variables = useVariables();
-  const status = useConnectionStatus();
-  const selection = useRobotPackage();
-  const { savedSession } = useMonitor();
+  const { recording } = useMonitorScope();
+  const monitor = useShownMonitor();
+  const variables = useVariables(monitor);
+  const status = useStatus(monitor);
+  const selection = useRobotPackage(monitor);
   const windows = useShell((state) => state.desktop.windows);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -181,10 +183,10 @@ export function VariableDrawer() {
         <div>
           <h2 className="text-lg font-semibold">Variables</h2>
           <p className="text-sm text-muted-foreground">
-            {savedSession !== undefined
-              ? `${variables.length} recorded in ${savedSession}`
+            {recording !== null
+              ? `${variables.length} recorded in ${recording}`
               : status.kind === 'linked' && variables.length > 0
-                ? `${variables.length} from schema ${formatHash(status.robot.schemaHash)} · ${pkg === null ? 'raw mode' : `package ${pkg.id}`}`
+                ? `${variables.length} from schema ${status.identity.schema ?? 'unknown'} · ${pkg === null ? 'raw mode' : `package ${pkg.id}`}`
                 : 'Connect to a robot to list its variables'}
           </p>
         </div>
@@ -311,7 +313,7 @@ interface VariableRowProps {
 function VariableRow({ variable, label, pkg, plotted, onAdd }: VariableRowProps) {
   const store = useShellStore();
   const dragged = useRef(false);
-  const value = useLiveValue(variable.name)?.value;
+  const value = useLiveValue(useShownMonitor(), variable.name)?.value;
   const dragging = useShell(
     (state) => state.drag?.subject.kind === 'variable' && state.drag.subject.name === variable.name
   );

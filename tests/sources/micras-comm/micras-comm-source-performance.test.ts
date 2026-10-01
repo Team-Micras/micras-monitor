@@ -1,9 +1,10 @@
 import { expect, inject, test } from 'vitest';
 
+import { Monitor } from '@/core/monitor';
 import type { LinkBudgetOptions, WebSocketLike } from '@/link';
-
+import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
+import { TelemetryStore } from '@/telemetry';
 import { percentile, reportBench } from '@tests/support/app/bench';
-import { LiveRobot } from '@/app/live/live-robot';
 
 declare module 'vitest' {
   interface ProvidedContext {
@@ -69,26 +70,28 @@ function frames(ms: number, onFrame: () => void): Promise<number> {
 function benchLink(link: string, budget: Partial<LinkBudgetOptions>): void {
   test(`the session and the store keep up with every variable at the most ${link} carries`, async (context) => {
     const busy: Busy = { ms: 0 };
-    const robot = new LiveRobot({
+    const source = new MicrasCommSource({
       planner: { debounceMs: 20, budget },
-      scheduler: { schedule: (task) => requestAnimationFrame(() => task()) },
       createSocket: (url) => timedSocket(url, busy),
     });
-    robot.connect({
+    const monitor = new Monitor({
+      history: new TelemetryStore({
+        scheduler: { schedule: (task) => requestAnimationFrame(() => task()) },
+      }),
+      source,
+    });
+    monitor.connect({
       transport: 'websocket',
       url: `ws://127.0.0.1:${inject('simulatedRobotPort')}`,
     });
-    await expect.poll(() => robot.ports.connection.status()).toMatchObject({ phase: 'streaming' });
-    const streamed = robot.ports.schema.variables().filter((entry) => entry.access.stream);
-    robot.ports.streams.request({
-      windows: streamed.map((entry) => ({ variable: entry.name, rateHz: RATE_HZ })),
-      pinned: [],
-    });
+    await expect.poll(() => source.session?.state.kind).toBe('streaming');
+    const streamed = monitor.state.variables.filter((entry) => entry.access.stream);
+    monitor.request(streamed.map((entry) => ({ variable: entry.name, rateHz: RATE_HZ })));
     await frames(WARM_UP_MS, () => undefined);
 
     const perFrame: number[] = [];
     let last = busy.ms;
-    const storedBefore = robot.store.variable('imu/gyro_z')?.storedSamples ?? 0;
+    const storedBefore = monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0;
     const started = performance.now();
     await frames(RUN_MS, () => {
       perFrame.push(busy.ms - last);
@@ -96,11 +99,11 @@ function benchLink(link: string, budget: Partial<LinkBudgetOptions>): void {
     });
     const elapsedMs = performance.now() - started;
     const samplesPerSecond =
-      ((robot.store.variable('imu/gyro_z')?.storedSamples ?? 0) - storedBefore) /
+      ((monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0) - storedBefore) /
       (elapsedMs / 1000);
-    const { bytesInPerSecond } = robot.ports.link.stats();
-    const planned = robot.planner?.plan?.rates.length ?? 0;
-    robot.disconnect();
+    const { bytesInPerSecond } = monitor.state.stats;
+    const planned = source.planner?.plan?.rates.length ?? 0;
+    monitor.disconnect();
 
     const share = perFrame.reduce((sum, ms) => sum + ms, 0) / elapsedMs;
     await reportBench(context, {

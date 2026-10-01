@@ -1,4 +1,5 @@
-import { Emitter, type Listener, type Unsubscribe } from './emitter';
+import { Emitter, type Listener, type Unsubscribe } from '@/core/emitter';
+
 import { RobotError, SessionError } from './errors';
 import type { Epoch, GroupRequest } from './groups';
 import { LinkBudget, type BudgetEstimate, type LinkBudgetOptions } from './link-budget';

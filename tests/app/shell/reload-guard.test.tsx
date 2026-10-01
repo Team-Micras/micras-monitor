@@ -1,22 +1,18 @@
-import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry } from '@/robot-kit';
-import { mouse } from '@tests/support/robot-kit/packages';
-
-import { DEMO_VARIABLES, createDemoRobot } from '@/app/fake/demo-robot';
-import type { FakeRobot } from '@/app/fake/fake-robot';
-import { MonitorContext } from '@/app/monitor-context';
-import { PackageSelector } from '@/app/package-selection';
+import { MonitorContext, type AppMonitor } from '@/app/monitor-context';
 import { useReloadBlocked } from '@/app/shell/reload-guard';
+import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';
+import { mouse } from '@tests/support/robot-kit/packages';
+import { DEMO_TARGET, demoMonitor, monitorScope } from '@tests/support/sources/demo-monitor';
 
 const IDLE = 0;
 const RUN = 1;
-const robots: FakeRobot[] = [];
+const monitors: AppMonitor[] = [];
 
 afterEach(() => {
-  robots.splice(0).forEach((robot) => robot.disconnect());
+  monitors.splice(0).forEach((monitor) => monitor.disconnect());
 });
 
 function Probe() {
@@ -26,28 +22,20 @@ function Probe() {
 interface Options {
   readonly state?: number;
   readonly withPackage?: boolean;
-  readonly handshakeMs?: number;
+  readonly answerMs?: number;
 }
 
-async function open({ state, withPackage = true, handshakeMs = 10 }: Options) {
+async function open({ state, withPackage = true, answerMs = 5 }: Options) {
   const [first, ...others] = DEMO_VARIABLES;
   const variables = state === undefined ? others : [{ ...first, signal: () => state }, ...others];
-  const robot = createDemoRobot({
-    connectMs: 5,
-    handshakeMs,
-    configureMs: 5,
-    tickMs: 20,
-    variables,
-  });
-  robots.push(robot);
-  const registry = new RobotRegistry<ReactNode>(withPackage ? [mouse({ id: 'micras' })] : []);
-  const selection = new PackageSelector(robot.ports.connection, robot.ports.schema, registry);
+  const monitor = demoMonitor({ answerMs, sampleRateHz: 50, robot: { variables } });
+  monitors.push(monitor);
   const screen = await render(
-    <MonitorContext value={{ ports: robot.ports, robots: registry, selection, synthetic: true }}>
+    <MonitorContext value={monitorScope(monitor, withPackage ? [mouse({ id: 'micras' })] : [])}>
       <Probe />
     </MonitorContext>
   );
-  return { robot, screen };
+  return { monitor, screen };
 }
 
 describe('useReloadBlocked', () => {
@@ -58,49 +46,49 @@ describe('useReloadBlocked', () => {
   });
 
   test('is free once a linked robot is idle', async () => {
-    const { robot, screen } = await open({ state: IDLE });
-    robot.connect({ transport: 'websocket', url: 'ws://robot' });
+    const { monitor, screen } = await open({ state: IDLE });
+    monitor.connect(DEMO_TARGET);
 
-    await expect.poll(() => robot.ports.connection.status().kind).toBe('linked');
+    await expect.poll(() => monitor.state.status.kind).toBe('linked');
     await expect.element(screen.getByText('free')).toBeVisible();
   });
 
   test('holds back a linked robot that runs', async () => {
-    const { robot, screen } = await open({ state: RUN });
-    robot.connect({ transport: 'websocket', url: 'ws://robot' });
+    const { monitor, screen } = await open({ state: RUN });
+    monitor.connect(DEMO_TARGET);
 
     await expect.element(screen.getByText('not-idle')).toBeVisible();
   });
 
   test('holds back a linked robot whose state has no value', async () => {
-    const { robot, screen } = await open({});
-    robot.connect({ transport: 'websocket', url: 'ws://robot' });
+    const { monitor, screen } = await open({});
+    monitor.connect(DEMO_TARGET);
 
-    await expect.poll(() => robot.ports.connection.status().kind).toBe('linked');
+    await expect.poll(() => monitor.state.status.kind).toBe('linked');
     await expect.element(screen.getByText('not-idle')).toBeVisible();
   });
 
   test('asks a robot with no package to disconnect', async () => {
-    const { robot, screen } = await open({ state: IDLE, withPackage: false });
-    robot.connect({ transport: 'websocket', url: 'ws://robot' });
+    const { monitor, screen } = await open({ state: IDLE, withPackage: false });
+    monitor.connect(DEMO_TARGET);
 
     await expect.element(screen.getByText('disconnect')).toBeVisible();
   });
 
   test('holds back the reload while the link connects', async () => {
-    const { robot, screen } = await open({ state: IDLE, handshakeMs: 60_000 });
-    robot.connect({ transport: 'websocket', url: 'ws://robot' });
+    const { monitor, screen } = await open({ state: IDLE, answerMs: 60_000 });
+    monitor.connect(DEMO_TARGET);
 
-    await expect.poll(() => robot.ports.connection.status().kind).toBe('handshaking');
+    await expect.poll(() => monitor.state.status.kind).toBe('connecting');
     await expect.element(screen.getByText('disconnect')).toBeVisible();
   });
 
   test('is free again after disconnecting on purpose from a run', async () => {
-    const { robot, screen } = await open({ state: RUN });
-    robot.connect({ transport: 'websocket', url: 'ws://robot' });
+    const { monitor, screen } = await open({ state: RUN });
+    monitor.connect(DEMO_TARGET);
     await expect.element(screen.getByText('not-idle')).toBeVisible();
 
-    robot.disconnect();
+    monitor.disconnect();
 
     await expect.element(screen.getByText('free')).toBeVisible();
   });

@@ -2,19 +2,20 @@ import { useEffect, useEffectEvent, useRef } from 'react';
 
 import { roleVariable, enumLabel } from '@/robot-kit';
 
-import { useConnectionStatus, useLiveValue, useRobotPackage } from '../monitor-context';
-import type { ConnectionStatus } from '../ports';
+import type { SourceStatus } from '@/core/source';
+
+import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../monitor-context';
 import { useSessions } from '../sessions/sessions-context';
 import { useShell } from '../state/shell-store';
 import { usePresentedVariables } from '../windows/shared/presented-variables';
 import { useAnnounce } from './announce';
 
-function connectionText(status: ConnectionStatus): string | null {
+function connectionText(status: SourceStatus): string | null {
   switch (status.kind) {
     case 'connecting':
       return 'Connecting to the robot';
     case 'linked':
-      return `Connected to ${status.robot.name ?? 'the robot'}`;
+      return `Connected to ${status.identity.name ?? 'the robot'}`;
     case 'failed':
       return `Connection failed: ${status.message}`;
     case 'disconnected':
@@ -44,11 +45,12 @@ function useChanges<T>(value: T, onChange: (value: T, previous: T) => void): voi
  */
 export function Announcements() {
   const announce = useAnnounce();
-  const status = useConnectionStatus();
-  const pkg = useRobotPackage()?.package ?? null;
+  const monitor = useLiveMonitor();
+  const status = useStatus(monitor);
+  const pkg = useRobotPackage(monitor)?.package ?? null;
   const stateName = roleVariable(pkg, 'state');
-  const [state] = usePresentedVariables(stateName === null ? [] : [stateName]);
-  const raw = useLiveValue(stateName)?.value;
+  const [state] = usePresentedVariables(monitor, stateName === null ? [] : [stateName]);
+  const raw = useLiveValue(monitor, stateName)?.value;
   const labels = state?.presentation?.labels?.kind === 'enum' ? state.presentation.labels : null;
   const linked = status.kind === 'linked';
   const stateText =

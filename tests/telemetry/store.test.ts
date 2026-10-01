@@ -37,7 +37,7 @@ function streamSingle(
   valueOf: (index: number) => number = (index) => index
 ): void {
   for (let index = from; index < from + count; index++) {
-    store.append(epochId, index, timeOf(index), [valueOf(index)]);
+    store.append(epochId, timeOf(index), [valueOf(index)]);
   }
 }
 
@@ -47,7 +47,8 @@ function threeEpochs(): TelemetryStore {
   streamSingle(store, 1, 0, 1000, (index) => index * MS);
   single(store, 2, 7);
   streamSingle(store, 2, 0, 500, (index) => 2 * SECOND + index * MS);
-  streamSingle(store, 2, 510, 490, (index) => 2 * SECOND + index * MS);
+  store.append(2, 2 * SECOND + 510 * MS, [510], 10);
+  streamSingle(store, 2, 511, 489, (index) => 2 * SECOND + index * MS);
   store.markBoundary('reconnect', 3.5 * SECOND);
   single(store, 3, 7);
   streamSingle(store, 3, 0, 500, (index) => 4 * SECOND + index * MS);
@@ -80,44 +81,15 @@ describe('epochs and gaps', () => {
     expect(store.variable(7)).toMatchObject({ storedSamples: 2490, droppedSamples: 10, epochs: 3 });
   });
 
-  test('restarts the sequence with each epoch and wraps it at 16 bits', () => {
-    const store = makeStore();
-    store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: 'u8' }] });
-
-    for (let index = 0; index < 70_000; index++) {
-      store.append(1, index & 0xffff, index * MS, [index & 0xff]);
-    }
-
-    store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 1, type: 'u8' }] });
-    store.append(2, 0, 80 * SECOND, [1]);
-
-    expect(store.variable(1)).toMatchObject({ storedSamples: 70_001, droppedSamples: 0 });
-  });
-
-  test('counts samples lost before the first one only when told where the sequence starts', () => {
+  test('counts the samples the source lost before one, even the first of an epoch', () => {
     const store = makeStore();
     single(store, 1, 1);
-    store.append(1, 3, 0, [1]);
-    store.openEpoch({
-      epochId: 2,
-      groupId: 1,
-      variables: [{ id: 2, type: 'f32' }],
-      firstSequence: 0,
-    });
-    store.append(2, 3, 0, [1]);
+    store.append(1, 0, [1]);
+    single(store, 2, 2, 1);
+    store.append(2, 0, [1], 3);
 
     expect(store.variable(1)?.droppedSamples).toBe(0);
     expect(store.variable(2)?.droppedSamples).toBe(3);
-  });
-
-  test('counts a sequence number that looks behind, with a later time, as a wrap of drops', () => {
-    const store = makeStore();
-    single(store, 1);
-    streamSingle(store, 1, 0, 11, (index) => index * MS);
-    store.append(1, 5, 20 * MS, [99]);
-
-    expect(store.variable(1)).toMatchObject({ storedSamples: 12, droppedSamples: 65_530 });
-    expect(store.latest(1)).toEqual({ value: 99, timeUs: 20 * MS });
   });
 
   test('leaves a repeated time out of the history, and a time going back too, with an event', () => {
@@ -125,26 +97,26 @@ describe('epochs and gaps', () => {
     const events: TelemetryEvent[] = [];
     store.onEvent((event) => events.push(event));
     single(store, 1);
-    store.append(1, 0, 0, [1]);
-    store.append(1, 1, MS, [2]);
-    store.append(1, 1, MS, [3]);
+    store.append(1, 0, [1]);
+    store.append(1, MS, [2]);
+    store.append(1, MS, [3]);
 
     expect(store.latest(1)?.value).toBe(3);
 
-    store.append(1, 2, 0.5 * MS, [4]);
-    store.append(1, 3, 2 * MS, [5]);
+    store.append(1, 0.5 * MS, [4]);
+    store.append(1, 2 * MS, [5]);
 
     expect(store.variable(1)).toMatchObject({ storedSamples: 3, droppedSamples: 0 });
     expect(store.latest(1)?.value).toBe(5);
     expect(events).toEqual([{ type: 'time-backwards', epochId: 1, timeUs: 0.5 * MS, lastUs: MS }]);
   });
 
-  test('does not take a stale sample for a wrap of the sequence', () => {
+  test('leaves out the loss a stale sample reports', () => {
     const store = makeStore();
     single(store, 1);
     streamSingle(store, 1, 0, 11, (index) => index * MS);
-    store.append(1, 3, 3 * MS, [3]);
-    store.append(1, 11, 11 * MS, [11]);
+    store.append(1, 3 * MS, [3], 5);
+    store.append(1, 11 * MS, [11]);
 
     expect(store.variable(1)).toMatchObject({ storedSamples: 12, droppedSamples: 0 });
   });
@@ -152,10 +124,10 @@ describe('epochs and gaps', () => {
   test('counts the gap records against the memory cap', () => {
     const store = makeStore();
     single(store, 1);
-    store.append(1, 0, 0, [0]);
+    store.append(1, 0, [0]);
     const before = store.status().usedBytes;
-    store.append(1, 5, MS, [1]);
-    store.append(1, 9, 2 * MS, [2]);
+    store.append(1, MS, [1], 4);
+    store.append(1, 2 * MS, [2], 3);
 
     expect(store.status().usedBytes - before).toBe(2 * GAP_BYTES);
   });
@@ -186,7 +158,7 @@ describe('epochs and gaps', () => {
 
     for (let index = 0; index < 3000; index++) {
       if (index % 150 !== 75) {
-        store.append(1, index, index * MS, [Math.sin(index)]);
+        store.append(1, index * MS, [Math.sin(index)], index % 150 === 76 ? 1 : 0);
       }
     }
 
@@ -216,8 +188,8 @@ describe('epoch lifecycle', () => {
     single(store, 2, 1, 1);
     single(watched, 2, 1, 1);
 
-    expect(() => store.append(1, 0, 0, [1, 2])).toThrow('closed');
-    expect(() => store.append(2, 0, 0, [1])).not.toThrow();
+    expect(() => store.append(1, 0, [1, 2])).toThrow('closed');
+    expect(() => store.append(2, 0, [1])).not.toThrow();
     expect(watched.version(2)).toBeGreaterThan(versionBefore);
   });
 
@@ -226,11 +198,11 @@ describe('epoch lifecycle', () => {
     const events: IngestionEvent[] = [];
     store.onIngestion((event) => events.push(event));
     single(store, 1);
-    store.append(1, 0, 0, [1]);
+    store.append(1, 0, [1]);
     store.closeEpoch(1);
     store.closeEpoch(1);
 
-    expect(() => store.append(1, 1, MS, [1])).toThrow('closed');
+    expect(() => store.append(1, MS, [1])).toThrow('closed');
     expect(() => store.closeEpoch(9)).toThrow('No epoch 9');
     expect(events.map(({ type }) => type)).toEqual(['epoch-opened', 'epoch-closed']);
   });
@@ -241,10 +213,10 @@ describe('epoch lifecycle', () => {
     single(store, 2, 2, 3);
     single(store, 3, 1, 2);
 
-    expect(() => store.append(1, 0, 0, [1])).toThrow('closed');
-    expect(() => store.append(2, 0, 0, [1])).not.toThrow();
-    expect(() => store.append(9, 0, 0, [1])).toThrow('No epoch 9');
-    expect(() => store.append(3, 0, 0, [1, 2])).toThrow(RangeError);
+    expect(() => store.append(1, 0, [1])).toThrow('closed');
+    expect(() => store.append(2, 0, [1])).not.toThrow();
+    expect(() => store.append(9, 0, [1])).toThrow('No epoch 9');
+    expect(() => store.append(3, 0, [1, 2])).toThrow(RangeError);
     expect(() => single(store, 3, 5, 1)).toThrow('already');
   });
 });
@@ -292,7 +264,7 @@ describe('schema', () => {
     streamSingle(store, 1, 0, 10, (index) => index * MS);
     store.setSchema([{ id: 0, name: 'mode', type: 'u16' }]);
     store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: 'u16' }] });
-    store.append(2, 0, 50 * MS, [3]);
+    store.append(2, 50 * MS, [3]);
 
     expect(store.variable('mode')).toMatchObject({ type: 'u16', storedSamples: 1 });
     expect(store.boundaries()).toEqual([{ kind: 'schema', timeUs: 9 * MS }]);
@@ -312,7 +284,7 @@ describe('schema', () => {
     streamSingle(store, 1, 0, 10, (index) => index * MS);
     const before = store.historyMark('mode');
     store.openEpoch({ epochId: 2, groupId: 0, variables: [{ id: 0, type: 'i32' }] });
-    store.append(2, 0, 50 * MS, [-3]);
+    store.append(2, 50 * MS, [-3]);
     scheduler.flush();
 
     expect(store.variable('mode')).toMatchObject({ type: 'i32', storedSamples: 1 });
@@ -328,10 +300,10 @@ describe('schema', () => {
     streamSingle(store, 1, 0, 10, (index) => index * MS);
     store.setSchema(mode('u8'));
     store.openEpoch({ epochId: 2, groupId: 0, variables: mode('u8') });
-    store.append(2, 0, 20 * MS, [7]);
+    store.append(2, 20 * MS, [7]);
     store.setSchema(mode('f32'));
     single(store, 3, 0);
-    store.append(3, 0, 30 * MS, [1.5]);
+    store.append(3, 30 * MS, [1.5]);
 
     expect(store.variable('mode')).toMatchObject({
       type: 'f32',
@@ -353,7 +325,7 @@ describe('schema', () => {
   test('names variables after their ids without a schema', () => {
     const store = makeStore();
     single(store, 1, 5);
-    store.append(1, 0, 0, [1]);
+    store.append(1, 0, [1]);
 
     expect(store.variable('#5')).toBe(store.variable(5));
   });
@@ -375,7 +347,7 @@ describe('numeric types', () => {
   test('keeps narrow types in 32 bit floats and the rest in 64 bit floats', () => {
     const store = makeStore();
     store.openEpoch({ epochId: 1, groupId: 0, variables });
-    store.append(1, 0, 0, [
+    store.append(1, 0, [
       true,
       65_535,
       0.1,
@@ -386,17 +358,7 @@ describe('numeric types', () => {
       -(2n ** 40n),
       new Uint8Array([1, 2]),
     ]);
-    store.append(1, 1, MS, [
-      false,
-      1,
-      1.5,
-      16_777_217,
-      16_777_217,
-      1 / 3,
-      1n,
-      1n,
-      new Uint8Array(),
-    ]);
+    store.append(1, MS, [false, 1, 1.5, 16_777_217, 16_777_217, 1 / 3, 1n, 1n, new Uint8Array()]);
 
     expect(stored(store, 0)).toEqual(new Float32Array([1, 0]));
     expect(stored(store, 1)).toEqual(new Float32Array([65_535, 1]));
@@ -426,8 +388,8 @@ describe('numeric types', () => {
     const events: TelemetryEvent[] = [];
     store.onEvent((event) => events.push(event));
     store.openEpoch({ epochId: 1, groupId: 0, variables: variables.slice(6, 8) });
-    store.append(1, 0, 0, [2n ** 53n + 1n, -(2n ** 60n) - 3n]);
-    store.append(1, 1, MS, [2n ** 64n - 1n, 0n]);
+    store.append(1, 0, [2n ** 53n + 1n, -(2n ** 60n) - 3n]);
+    store.append(1, MS, [2n ** 64n - 1n, 0n]);
 
     expect(store.variable(6)?.precisionLost).toBe(true);
     expect(store.variable(7)?.precisionLost).toBe(true);
@@ -444,7 +406,7 @@ describe('numeric types', () => {
     store.openEpoch({ epochId: 1, groupId: 0, variables: variables.slice(7) });
 
     for (let index = 0; index < 5; index++) {
-      store.append(1, index, index * MS, [BigInt(index), new Uint8Array([index])]);
+      store.append(1, index * MS, [BigInt(index), new Uint8Array([index])]);
     }
 
     store.setLatestValue(20, new Uint8Array([9]));
@@ -485,13 +447,13 @@ describe('blocks', () => {
       );
 
     for (let index = 0; index < 3 * blockSize + 10; index++) {
-      store.append(1, index, index, [index, index]);
+      store.append(1, index, [index, index]);
     }
 
     const before = buffers();
 
     for (let index = 3 * blockSize + 10; index < 40 * blockSize; index++) {
-      store.append(1, index & 0xffff, index, [index, index]);
+      store.append(1, index, [index, index]);
     }
 
     const after = buffers();
@@ -557,7 +519,7 @@ describe('queries', () => {
     expect(store.timeRange()).toBe(store.timeRange());
     expect([...store.samples(1, range?.startUs ?? 0, range?.endUs ?? 0)][0].time).toHaveLength(10);
 
-    store.append(1, 10, 20 * MS, [1]);
+    store.append(1, 20 * MS, [1]);
 
     expect(store.timeRange(1)).not.toBe(range);
   });
@@ -565,12 +527,12 @@ describe('queries', () => {
   test('describe a variable with the same object until it changes', () => {
     const store = makeStore();
     single(store, 1);
-    store.append(1, 0, 0, [1]);
+    store.append(1, 0, [1]);
     const info = store.variable(1);
 
     expect(store.variable(1)).toBe(info);
 
-    store.append(1, 1, MS, [1]);
+    store.append(1, MS, [1]);
 
     expect(store.variable(1)).not.toBe(info);
     expect(store.variable(1)?.storedSamples).toBe(2);
@@ -615,7 +577,7 @@ describe('queries', () => {
     single(store, 1, 1, 0);
     streamSingle(store, 1, 0, 600, (index) => index * MS);
     single(store, 2, 2, 1);
-    store.append(2, 0, 0, [1]);
+    store.append(2, 0, [1]);
     store.closeEpoch(2);
     store.markBoundary('reconnect', SECOND);
     single(store, 3, 1, 0);
@@ -646,10 +608,10 @@ describe('ingestion events', () => {
       { id: 1, name: 'maze', type: 'bytes' },
     ]);
     single(store, 1, 0);
-    store.append(1, 0, 0, [1]);
-    store.append(1, 5, MS, [1]);
-    store.append(1, 6, 2 * MS, [1]);
-    store.append(1, 9, 3 * MS, [1]);
+    store.append(1, 0, [1]);
+    store.append(1, MS, [1], 4);
+    store.append(1, 2 * MS, [1]);
+    store.append(1, 3 * MS, [1], 2);
 
     expect(events.filter(({ type }) => type === 'gap')).toHaveLength(2);
 

@@ -30,7 +30,7 @@ import {
 } from '../components/ui/command';
 import { formatChord } from '../keymap/chords';
 import { workspaceAction, type KeyAction } from '../keymap/keymap';
-import { useRobotPackage } from '../monitor-context';
+import { useLiveMonitor, useRobotPackage } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 import { WINDOW_KINDS } from '../windows/registry';
 
@@ -53,7 +53,7 @@ export function Launcher({ onAction }: { readonly onAction: (action: KeyAction) 
   const hasFocus = useShell((state) => focusedWindow(activeWorkspace(state.desktop)) !== null);
   const bindings = useShell((state) => state.bindings);
   const presets = useShell((state) => state.presets);
-  const robotPackage = useRobotPackage()?.package ?? null;
+  const robotPackage = useRobotPackage(useLiveMonitor())?.package ?? null;
   const packagePresets = robotPackage?.presets ?? [];
   const packageName = robotPackage?.displayName;
 

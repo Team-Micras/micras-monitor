@@ -1,15 +1,15 @@
 import { CheckIcon, CircleAlertIcon, LoaderCircleIcon, RefreshCwIcon } from 'lucide-react';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { bitSet, integerValue, sameInteger, withBit, type IntegerValue } from '@/core/integers';
+import type { WriteOutcome, WriteValue } from '@/core/source';
 import type { ValueType } from '@/core/variables';
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Switch } from '../../components/ui/switch';
 import { cn } from '../../lib/utils';
-import { useLinkUp, useLiveValue, useMonitor } from '../../monitor-context';
-import type { WriteOutcome, WriteValue } from '../../ports';
+import { useLinkUp, useLiveValue, usePendingWrite, useShownMonitor } from '../../monitor-context';
 import { CoalescedReads } from '../type-view/coalesced-reads';
 import { usePresentedVariables, type PresentedVariable } from '../shared/presented-variables';
 import { formatReading } from '../shared/readings';
@@ -29,7 +29,8 @@ import {
  * and a refusal says why.
  */
 export function EditorWindow({ window }: WindowViewProps) {
-  const presented = usePresentedVariables(window.payload.variables);
+  const monitor = useShownMonitor();
+  const presented = usePresentedVariables(monitor, window.payload.variables);
 
   if (presented.length === 0) {
     return (
@@ -54,19 +55,11 @@ interface LastWrite {
   readonly outcome: WriteOutcome | null;
 }
 
-function usePendingWrite(name: string): WriteValue | undefined {
-  const { writes } = useMonitor().ports;
-  return useSyncExternalStore(
-    (listener) => writes.subscribe(listener),
-    () => writes.pending(name)
-  );
-}
-
 function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
-  const { writes, reads } = useMonitor().ports;
-  const linked = useLinkUp();
-  const confirmed = useLiveValue(entry.name)?.value;
-  const pending = usePendingWrite(entry.name);
+  const monitor = useShownMonitor();
+  const linked = useLinkUp(monitor);
+  const confirmed = useLiveValue(monitor, entry.name)?.value;
+  const pending = usePendingWrite(monitor, entry.name);
   const [last, setLast] = useState<LastWrite | null>(null);
   const [readFailure, setReadFailure] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -82,7 +75,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
 
     let cancelled = false;
     const current = new CoalescedReads(() =>
-      reads.read(entry.name).then((outcome) => {
+      monitor.read(entry.name).then((outcome) => {
         if (!cancelled) {
           setReading(false);
           setReadFailure(outcome.status === 'failed' ? outcome.message : null);
@@ -96,7 +89,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
       current.close();
       reader.current = null;
     };
-  }, [reads, linked, streamed, variableId, entry.name]);
+  }, [monitor, linked, streamed, variableId, entry.name]);
 
   if (variable === undefined || presentation === null) {
     return (
@@ -128,7 +121,7 @@ function VariableEditor({ entry }: { readonly entry: PresentedVariable }) {
 
   const write = (value: WriteValue) => {
     setLast({ value, outcome: null });
-    void writes
+    void monitor
       .write(entry.name, value)
       .catch((error: unknown) => ({
         status: 'failed' as const,

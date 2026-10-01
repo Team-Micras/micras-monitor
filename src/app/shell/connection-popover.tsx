@@ -1,32 +1,31 @@
 import { BluetoothIcon, ChevronDownIcon, GlobeIcon } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 
+import type { SourceStatus, Target, TargetKind } from '@/core/source';
+
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
-import { formatHash } from '../lib/format';
 import { cn } from '../lib/utils';
-import { useConnectionStatus, useMonitor, useRobotPackage } from '../monitor-context';
-import type { ConnectionStatus, ConnectionTarget, LinkPhase, Transport } from '../ports';
+import { useLiveMonitor, useRobotPackage, useStatus, useVariables } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 
 const URL_KEY = 'micras-monitor/websocket-url';
 const DEFAULT_URL = 'ws://localhost:8080';
 
-const TRANSPORT_LABELS: Readonly<Record<Transport, string>> = {
+const TRANSPORT_LABELS: Readonly<Record<TargetKind, string>> = {
   websocket: 'WebSocket',
   bluetooth: 'Bluetooth',
 };
 
-type StatusStep = Exclude<ConnectionStatus['kind'], 'linked'> | LinkPhase;
+type StatusStep = SourceStatus['kind'] | 'loading';
 
 const STATUS_WORDS: Readonly<Record<StatusStep, string>> = {
   disconnected: 'not connected',
   connecting: 'connecting',
   handshaking: 'handshaking',
-  schema: 'reading schema',
-  configuring: 'connected',
-  streaming: 'connected',
+  loading: 'reading variables',
+  linked: 'connected',
   failed: 'failed',
 };
 
@@ -34,14 +33,13 @@ const DOT_COLORS: Readonly<Record<StatusStep, string>> = {
   disconnected: 'bg-muted-foreground/50',
   connecting: 'bg-amber-500 animate-pulse',
   handshaking: 'bg-amber-500 animate-pulse',
-  schema: 'bg-amber-500 animate-pulse',
-  configuring: 'bg-emerald-500',
-  streaming: 'bg-emerald-500',
+  loading: 'bg-amber-500 animate-pulse',
+  linked: 'bg-emerald-500',
   failed: 'bg-destructive',
 };
 
-function stepOf(status: ConnectionStatus): StatusStep {
-  return status.kind === 'linked' ? status.phase : status.kind;
+function stepOf(status: SourceStatus, variablesKnown: boolean): StatusStep {
+  return status.kind === 'linked' && !variablesKnown ? 'loading' : status.kind;
 }
 
 /**
@@ -49,12 +47,14 @@ function stepOf(status: ConnectionStatus): StatusStep {
  * disconnect, and see what the robot said about itself.
  */
 export function ConnectionPopover() {
-  const { connection } = useMonitor().ports;
-  const status = useConnectionStatus();
-  const selection = useRobotPackage();
+  const monitor = useLiveMonitor();
+  const status = useStatus(monitor);
+  const variablesKnown = useVariables(monitor).length > 0;
+  const selection = useRobotPackage(monitor);
+  const step = stepOf(status, variablesKnown);
   const store = useShellStore();
   const open = useShell((state) => state.connectionOpen);
-  const [transport, setTransport] = useState<Transport>(
+  const [transport, setTransport] = useState<TargetKind>(
     status.kind === 'disconnected' ? 'websocket' : status.target.transport
   );
   const [url, setUrl] = useState(() => globalThis.localStorage?.getItem(URL_KEY) ?? DEFAULT_URL);
@@ -66,30 +66,30 @@ export function ConnectionPopover() {
     event.preventDefault();
 
     if (active) {
-      connection.disconnect();
+      monitor.disconnect();
       return;
     }
 
-    const target: ConnectionTarget =
+    const target: Target =
       transport === 'websocket' ? { transport, url: url.trim() } : { transport };
 
     if (target.transport === 'websocket') {
       globalThis.localStorage?.setItem(URL_KEY, target.url);
     }
 
-    connection.connect(target);
+    monitor.connect(target);
   };
 
   return (
     <Popover open={open} onOpenChange={(next) => store.getState().setConnectionOpen(next)}>
       <PopoverTrigger asChild>
         <Button variant="outline" className="h-9 rounded-full pr-3 pl-3.5 font-normal">
-          <span className={cn('size-2 rounded-full', DOT_COLORS[stepOf(status)])} aria-hidden />
+          <span className={cn('size-2 rounded-full', DOT_COLORS[step])} aria-hidden />
           <span className="font-medium">
             {current === null ? 'Connect' : TRANSPORT_LABELS[current]}
           </span>
           {current === null ? null : (
-            <span className="text-muted-foreground">· {STATUS_WORDS[stepOf(status)]}</span>
+            <span className="text-muted-foreground">· {STATUS_WORDS[step]}</span>
           )}
           <ChevronDownIcon className="text-muted-foreground" aria-hidden />
         </Button>
@@ -99,7 +99,7 @@ export function ConnectionPopover() {
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
             {(['websocket', 'bluetooth'] as const).map((option) => {
               const Icon = option === 'websocket' ? GlobeIcon : BluetoothIcon;
-              const supported = connection.supports(option);
+              const supported = monitor.targets.includes(option);
               return (
                 <button
                   key={option}
@@ -138,7 +138,11 @@ export function ConnectionPopover() {
               The browser asks which robot to pair with.
             </p>
           )}
-          <StatusLine status={status} packageName={selection?.package.displayName ?? null} />
+          <StatusLine
+            status={status}
+            variablesKnown={variablesKnown}
+            packageName={selection?.package.displayName ?? null}
+          />
           <Button type="submit" variant={active ? 'outline' : 'default'}>
             {active ? 'Disconnect' : 'Connect'}
           </Button>
@@ -150,9 +154,11 @@ export function ConnectionPopover() {
 
 function StatusLine({
   status,
+  variablesKnown,
   packageName,
 }: {
-  readonly status: ConnectionStatus;
+  readonly status: SourceStatus;
+  readonly variablesKnown: boolean;
   readonly packageName: string | null;
 }) {
   if (status.kind === 'connecting') {
@@ -174,16 +180,16 @@ function StatusLine({
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
       <dt className="text-muted-foreground">Robot</dt>
-      <dd className="font-mono">{status.robot.name ?? 'unnamed'}</dd>
+      <dd className="font-mono">{status.identity.name ?? 'unnamed'}</dd>
       <dt className="text-muted-foreground">Schema</dt>
       <dd className="font-mono">
-        {formatHash(status.robot.schemaHash)}
-        {status.phase === 'schema' ? (
+        {status.identity.schema ?? '—'}
+        {variablesKnown ? null : (
           <span className="ml-2 font-sans text-muted-foreground">loading…</span>
-        ) : null}
+        )}
       </dd>
       <dt className="text-muted-foreground">Package</dt>
-      <dd>{status.phase === 'schema' ? '—' : (packageName ?? 'none, raw mode')}</dd>
+      <dd>{variablesKnown ? (packageName ?? 'none, raw mode') : '—'}</dd>
     </dl>
   );
 }

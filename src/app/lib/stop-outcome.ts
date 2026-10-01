@@ -7,7 +7,7 @@
 
 import { refusalReason, type CommandSpec, type RobotPackage } from '@/robot-kit';
 
-import type { CommandOutcome } from '../ports';
+import type { CommandOutcome } from '@/core/source';
 
 /** How a notice about STOP reads: fine, a warning, or an error. */
 export type StopTone = 'pending' | 'ok' | 'warning' | 'error';

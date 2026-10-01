@@ -1,81 +1,142 @@
 /**
- * What the composition root hands the app, the ports and the robot packages, and the hooks the
- * shell reads them through.
+ * The monitors the app reads and the hooks it reads them through. There are two: the live one,
+ * which the top bar, the connection and the pinned commands always use, and the one the windows
+ * show, which is a recording's while one is opened and the live one otherwise.
  *
  * @module
  */
 
 import { createContext, use, useSyncExternalStore, type ReactNode } from 'react';
 
+import type { Monitor, MonitorState } from '@/core/monitor';
+import type { SourceStatus, WriteValue } from '@/core/source';
 import type { Variable } from '@/core/variables';
 import type { PackageSelection, RobotPackage, RobotRegistry } from '@/robot-kit';
+import type { LatestValue, TelemetryStore } from '@/telemetry';
 
-import type { ConnectionStatus, LatestValue, MonitorPorts, ValuesPort } from './ports';
+/** A monitor as the app holds it, over a history store. */
+export type AppMonitor = Monitor<TelemetryStore>;
 
 /** The robot a window draws with, a React package. */
 export type ReactRobotPackage = RobotPackage<ReactNode>;
 
-/** Where the package of the robot on screen comes from: the connection's, or a saved session's. */
-export interface PackageSource {
-  /** The package chosen, or null for raw mode or no robot; the same object until it changes. */
-  current(): PackageSelection<ReactNode> | null;
-  /** Calls `listener` after the choice changes; returns the function that stops it. */
-  subscribe(listener: () => void): () => void;
+/**
+ * Chooses the robot package for a robot, once per robot name and list of variables, so that the
+ * same robot keeps the same selection object.
+ */
+export class PackageChooser {
+  readonly robots: RobotRegistry<ReactNode>;
+  readonly #chosen = new WeakMap<
+    readonly Variable[],
+    Map<string | null, PackageSelection<ReactNode> | null>
+  >();
+
+  /**
+   * @param robots The packages to choose from.
+   */
+  constructor(robots: RobotRegistry<ReactNode>) {
+    this.robots = robots;
+  }
+
+  /** The package for a robot, or null for raw mode or while its variables are not known. */
+  choose(name: string | null, variables: readonly Variable[]): PackageSelection<ReactNode> | null {
+    if (variables.length === 0) {
+      return null;
+    }
+
+    const byName = this.#chosen.get(variables) ?? new Map();
+    this.#chosen.set(variables, byName);
+
+    if (!byName.has(name)) {
+      byName.set(
+        name,
+        this.robots.select({ name, variables: variables.map((variable) => variable.name) })
+      );
+    }
+
+    return byName.get(name) ?? null;
+  }
 }
 
-/** The ports and packages of the running app. */
-export interface Monitor {
-  readonly ports: MonitorPorts;
-  readonly robots: RobotRegistry<ReactNode>;
-  /** The package of the connected robot, chosen once per change of connection or schema. */
-  readonly selection: PackageSource;
-  /** Whether the values are synthetic, as with the in-memory fake robot. */
+/** What the app shows from. */
+export interface MonitorScope {
+  /** The monitor of the connected robot, for whatever acts on it. */
+  readonly live: AppMonitor;
+  /** The monitor the windows draw: a recording's, or the live one. */
+  readonly shown: AppMonitor;
+  /** The name of the recording on screen, or null when the windows show the live robot. */
+  readonly recording: string | null;
+  readonly packages: PackageChooser;
+  /** Whether the live monitor's data is synthetic, as with the demo robot. */
   readonly synthetic: boolean;
-  /** The name of the saved session the windows show instead of the live one, if any. */
-  readonly savedSession?: string;
 }
 
 /** How often, at most, a value on screen changes: ten times a second. */
 export const LIVE_VALUE_INTERVAL_MS = 100;
 
-/** Carries the {@link Monitor} to every component of the app. */
-export const MonitorContext = createContext<Monitor | null>(null);
+/** Carries the {@link MonitorScope} to every component of the app. */
+export const MonitorContext = createContext<MonitorScope | null>(null);
 
 /**
- * The monitor of the app.
+ * What the app shows from.
  *
  * @throws {Error} Outside of a `MonitorContext`.
  */
-export function useMonitor(): Monitor {
-  const monitor = use(MonitorContext);
+export function useMonitorScope(): MonitorScope {
+  const scope = use(MonitorContext);
 
-  if (monitor === null) {
-    throw new Error('useMonitor needs a MonitorContext above it');
+  if (scope === null) {
+    throw new Error('the monitor hooks need a MonitorContext above them');
   }
 
-  return monitor;
+  return scope;
 }
 
-/** The connection's status, rendering again when it changes. */
-export function useConnectionStatus(): ConnectionStatus {
-  const { connection } = useMonitor().ports;
+/** The monitor of the connected robot, which commands always go to. */
+export function useLiveMonitor(): AppMonitor {
+  return useMonitorScope().live;
+}
+
+/** The monitor the windows draw: a recording's while one is on screen, the live one otherwise. */
+export function useShownMonitor(): AppMonitor {
+  return useMonitorScope().shown;
+}
+
+/** A part of a monitor's state, rendering again when that part changes. */
+export function useMonitorState<T>(monitor: AppMonitor, select: (state: MonitorState) => T): T {
   return useSyncExternalStore(
-    (listener) => connection.subscribe(listener),
-    () => connection.status()
+    (listener) => monitor.subscribe(listener),
+    () => select(monitor.state)
   );
 }
 
-/** Whether the link is up: the robot said who it is and takes commands. */
-export function useLinkUp(): boolean {
-  return useConnectionStatus().kind === 'linked';
+/** A monitor's status. */
+export function useStatus(monitor: AppMonitor): SourceStatus {
+  return useMonitorState(monitor, (state) => state.status);
 }
 
-/** The variables of the connected robot's schema, rendering again when it changes. */
-export function useVariables(): readonly Variable[] {
-  const { schema } = useMonitor().ports;
+/** Whether a monitor's robot is linked: it said who it is and takes commands. */
+export function useLinkUp(monitor: AppMonitor): boolean {
+  return useMonitorState(monitor, (state) => state.status.kind === 'linked');
+}
+
+/** The variables of a monitor's robot, empty while none are known. */
+export function useVariables(monitor: AppMonitor): readonly Variable[] {
+  return useMonitorState(monitor, (state) => state.variables);
+}
+
+/** The package chosen for a monitor's robot, or null for raw mode or no robot. */
+export function useRobotPackage(monitor: AppMonitor): PackageSelection<ReactNode> | null {
+  const { packages } = useMonitorScope();
+  const name = useMonitorState(monitor, (state) => state.identity?.name ?? null);
+  return packages.choose(name, useVariables(monitor));
+}
+
+/** The newest value written to a variable that the robot has not answered yet. */
+export function usePendingWrite(monitor: AppMonitor, name: string): WriteValue | undefined {
   return useSyncExternalStore(
-    (listener) => schema.subscribe(listener),
-    () => schema.variables()
+    (listener) => monitor.subscribe(listener),
+    () => monitor.pendingWrite(name)
   );
 }
 
@@ -86,7 +147,7 @@ export function useVariables(): readonly Variable[] {
  * @returns The function that stops following it.
  */
 export function subscribeThrottled(
-  values: ValuesPort,
+  history: TelemetryStore,
   name: string,
   listener: () => void,
   intervalMs = LIVE_VALUE_INTERVAL_MS
@@ -100,7 +161,7 @@ export function subscribeThrottled(
     listener();
   };
 
-  const unsubscribe = values.subscribe([name], () => {
+  const unsubscribe = history.subscribe([name], () => {
     if (timer !== undefined) {
       return;
     }
@@ -127,21 +188,13 @@ const noValue = () => undefined;
  * The latest value of a variable and when it was sampled, rendering again at most ten times a
  * second while it changes. The variable is followed by name, so it survives schema changes.
  *
+ * @param monitor The monitor whose history holds it.
  * @param name The variable's name, or null for none.
  */
-export function useLiveValue(name: string | null): LatestValue | undefined {
-  const { values } = useMonitor().ports;
+export function useLiveValue(monitor: AppMonitor, name: string | null): LatestValue | undefined {
+  const { history } = monitor;
   return useSyncExternalStore(
-    name === null ? noSubscription : (listener) => subscribeThrottled(values, name, listener),
-    name === null ? noValue : () => values.latest(name)
-  );
-}
-
-/** The package chosen for the connected robot, or null for raw mode or no robot. */
-export function useRobotPackage(): PackageSelection<ReactNode> | null {
-  const { selection } = useMonitor();
-  return useSyncExternalStore(
-    (listener) => selection.subscribe(listener),
-    () => selection.current()
+    name === null ? noSubscription : (listener) => subscribeThrottled(history, name, listener),
+    name === null ? noValue : () => history.latest(name)
   );
 }

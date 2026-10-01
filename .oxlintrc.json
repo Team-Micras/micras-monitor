@@ -79,6 +79,10 @@
               {
                 "regex": "^(@/app(/|$)|(\\.\\./)+app(/|$))",
                 "message": "Layers below the app must not depend on it."
+              },
+              {
+                "regex": "^(@/sources(/|$)|(\\.\\./)+sources(/|$))",
+                "message": "Only src/main.tsx, the composition root, wires sources in."
               }
             ]
           }
@@ -101,28 +105,8 @@
                 "message": "Nothing in src/ imports a robot package; robots register through the app."
               },
               {
-                "regex": "^@/(protocol|link)(/|$)",
-                "message": "Only src/app/live speaks micras_comm; the rest of the app uses the model of src/core."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/app/live/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
-                "message": "Shipped code never imports tests or scripts."
-              },
-              {
-                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
-                "message": "Nothing in src/ imports a robot package; robots register through the app."
+                "regex": "^(@/(sources|protocol|link)|(\\.\\./)+(sources|protocol|link))(/|$)",
+                "message": "The app reads the monitor of src/core; only src/main.tsx wires sources, and only sources speak micras_comm."
               }
             ]
           }
@@ -147,6 +131,10 @@
               {
                 "regex": "^(@/app(/|$)|(\\.\\./)+app(/|$))",
                 "message": "Layers below the app must not depend on it."
+              },
+              {
+                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
+                "message": "Only src/main.tsx, the composition root, wires sources in."
               }
             ]
           }
@@ -178,6 +166,70 @@
       }
     },
     {
+      "files": ["src/sources/micras-comm/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
+                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
+                "message": "Nothing in src/ imports a robot package; robots register through the app."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@/(app|telemetry|tiling|robot-kit|lazy)|(\\.\\./)+(app|telemetry|tiling|robot-kit|lazy))(/|$)",
+                "message": "A source depends only on src/core and on what speaks its protocol; it never reaches the app or the history."
+              },
+              {
+                "regex": "^(@/sources/demo|(\\.\\./)+(sources/)?demo)(/|$)",
+                "message": "A source never imports another source."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/sources/demo/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
+                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
+                "message": "Nothing in src/ imports a robot package; robots register through the app."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/app may use React; keep this layer framework free."
+              },
+              {
+                "regex": "^(@/(app|telemetry|tiling|robot-kit|lazy|protocol|link)|(\\.\\./)+(app|telemetry|tiling|robot-kit|lazy|protocol|link))(/|$)",
+                "message": "The demo source depends only on src/core."
+              },
+              {
+                "regex": "^(@/sources/micras-comm|(\\.\\./)+(sources/)?micras-comm)(/|$)",
+                "message": "A source never imports another source."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/protocol/**"],
       "rules": {
         "no-restricted-imports": [
@@ -195,6 +247,10 @@
               {
                 "regex": "^(@/(core|link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(core|link|telemetry|tiling|robot-kit|app|robots))(/|$)",
                 "message": "src/protocol depends on nothing else in the monitor."
+              },
+              {
+                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
+                "message": "Only src/main.tsx, the composition root, wires sources in."
               }
             ]
           }
@@ -220,6 +276,10 @@
               {
                 "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(telemetry|tiling|robot-kit|app|robots|scripts))(/|$)",
                 "message": "src/link depends only on src/protocol and src/core."
+              },
+              {
+                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
+                "message": "Only src/main.tsx, the composition root, wires sources in."
               }
             ]
           }
@@ -244,6 +304,10 @@
               {
                 "regex": "^(@/(protocol|link|tiling|robot-kit|app)|@robots|(\\.\\./)+(protocol|link|tiling|robot-kit|app|robots))(/|$)",
                 "message": "src/telemetry depends only on src/core."
+              },
+              {
+                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
+                "message": "Only src/main.tsx, the composition root, wires sources in."
               }
             ]
           }
@@ -268,6 +332,10 @@
               {
                 "regex": "^(@/(core|protocol|link|telemetry|robot-kit|app)|@robots|(\\.\\./)+(core|protocol|link|telemetry|robot-kit|app|robots))(/|$)",
                 "message": "src/tiling depends on nothing else in the monitor."
+              },
+              {
+                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
+                "message": "Only src/main.tsx, the composition root, wires sources in."
               }
             ]
           }
@@ -292,6 +360,10 @@
               {
                 "regex": "^(@/(protocol|link|telemetry|tiling|app)|@robots|(\\.\\./)+(protocol|link|telemetry|tiling|app|robots))(/|$)",
                 "message": "src/robot-kit depends only on src/core."
+              },
+              {
+                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
+                "message": "Only src/main.tsx, the composition root, wires sources in."
               }
             ]
           }
@@ -310,7 +382,7 @@
                 "message": "Shipped code never imports tests or scripts."
               },
               {
-                "regex": "^(@/(protocol|link|telemetry|tiling|app)|(\\.\\./)+(src/(protocol|link|telemetry|tiling|app)))(/|$)",
+                "regex": "^(@/(protocol|link|telemetry|tiling|app|sources)|(\\.\\./)+(src/(protocol|link|telemetry|tiling|app|sources)))(/|$)",
                 "message": "Robot packages depend only on src/robot-kit, src/core and React."
               }
             ]
@@ -413,15 +485,15 @@
       }
     },
     {
-      "files": ["tests/app/live/live-robot.test.ts"],
+      "files": ["tests/sources/micras-comm/micras-comm-source.test.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
           {
             "patterns": [
               {
-                "regex": "^(@/(tiling|robot-kit)|@robots|(\\.\\./)+(src/(tiling|robot-kit)|robots))(/|$)",
-                "message": "The live robot's test drives the app's live adapter against the simulated robot, and nothing else of the app."
+                "regex": "^(@/(app|tiling|robot-kit)|@robots|(\\.\\./)+(src/(app|tiling|robot-kit)|robots))(/|$)",
+                "message": "The micras-comm source's test drives the source and the monitor against the simulated robot, and nothing of the app."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",

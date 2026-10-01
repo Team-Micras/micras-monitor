@@ -1,6 +1,6 @@
 /**
  * The UI state of the shell: the desktop of windows, the viewport it is laid out in, the theme,
- * which overlay is open, drags in progress and the keymap. Robot data stays behind the ports.
+ * which overlay is open, drags in progress and the keymap. Robot data stays in the monitor.
  *
  * @module
  */
