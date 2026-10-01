@@ -311,6 +311,7 @@ class MicrasCommConnection implements SourceConnection {
     this.#link = link;
     this.#detach = [
       transport.onState(() => this.#refreshStatus()),
+      transport.onError((error) => this.#note('warning', error.message)),
       session.on('state', (state) => this.#onState(state)),
       session.on('schema', () => this.#refreshVariables()),
       session.on('epoch', (epoch) => this.#onEpoch(epoch)),

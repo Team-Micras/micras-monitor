@@ -287,6 +287,22 @@ describe('MicrasCommSource against the simulated robot', () => {
     expect(monitor.history.boundaries().map((boundary) => boundary.kind)).toContain('reconnect');
   });
 
+  test('notes in the log what goes wrong on the transport', async () => {
+    const { source, monitor, sim } = start();
+    await streaming(source);
+
+    sim.close();
+
+    await waitFor(
+      () => monitor.state.log.some((entry) => entry.text === 'WebSocket error on ws://in-memory'),
+      5000,
+      'the transport error in the log'
+    );
+    expect(
+      monitor.state.log.find((entry) => entry.text === 'WebSocket error on ws://in-memory')
+    ).toMatchObject({ source: 'link', severity: 'warning' });
+  });
+
   test('keeps the samples lost on a noisy link as gaps with their count', async () => {
     const { source, monitor } = start({ corruptRate: 0.05, seed: 7 });
     monitor.request([{ variable: 'imu/gyro_z', rateHz: 200 }]);
