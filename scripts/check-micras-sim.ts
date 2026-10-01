@@ -200,32 +200,52 @@ function cellOf(cell: string | null): readonly [number, number] | null {
   return Number.isInteger(x) && Number.isInteger(y) ? [x, y] : null;
 }
 
+/** How many changes of the revision a stretch without changes of the map keeps for later ones. */
+const MAX_UNUSED_REVISIONS = 2;
+
 /**
  * Counts the changes of the map in a stretch of snapshots, and those no change of the revision
  * accounts for. Every change of the revision is a credit for one change of the map, since the map
- * is read again once the revision moves; a change of the map is unannounced when the changes of
- * the map so far outnumber the changes of the revision up to and including the next snapshot
- * (both are sampled ten times a second, and a read can answer before the revision shown moves).
+ * is read again once the revision moves; a change of the map takes a credit left from before, or
+ * the change of the revision in the next snapshot (both are sampled ten times a second, and a read
+ * can answer before the revision shown moves), and is unannounced when there is none. At most
+ * {@link MAX_UNUSED_REVISIONS} credits wait unused, so that revisions with no change of the map
+ * cannot hide later changes no revision announced.
  */
 function mapChanges(stretch: readonly Snapshot[]): { total: number; unannounced: number } {
-  let revisions = 0;
-  const credits = stretch.map((latest, index) => {
-    revisions += index > 0 && latest.revision !== stretch[index - 1].revision ? 1 : 0;
-    return revisions;
-  });
+  const revised = stretch.map(
+    (latest, index) => index > 0 && latest.revision !== stretch[index - 1].revision
+  );
+  let unused = 0;
+  let borrowed = false;
   let total = 0;
   let unannounced = 0;
 
   stretch.forEach((latest, index) => {
+    if (revised[index] && borrowed) {
+      borrowed = false;
+    } else if (revised[index]) {
+      unused = Math.min(MAX_UNUSED_REVISIONS, unused + 1);
+    }
+
     const previous = stretch[index - 1];
 
     if (previous === undefined || latest.walls === null || previous.walls === null) {
       return;
     }
 
-    if (latest.walls !== previous.walls || latest.explored !== previous.explored) {
-      total++;
-      unannounced += total > credits[Math.min(index + 1, stretch.length - 1)] ? 1 : 0;
+    if (latest.walls === previous.walls && latest.explored === previous.explored) {
+      return;
+    }
+
+    total++;
+
+    if (unused > 0) {
+      unused--;
+    } else if (revised.at(index + 1) && !borrowed) {
+      borrowed = true;
+    } else {
+      unannounced++;
     }
   });
 
