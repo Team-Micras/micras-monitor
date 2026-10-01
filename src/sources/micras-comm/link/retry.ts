@@ -23,9 +23,12 @@ export const DEFAULT_BACKOFF: BackoffOptions = { initialMs: 250, maxMs: 5000, fa
  * and a success starts over from the shortest wait.
  */
 export class Backoff {
-  private failures = 0;
+  #failures = 0;
+  readonly #options: BackoffOptions;
 
-  constructor(private readonly options: BackoffOptions = DEFAULT_BACKOFF) {}
+  constructor(options: BackoffOptions = DEFAULT_BACKOFF) {
+    this.#options = options;
+  }
 
   /**
    * Count one more failure.
@@ -33,19 +36,19 @@ export class Backoff {
    * @returns How long to wait before the next attempt, in milliseconds.
    */
   next(): number {
-    const delay = this.options.initialMs * this.options.factor ** this.failures;
-    this.failures++;
-    return Math.min(delay, this.options.maxMs);
+    const delay = this.#options.initialMs * this.#options.factor ** this.#failures;
+    this.#failures++;
+    return Math.min(delay, this.#options.maxMs);
   }
 
   /** Start over after a success. */
   reset(): void {
-    this.failures = 0;
+    this.#failures = 0;
   }
 
   /** How many attempts failed in a row. */
   get attempts(): number {
-    return this.failures;
+    return this.#failures;
   }
 }
 

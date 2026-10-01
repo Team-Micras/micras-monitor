@@ -17,11 +17,14 @@ export const DEFAULT_WRAP_SLACK_US = 5_000_000;
  * clock starting over, and the time starts over with it instead of jumping ahead by a whole wrap.
  */
 export class TimestampUnwrapper {
-  private previous: { timestampUs: number; hostMs: number } | null = null;
-  private wraps = 0;
-  private restarts = 0;
+  #previous: { timestampUs: number; hostMs: number } | null = null;
+  #wraps = 0;
+  #restarts = 0;
+  readonly #slackUs: number;
 
-  constructor(private readonly slackUs: number = DEFAULT_WRAP_SLACK_US) {}
+  constructor(slackUs: number = DEFAULT_WRAP_SLACK_US) {
+    this.#slackUs = slackUs;
+  }
 
   /**
    * @param timestampUs The timestamp as the robot sent it.
@@ -29,19 +32,19 @@ export class TimestampUnwrapper {
    * @returns The time in microseconds since the robot's clock last started.
    */
   unwrap(timestampUs: number, hostMs: number): number {
-    const previous = this.previous;
+    const previous = this.#previous;
 
     if (previous && timestampUs < previous.timestampUs) {
-      if (this.isWrap(previous.timestampUs, timestampUs, (hostMs - previous.hostMs) * 1000)) {
-        this.wraps++;
+      if (this.#isWrap(previous.timestampUs, timestampUs, (hostMs - previous.hostMs) * 1000)) {
+        this.#wraps++;
       } else {
-        this.wraps = 0;
-        this.restarts++;
+        this.#wraps = 0;
+        this.#restarts++;
       }
     }
 
-    this.previous = { timestampUs, hostMs };
-    return this.wraps * U32_RANGE + timestampUs;
+    this.#previous = { timestampUs, hostMs };
+    return this.#wraps * U32_RANGE + timestampUs;
   }
 
   /**
@@ -53,12 +56,12 @@ export class TimestampUnwrapper {
    * @returns The time in microseconds since the robot's clock last started.
    */
   place(timestampUs: number): number {
-    if (!this.previous) {
+    if (!this.#previous) {
       return timestampUs;
     }
 
-    const base = this.wraps * U32_RANGE;
-    const latest = base + this.previous.timestampUs;
+    const base = this.#wraps * U32_RANGE;
+    const latest = base + this.#previous.timestampUs;
 
     return [base - U32_RANGE, base, base + U32_RANGE]
       .map((wrap) => wrap + timestampUs)
@@ -71,16 +74,16 @@ export class TimestampUnwrapper {
    * the handshake revealed. This is not counted as a reset seen in the timestamps.
    */
   reset(): void {
-    this.previous = null;
-    this.wraps = 0;
+    this.#previous = null;
+    this.#wraps = 0;
   }
 
   /** How many times the timestamps showed the robot's clock starting over. */
   get resets(): number {
-    return this.restarts;
+    return this.#restarts;
   }
 
-  private isWrap(previousUs: number, nextUs: number, hostElapsedUs: number): boolean {
-    return nextUs + U32_RANGE - previousUs <= hostElapsedUs + this.slackUs;
+  #isWrap(previousUs: number, nextUs: number, hostElapsedUs: number): boolean {
+    return nextUs + U32_RANGE - previousUs <= hostElapsedUs + this.#slackUs;
   }
 }

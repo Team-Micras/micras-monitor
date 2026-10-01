@@ -1,22 +1,7 @@
 import { ErrorCode, WriteStatus, type WireValue } from '../wire';
 import { asError } from './errors';
-import type { LinkTiming, WriteEvent, WriteResult } from './link-events';
+import type { LinkContext, WriteEvent, WriteResult } from './link-events';
 import { encodeWrite } from './messages';
-import type { PendingRequests } from './requests';
-
-/** What the writes need from the link. */
-export interface WriteQueueHost {
-  /** Send a frame to the robot. */
-  send(frame: Uint8Array): void;
-
-  /** Where writes wait for their WRITE_ACK. */
-  readonly requests: PendingRequests;
-
-  readonly timing: LinkTiming;
-
-  /** Report a step in the life of a write. */
-  emit(event: WriteEvent): void;
-}
 
 interface Write {
   readonly value: WireValue;
@@ -34,10 +19,16 @@ interface Write {
  * newest value always ends up on the robot.
  */
 export class WriteQueue {
-  private readonly inFlight = new Map<number, Write>();
-  private readonly held = new Map<number, Write>();
+  readonly #context: LinkContext;
+  readonly #inFlight = new Map<number, Write>();
+  readonly #held = new Map<number, Write>();
 
-  constructor(private readonly host: WriteQueueHost) {}
+  /**
+   * @param context What the writes share with their link.
+   */
+  constructor(context: LinkContext) {
+    this.#context = context;
+  }
 
   /**
    * Write a variable, now or once the write in flight for it is answered.
@@ -51,18 +42,18 @@ export class WriteQueue {
     return new Promise<WriteResult>((resolve, reject) => {
       const write: Write = { value, bytes, resolve, reject };
 
-      this.host.emit({ variableId, value, state: 'pending' });
+      this.#emit({ variableId, value, state: 'pending' });
 
-      if (!this.inFlight.has(variableId)) {
-        void this.send(variableId, write);
+      if (!this.#inFlight.has(variableId)) {
+        void this.#send(variableId, write);
         return;
       }
 
-      const replaced = this.held.get(variableId);
-      this.held.set(variableId, write);
+      const replaced = this.#held.get(variableId);
+      this.#held.set(variableId, write);
 
       if (replaced) {
-        this.host.emit({ variableId, value: replaced.value, state: 'superseded' });
+        this.#emit({ variableId, value: replaced.value, state: 'superseded' });
         replaced.resolve({ status: 'superseded' });
       }
     });
@@ -70,7 +61,7 @@ export class WriteQueue {
 
   /** The newest value written to a variable that the robot has not answered yet. */
   pending(variableId: number): WireValue | undefined {
-    return (this.held.get(variableId) ?? this.inFlight.get(variableId))?.value;
+    return (this.#held.get(variableId) ?? this.#inFlight.get(variableId))?.value;
   }
 
   /**
@@ -78,50 +69,54 @@ export class WriteQueue {
    * The writes in flight fail with their requests.
    */
   failHeld(error: Error): void {
-    const held = [...this.held];
-    this.held.clear();
+    const held = [...this.#held];
+    this.#held.clear();
 
     for (const [variableId, write] of held) {
-      this.host.emit({ variableId, value: write.value, state: 'failed', error });
+      this.#emit({ variableId, value: write.value, state: 'failed', error });
       write.reject(error);
     }
   }
 
-  private async send(variableId: number, first: Write): Promise<void> {
+  async #send(variableId: number, first: Write): Promise<void> {
     let write: Write | undefined = first;
 
     while (write) {
-      this.inFlight.set(variableId, write);
-      await this.exchange(variableId, write);
-      write = this.held.get(variableId);
-      this.held.delete(variableId);
+      this.#inFlight.set(variableId, write);
+      await this.#exchange(variableId, write);
+      write = this.#held.get(variableId);
+      this.#held.delete(variableId);
     }
 
-    this.inFlight.delete(variableId);
+    this.#inFlight.delete(variableId);
   }
 
-  private async exchange(variableId: number, write: Write): Promise<void> {
+  async #exchange(variableId: number, write: Write): Promise<void> {
     const { value } = write;
-    const answer = this.host.requests.add(
+    const answer = this.#context.requests.add(
       'write',
       variableId,
-      this.host.timing.requestTimeoutMs,
+      this.#context.timing.requestTimeoutMs,
       (code, context) => code === ErrorCode.MALFORMED && context === variableId
     );
 
-    this.host.send(encodeWrite(variableId, write.bytes));
+    this.#context.send(encodeWrite(variableId, write.bytes));
 
     try {
       const status = await answer;
-      this.host.emit(
+      this.#emit(
         status === WriteStatus.OK
           ? { variableId, value, state: 'confirmed' }
           : { variableId, value, state: 'refused', status }
       );
       write.resolve({ status: 'answered', writeStatus: status });
     } catch (error) {
-      this.host.emit({ variableId, value, state: 'failed', error: asError(error) });
+      this.#emit({ variableId, value, state: 'failed', error: asError(error) });
       write.reject(asError(error));
     }
+  }
+
+  #emit(event: WriteEvent): void {
+    this.#context.emit('write', event);
   }
 }

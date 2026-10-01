@@ -1,6 +1,6 @@
-import type { ErrorCode, WriteStatus } from '../wire';
+import { MessageType, type ErrorCode, type WriteStatus } from '../wire';
 import { RobotError, TimeoutError } from './errors';
-import type { CommandReply, GroupAck, Pong } from './messages';
+import type { CommandAck, CommandReply, GroupAck, Pong, RobotMessage } from './messages';
 
 /** What the robot answers each kind of request with. */
 export interface Answers {
@@ -40,14 +40,14 @@ const KINDS: readonly RequestKind[] = ['group', 'write', 'read', 'command', 'pin
  * the next answer still finds the right request.
  */
 export class PendingRequests {
-  private readonly pending: PendingByKind = {
+  readonly #pending: PendingByKind = {
     group: [],
     write: [],
     read: [],
     command: [],
     ping: [],
   };
-  private sent = 0;
+  #sent = 0;
 
   /**
    * Wait for an answer.
@@ -64,11 +64,11 @@ export class PendingRequests {
     timeoutMs: number,
     answersError: ErrorMatcher = NEVER
   ): Promise<Answers[K]> {
-    const list: Pending<Answers[K]>[] = this.pending[kind];
+    const list: Pending<Answers[K]>[] = this.#pending[kind];
 
     return new Promise<Answers[K]>((resolve, reject) => {
       const entry: Pending<Answers[K]> = {
-        order: this.sent++,
+        order: this.#sent++,
         key,
         answersError,
         resolve,
@@ -89,7 +89,7 @@ export class PendingRequests {
    * @returns Whether a request was waiting for it.
    */
   resolve<K extends RequestKind>(kind: K, key: number, value: Answers[K]): boolean {
-    const list: Pending<Answers[K]>[] = this.pending[kind];
+    const list: Pending<Answers[K]>[] = this.#pending[kind];
     const entry = list.find((each) => each.key === key);
 
     if (!entry) {
@@ -102,12 +102,37 @@ export class PendingRequests {
   }
 
   /**
+   * Settle the request a message answers: an ACK, a VALUE or a PONG settles the oldest request of
+   * its kind with the key it names, and an ERROR fails the oldest request it answers.
+   *
+   * @returns Whether a request was waiting for it; false for a message that answers nothing.
+   */
+  answer(message: RobotMessage): boolean {
+    switch (message.type) {
+      case MessageType.GROUP_ACK:
+        return this.resolve('group', message.group, message);
+      case MessageType.WRITE_ACK:
+        return this.resolve('write', message.variableId, message.status);
+      case MessageType.VALUE:
+        return this.resolve('read', message.variableId, message.bytes);
+      case MessageType.COMMAND_ACK:
+        return this.resolve('command', message.code, commandReply(message));
+      case MessageType.PONG:
+        return this.resolve('ping', 0, message);
+      case MessageType.ERROR:
+        return this.refuse(message.code, message.context);
+      default:
+        return false;
+    }
+  }
+
+  /**
    * Fail the oldest request, of any kind, that an ERROR answers.
    *
    * @returns Whether a request was waiting for it.
    */
   refuse(code: ErrorCode, context: number): boolean {
-    const oldest = KINDS.map((kind) => this.oldestAnswering(kind, code, context))
+    const oldest = KINDS.map((kind) => this.#oldestAnswering(kind, code, context))
       .filter((match) => match !== undefined)
       .toSorted((a, b) => a.entry.order - b.entry.order)[0];
 
@@ -128,7 +153,7 @@ export class PendingRequests {
    */
   rejectAll(error: Error, kinds: readonly RequestKind[] = KINDS): void {
     for (const kind of kinds) {
-      const list: Pending<unknown>[] = this.pending[kind];
+      const list: Pending<unknown>[] = this.#pending[kind];
 
       for (const entry of list.splice(0)) {
         clearTimeout(entry.timer);
@@ -139,14 +164,18 @@ export class PendingRequests {
 
   /** Whether a request of a kind is waiting. */
   has(kind: RequestKind): boolean {
-    return this.pending[kind].length > 0;
+    return this.#pending[kind].length > 0;
   }
 
-  private oldestAnswering(kind: RequestKind, code: ErrorCode, context: number) {
-    const list: Pending<unknown>[] = this.pending[kind];
+  #oldestAnswering(kind: RequestKind, code: ErrorCode, context: number) {
+    const list: Pending<unknown>[] = this.#pending[kind];
     const entry = list.find((each) => each.answersError(code, context));
     return entry ? { list, entry } : undefined;
   }
+}
+
+function commandReply(ack: CommandAck): CommandReply {
+  return ack.reason === 0 ? { result: ack.result } : { result: ack.result, reason: ack.reason };
 }
 
 function remove<T>(list: Pending<T>[], entry: Pending<T>): void {
@@ -168,7 +197,7 @@ function remove<T>(list: Pending<T>[], entry: Pending<T>): void {
  * can tell apart.
  */
 export class AsyncMutex {
-  private running: Promise<void> | null = null;
+  #running: Promise<void> | null = null;
 
   /**
    * Run a task once no other one runs.
@@ -177,8 +206,8 @@ export class AsyncMutex {
    * @returns What the task settled with.
    */
   async run<T>(task: () => Promise<T>): Promise<T> {
-    while (this.running) {
-      await this.running;
+    while (this.#running) {
+      await this.#running;
     }
 
     const work = task();
@@ -187,13 +216,13 @@ export class AsyncMutex {
       () => undefined
     );
 
-    this.running = settled;
+    this.#running = settled;
 
     try {
       return await work;
     } finally {
-      if (this.running === settled) {
-        this.running = null;
+      if (this.#running === settled) {
+        this.#running = null;
       }
     }
   }

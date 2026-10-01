@@ -1,5 +1,6 @@
 import type { ErrorCode, WireValue, Severity, WriteStatus } from '../wire';
 import type { Epoch, EpochEndReason, SampleValue } from './epochs';
+import type { PendingRequests } from './requests';
 import type { SchemaEntry } from './schema';
 
 /** Why the link is starting a handshake. */
@@ -235,7 +236,7 @@ type Counter = {
  * that a view reading it on every render only renders again when something did change.
  */
 export class LinkTally {
-  private readonly values: { -readonly [K in keyof LinkCounters]: LinkCounters[K] } = {
+  readonly #values: { -readonly [K in keyof LinkCounters]: LinkCounters[K] } = {
     bytesIn: 0,
     bytesOut: 0,
     framesIn: 0,
@@ -249,27 +250,52 @@ export class LinkTally {
     handshakes: 0,
     clockResets: 0,
   };
-  private frozen: LinkCounters | null = null;
+  #frozen: LinkCounters | null = null;
 
   /** The counters as they are now. */
   get snapshot(): LinkCounters {
-    this.frozen ??= Object.freeze({ ...this.values });
-    return this.frozen;
+    this.#frozen ??= Object.freeze({ ...this.#values });
+    return this.#frozen;
   }
 
   /** Add to a counter. */
   add(counter: Counter, amount = 1): void {
     if (amount !== 0) {
-      this.values[counter] += amount;
-      this.frozen = null;
+      this.#values[counter] += amount;
+      this.#frozen = null;
     }
   }
 
   /** Set a value that is measured rather than counted. */
   set<K extends 'rttMs' | 'clockResets'>(key: K, value: LinkCounters[K]): void {
-    if (this.values[key] !== value) {
-      this.values[key] = value;
-      this.frozen = null;
+    if (this.#values[key] !== value) {
+      this.#values[key] = value;
+      this.#frozen = null;
     }
   }
+}
+
+/**
+ * What the parts of a link share with it: the way to the robot, the requests waiting for its
+ * answers, its timing and counters, and where its events and problems go.
+ */
+export interface LinkContext {
+  readonly timing: LinkTiming;
+  readonly requests: PendingRequests;
+  readonly counters: LinkTally;
+
+  /**
+   * The handshake the robot's state belongs to. It changes every time the handshake is redone or
+   * the transport drops, so work started for one handshake can tell it is stale.
+   */
+  generation(): number;
+
+  /** Send a frame to the robot; nothing is sent while the transport is not open. */
+  send(frame: Uint8Array): void;
+
+  /** Tell the link's listeners about an event. */
+  emit<K extends keyof LinkEvents>(event: K, payload: LinkEvents[K]): void;
+
+  /** Report something that did not go by the protocol, without stopping the link. */
+  report(message: string, code?: ErrorCode, context?: number): void;
 }

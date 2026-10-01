@@ -8,14 +8,15 @@ import {
 } from '../wire';
 import type { Epoch, EpochRegistry } from './epochs';
 import { asError, RobotError, LinkError, TimeoutError } from './errors';
-import type { GroupsResult, LinkTiming } from './link-events';
+import type { GroupsResult, LinkContext } from './link-events';
 import {
   encodeGroupDefine,
   encodeGroupEnable,
+  encodePing,
   SAMPLE_HEADER_SIZE,
   type GroupAck,
 } from './messages';
-import type { AsyncMutex, ErrorMatcher, PendingRequests } from './requests';
+import type { AsyncMutex, ErrorMatcher } from './requests';
 import type { SchemaEntry } from './schema';
 
 /** A set of variables to stream together, sampled in the same loop iteration. */
@@ -97,51 +98,6 @@ function streamableType(schema: readonly SchemaEntry[], id: number): TypeCode {
   return entry.type;
 }
 
-/**
- * Whether a layout is what an open epoch already streams.
- */
-export function sameLayout(layout: GroupLayout, epoch: Epoch): boolean {
-  return (
-    layout.group === epoch.group &&
-    layout.periodTicks === epoch.periodTicks &&
-    layout.variableIds.length === epoch.variableIds.length &&
-    layout.variableIds.every((id, index) => epoch.variableIds[index] === id)
-  );
-}
-
-/** What the group configurator needs from the link. */
-export interface GroupConfiguratorHost {
-  /** Send a frame to the robot. */
-  send(frame: Uint8Array): void;
-
-  /** Where group requests wait for their GROUP_ACK. */
-  readonly requests: PendingRequests;
-
-  /**
-   * Where a GROUP_DEFINE takes turns with a blob READ: the robot refuses either with
-   * GROUP_TOO_LARGE and a context that may be the same number, so only one of them may wait for
-   * its answer at a time.
-   */
-  readonly sizeRefusals: AsyncMutex;
-
-  readonly timing: LinkTiming;
-
-  /** The handshake the robot's groups belong to; a pass stops as soon as it changes. */
-  generation(): number;
-
-  /** The run of the robot's clock new epochs belong to. */
-  timeline(): number;
-
-  /** A pass started changing the robot's groups. */
-  configuring(): void;
-
-  /** Every pass is done and nothing more is waiting to be applied. */
-  settled(): void;
-
-  /** Report something that went wrong without stopping the link. */
-  report(message: string): void;
-}
-
 interface Waiter {
   layouts: readonly GroupLayout[];
   resolve(result: GroupsResult): void;
@@ -156,22 +112,43 @@ interface Waiter {
  * treated as unknown and turned off, and so is any group samples arrive for without an epoch. A
  * definition waits for a blob READ the robot has not answered, so that a GROUP_TOO_LARGE is never
  * taken for the answer to the other.
+ *
+ * A GROUP_ACK names only the group, and the answers to a define and an enable of the same group
+ * read the same. So once a request was sent again after a timeout, the answer to the attempt that
+ * timed out may still be on its way: the configurator waits for a PONG before the next request,
+ * since the robot answers in order and the late answer arrives first.
  */
 export class GroupConfigurator {
-  private desired: readonly GroupLayout[] = [];
-  private waiters: Waiter[] = [];
-  private readonly unknown = new Set<number>();
-  private runningGeneration: number | null = null;
-  private pending = false;
+  readonly #context: LinkContext;
+  readonly #epochs: EpochRegistry;
+  readonly #sizeRefusals: AsyncMutex;
+  readonly #configuring: (busy: boolean) => void;
+  readonly #unknown = new Set<number>();
+  #desired: readonly GroupLayout[] = [];
+  #waiters: Waiter[] = [];
+  #runningGeneration: number | null = null;
+  #pending = false;
 
   /**
-   * @param host What the configurator needs from the link.
+   * @param context What the configurator shares with its link.
    * @param epochs Where the epochs of the groups begin and end.
+   * @param sizeRefusals Where a GROUP_DEFINE takes turns with a blob READ: the robot refuses either
+   *   with GROUP_TOO_LARGE and a context that may be the same number, so only one of them may wait
+   *   for its answer at a time.
+   * @param configuring Told true as a pass starts changing the robot's groups, and false once every
+   *   pass is done and nothing more is waiting to be applied.
    */
   constructor(
-    private readonly host: GroupConfiguratorHost,
-    private readonly epochs: EpochRegistry
-  ) {}
+    context: LinkContext,
+    epochs: EpochRegistry,
+    sizeRefusals: AsyncMutex,
+    configuring: (busy: boolean) => void
+  ) {
+    this.#context = context;
+    this.#epochs = epochs;
+    this.#sizeRefusals = sizeRefusals;
+    this.#configuring = configuring;
+  }
 
   /**
    * Ask for a new layout, replacing the one asked for before.
@@ -192,88 +169,80 @@ export class GroupConfigurator {
       return Promise.reject(asError(error));
     }
 
-    this.supersedeWaiters();
-    this.desired = layouts;
+    this.#supersedeWaiters();
+    this.#desired = layouts;
 
     return new Promise<GroupsResult>((resolve, reject) => {
-      this.waiters.push({ layouts, resolve, reject });
+      this.#waiters.push({ layouts, resolve, reject });
     });
   }
 
   /** Apply the layout asked for, now or as soon as the pass running finishes. */
   configure(): void {
-    this.pending = true;
+    this.#pending = true;
 
-    if (this.runningGeneration !== this.host.generation()) {
-      void this.run(this.host.generation());
+    if (this.#runningGeneration !== this.#context.generation()) {
+      void this.#run(this.#context.generation());
     }
   }
 
   /** The robot forgot its groups, as it does on HELLO. */
   forgetRobotGroups(): void {
-    this.unknown.clear();
+    this.#unknown.clear();
   }
 
   /**
-   * Samples arrived for a group without an epoch: turn it off. Samples the robot sent before it
-   * saw the GROUP_ENABLE arrive before its GROUP_ACK, so once that ACK is in, no more arrive.
+   * Samples arrived for a group that belong to no epoch of it, so what the robot streams in it is
+   * not known: define it again, or turn it off when the layout has nothing for it. Samples the
+   * robot sent before it saw a GROUP_ENABLE arrive before its GROUP_ACK, so once that ACK is in,
+   * no more arrive.
    */
-  noteStrayGroup(group: number): void {
-    this.unknown.add(group);
-    this.configure();
-  }
-
-  /**
-   * Samples arrived for a group that its epoch cannot have sent: end the epoch and define the
-   * group again, since what the robot streams in it is not known.
-   */
-  noteOutOfStep(group: number): void {
-    this.epochs.end(group, 'out-of-step');
-    this.unknown.add(group);
+  noteUnknown(group: number): void {
+    this.#unknown.add(group);
     this.configure();
   }
 
   /** Drop the layout, because the schema it names variables of changed. */
   dropLayout(error: Error): void {
-    this.desired = [];
+    this.#desired = [];
     this.rejectWaiters(error);
   }
 
   /** Fail every layout still waiting. */
   rejectWaiters(error: Error): void {
-    const waiters = this.waiters;
-    this.waiters = [];
+    const waiters = this.#waiters;
+    this.#waiters = [];
     waiters.forEach((waiter) => waiter.reject(error));
   }
 
-  private async run(generation: number): Promise<void> {
-    this.runningGeneration = generation;
+  async #run(generation: number): Promise<void> {
+    this.#runningGeneration = generation;
 
     try {
-      while (this.pending && generation === this.host.generation()) {
-        this.pending = false;
-        await this.applyDesired(generation);
+      while (this.#pending && generation === this.#context.generation()) {
+        this.#pending = false;
+        await this.#applyDesired(generation);
       }
     } finally {
-      if (this.runningGeneration === generation) {
-        this.runningGeneration = null;
+      if (this.#runningGeneration === generation) {
+        this.#runningGeneration = null;
       }
     }
   }
 
-  private async applyDesired(generation: number): Promise<void> {
-    const layouts = this.desired;
-    const groups = allGroups().filter((group) => this.needsChange(group, layouts));
+  async #applyDesired(generation: number): Promise<void> {
+    const layouts = this.#desired;
+    const groups = allGroups().filter((group) => this.#needsChange(group, layouts));
     const failures: Error[] = [];
 
     if (groups.length > 0) {
-      this.host.configuring();
+      this.#configuring(true);
     }
 
     for (const group of groups) {
-      const failure = await this.applyGroup(group, layoutOf(layouts, group), generation);
+      const failure = await this.#applyGroup(group, layoutOf(layouts, group), generation);
 
-      if (generation !== this.host.generation()) {
+      if (generation !== this.#context.generation()) {
         return;
       }
 
@@ -282,64 +251,64 @@ export class GroupConfigurator {
       }
     }
 
-    if (failures.length > 0 && this.desired === layouts) {
-      this.desired = layouts.filter((layout) => this.epochs.isActive(layout.group));
+    if (failures.length > 0 && this.#desired === layouts) {
+      this.#desired = layouts.filter((layout) => this.#epochs.isActive(layout.group));
     }
 
-    if (!this.pending) {
-      this.host.settled();
+    if (!this.#pending) {
+      this.#configuring(false);
     }
 
-    this.settleWaiters(layouts, failures);
+    this.#settleWaiters(layouts, failures);
   }
 
-  private needsChange(group: number, layouts: readonly GroupLayout[]): boolean {
+  #needsChange(group: number, layouts: readonly GroupLayout[]): boolean {
     const layout = layoutOf(layouts, group);
-    const current = this.epochs.current(group);
+    const current = this.#epochs.current(group);
 
     if (!layout) {
-      return (current?.active ?? false) || this.unknown.has(group);
+      return (current?.active ?? false) || this.#unknown.has(group);
     }
 
     return !(current?.active && sameLayout(layout, current.epoch));
   }
 
-  private async applyGroup(
+  async #applyGroup(
     group: number,
     layout: GroupLayout | undefined,
     generation: number
   ): Promise<Error | undefined> {
     try {
       if (layout) {
-        await this.defineAndEnable(layout, generation);
+        await this.#defineAndEnable(layout, generation);
       } else {
-        await this.turnOff(group, generation);
+        await this.#turnOff(group, generation);
       }
 
       return undefined;
     } catch (error) {
-      if (generation === this.host.generation()) {
-        await this.giveUpOn(group, generation);
+      if (generation === this.#context.generation()) {
+        await this.#giveUpOn(group, generation);
       }
 
       return asError(error);
     }
   }
 
-  private async defineAndEnable(layout: GroupLayout, generation: number): Promise<void> {
+  async #defineAndEnable(layout: GroupLayout, generation: number): Promise<void> {
     const { group } = layout;
 
-    this.unknown.add(group);
+    this.#unknown.add(group);
 
-    const ack = await this.host.sizeRefusals.run(() => {
-      this.throwIfRestarted(generation);
-      return this.groupRequest(
+    const ack = await this.#sizeRefusals.run(() => {
+      this.#throwIfRestarted(generation);
+      return this.#groupRequest(
         encodeGroupDefine(group, layout.periodTicks, layout.variableIds),
         group,
         answersDefine(layout)
       );
     });
-    this.throwIfRestarted(generation);
+    this.#throwIfRestarted(generation);
 
     if (ack.sampleSize !== layout.sampleSize) {
       throw new Error(
@@ -347,90 +316,118 @@ export class GroupConfigurator {
       );
     }
 
-    this.epochs.define(layout, ack.periodTicks, ack.sampleSize, this.host.timeline());
+    this.#epochs.define(layout, ack);
 
-    await this.groupRequest(encodeGroupEnable(group, true), group, noSuchGroup(group));
-    this.throwIfRestarted(generation);
+    await this.#groupRequest(encodeGroupEnable(group, true), group, noSuchGroup(group));
+    this.#throwIfRestarted(generation);
 
-    this.epochs.activate(group);
-    this.unknown.delete(group);
+    this.#epochs.activate(group);
+    this.#unknown.delete(group);
   }
 
-  private async turnOff(group: number, generation: number): Promise<void> {
+  async #turnOff(group: number, generation: number): Promise<void> {
     try {
-      await this.groupRequest(encodeGroupEnable(group, false), group, noSuchGroup(group));
+      await this.#groupRequest(encodeGroupEnable(group, false), group, noSuchGroup(group));
     } catch (error) {
       if (!isNoSuchGroup(error)) {
         throw error;
       }
     }
 
-    this.throwIfRestarted(generation);
-    this.epochs.end(group, 'disabled');
-    this.unknown.delete(group);
+    this.#throwIfRestarted(generation);
+    this.#epochs.end(group, 'disabled');
+    this.#unknown.delete(group);
   }
 
-  private async giveUpOn(group: number, generation: number): Promise<void> {
-    this.epochs.end(group, 'failed');
-    this.unknown.add(group);
+  async #giveUpOn(group: number, generation: number): Promise<void> {
+    this.#epochs.end(group, 'failed');
+    this.#unknown.add(group);
 
     try {
-      await this.turnOff(group, generation);
+      await this.#turnOff(group, generation);
     } catch (error) {
-      if (generation === this.host.generation()) {
-        this.host.report(`Group ${group} could not be turned off: ${asError(error).message}`);
+      if (generation === this.#context.generation()) {
+        this.#context.report(`Group ${group} could not be turned off: ${asError(error).message}`);
       }
     }
   }
 
-  private async groupRequest(
+  async #groupRequest(
     frame: Uint8Array,
     group: number,
     answersError: ErrorMatcher
   ): Promise<GroupAck> {
+    const { requests, timing } = this.#context;
+
     for (let attempt = 1; ; attempt++) {
-      const answer = this.host.requests.add(
-        'group',
-        group,
-        this.host.timing.requestTimeoutMs,
-        answersError
-      );
-      this.host.send(frame);
+      const answer = requests.add('group', group, timing.requestTimeoutMs, answersError);
+      this.#context.send(frame);
 
       try {
-        return await answer;
+        const ack = await answer;
+
+        if (attempt > 1) {
+          await this.#letLateAnswersPass();
+        }
+
+        return ack;
       } catch (error) {
-        if (!(error instanceof TimeoutError) || attempt >= this.host.timing.groupAttempts) {
+        if (!(error instanceof TimeoutError)) {
+          throw error;
+        }
+
+        if (attempt >= timing.groupAttempts) {
+          await this.#letLateAnswersPass();
           throw error;
         }
       }
     }
   }
 
-  private throwIfRestarted(generation: number): void {
-    if (generation !== this.host.generation()) {
+  /**
+   * Wait for a PONG: the robot answers in order, so whatever it still had to answer of the
+   * attempts that timed out has arrived by then, with no group request waiting to take it.
+   */
+  async #letLateAnswersPass(): Promise<void> {
+    const pong = this.#context.requests.add('ping', 0, this.#context.timing.requestTimeoutMs);
+
+    this.#context.send(encodePing());
+    await pong.catch(() => undefined);
+  }
+
+  #throwIfRestarted(generation: number): void {
+    if (generation !== this.#context.generation()) {
       throw new LinkError('restarted');
     }
   }
 
-  private supersedeWaiters(): void {
-    const waiters = this.waiters;
-    this.waiters = [];
+  #supersedeWaiters(): void {
+    const waiters = this.#waiters;
+    this.#waiters = [];
     waiters.forEach((waiter) => waiter.resolve({ status: 'superseded' }));
   }
 
-  private settleWaiters(layouts: readonly GroupLayout[], failures: readonly Error[]): void {
-    const settled = this.waiters.filter((waiter) => waiter.layouts === layouts);
-    this.waiters = this.waiters.filter((waiter) => waiter.layouts !== layouts);
+  #settleWaiters(layouts: readonly GroupLayout[], failures: readonly Error[]): void {
+    const settled = this.#waiters.filter((waiter) => waiter.layouts === layouts);
+    this.#waiters = this.#waiters.filter((waiter) => waiter.layouts !== layouts);
 
     for (const waiter of settled) {
       if (failures.length > 0) {
         waiter.reject(failures[0]);
       } else {
-        waiter.resolve({ status: 'applied', epochs: this.epochs.active() });
+        waiter.resolve({ status: 'applied', epochs: this.#epochs.active() });
       }
     }
   }
+}
+
+function sameLayout(layout: GroupLayout, epoch: Epoch): boolean {
+  return (
+    layout.group === epoch.group &&
+    layout.periodTicks === epoch.periodTicks &&
+    layout.variableIds.length === epoch.variableIds.length &&
+    layout.variableIds.every((id, index) => epoch.variableIds[index] === id)
+  );
 }
 
 function allGroups(): number[] {

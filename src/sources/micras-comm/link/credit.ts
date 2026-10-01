@@ -1,5 +1,6 @@
-import { CREDIT_WINDOW } from '../wire';
-import { creditPayload } from './messages';
+import { CREDIT_WINDOW, type Frame } from '../wire';
+import type { LinkContext } from './link-events';
+import { creditPayload, encodeCredit, isMetered, wireSize } from './messages';
 
 /** Credit to give back: the payload of a CREDIT, and how many bytes it gives back. */
 export interface CreditGrant {
@@ -34,10 +35,12 @@ const U32_RANGE = 2 ** 32;
  * else is owed would otherwise leave a robot whose window is full waiting for one forever.
  */
 export class CreditLedger {
-  private consumed = 0;
-  private told = 0;
-  private owedSince: number | null = null;
-  private repeat = false;
+  readonly #options: CreditLedgerOptions;
+  #window: number;
+  #consumed = 0;
+  #told = 0;
+  #owedSince: number | null = null;
+  #repeat = false;
 
   /**
    * @param options When to give credit back.
@@ -45,9 +48,12 @@ export class CreditLedger {
    * gives the one the robot announced.
    */
   constructor(
-    private readonly options: CreditLedgerOptions = DEFAULT_CREDIT_LEDGER,
-    private window: number = CREDIT_WINDOW
-  ) {}
+    options: CreditLedgerOptions = DEFAULT_CREDIT_LEDGER,
+    window: number = CREDIT_WINDOW
+  ) {
+    this.#options = options;
+    this.#window = window;
+  }
 
   /**
    * Count a metered frame that arrived intact.
@@ -56,8 +62,8 @@ export class CreditLedger {
    * @param now The current time, in milliseconds.
    */
   received(bytes: number, now: number): void {
-    this.consumed = (this.consumed + bytes) % U32_RANGE;
-    this.owedSince ??= now;
+    this.#consumed = (this.#consumed + bytes) % U32_RANGE;
+    this.#owedSince ??= now;
   }
 
   /**
@@ -70,15 +76,15 @@ export class CreditLedger {
    * robot could have sent since the handshake, which only a robot that started over sends.
    */
   resync(sentTotal: number, now: number): number | null {
-    const lost = distance(this.consumed, sentTotal);
+    const lost = distance(this.#consumed, sentTotal);
 
-    if (lost > this.window) {
+    if (lost > this.#window) {
       return null;
     }
 
-    this.consumed = sentTotal;
-    this.repeat = this.consumed !== 0;
-    this.owedSince = this.repeat ? now - this.options.maxDelayMs : null;
+    this.#consumed = sentTotal;
+    this.#repeat = this.#consumed !== 0;
+    this.#owedSince = this.#repeat ? now - this.#options.maxDelayMs : null;
     return lost;
   }
 
@@ -89,25 +95,25 @@ export class CreditLedger {
    * @returns What to send, or null when nothing is due.
    */
   take(now: number): CreditGrant | null {
-    const owed = distance(this.told, this.consumed);
+    const owed = distance(this.#told, this.#consumed);
 
-    if ((owed === 0 && !this.repeat) || this.owedSince === null) {
+    if ((owed === 0 && !this.#repeat) || this.#owedSince === null) {
       return null;
     }
 
-    if (owed < this.options.minBytes && now - this.owedSince < this.options.maxDelayMs) {
+    if (owed < this.#options.minBytes && now - this.#owedSince < this.#options.maxDelayMs) {
       return null;
     }
 
-    this.told = this.consumed;
-    this.owedSince = null;
-    this.repeat = false;
-    return { payload: creditPayload(this.consumed), bytes: owed };
+    this.#told = this.#consumed;
+    this.#owedSince = null;
+    this.#repeat = false;
+    return { payload: creditPayload(this.#consumed), bytes: owed };
   }
 
   /** When credit will be due without anything else arriving, or null when nothing is owed. */
   dueAt(): number | null {
-    return this.owedSince === null ? null : this.owedSince + this.options.maxDelayMs;
+    return this.#owedSince === null ? null : this.#owedSince + this.#options.maxDelayMs;
   }
 
   /**
@@ -116,12 +122,111 @@ export class CreditLedger {
    * @param window The window the robot announced in its HELLO_ACK, when known; the one before
    * otherwise.
    */
-  reset(window = this.window): void {
-    this.window = window;
-    this.consumed = 0;
-    this.told = 0;
-    this.owedSince = null;
-    this.repeat = false;
+  reset(window = this.#window): void {
+    this.#window = window;
+    this.#consumed = 0;
+    this.#told = 0;
+    this.#owedSince = null;
+    this.#repeat = false;
+  }
+}
+
+/**
+ * The credit of one link: it counts the metered frames that arrive, gives the credit back to the
+ * robot when the ledger says it is due, and brings the count in line with every PONG.
+ *
+ * The robot may only send metered bytes it has credit for, because its radio module has no flow
+ * control and drops silently when its buffer fills. Credit flows from a HELLO_ACK until the
+ * handshake is redone or the transport drops.
+ */
+export class CreditFlow {
+  readonly #context: LinkContext;
+  readonly #ledger = new CreditLedger();
+  #flowing = false;
+  #timer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * @param context What the credit shares with its link.
+   */
+  constructor(context: LinkContext) {
+    this.#context = context;
+  }
+
+  /**
+   * Start counting from zero, as a HELLO_ACK does.
+   *
+   * @param window The window the robot announced.
+   */
+  start(window: number): void {
+    this.stop();
+    this.#ledger.reset(window);
+    this.#flowing = true;
+  }
+
+  /** Stop counting and giving back, since the robot forgets its window with the handshake. */
+  stop(): void {
+    clearTimeout(this.#timer);
+    this.#flowing = false;
+    this.#ledger.reset();
+  }
+
+  /**
+   * Count a frame that arrived intact, if the robot charged it to the window.
+   *
+   * @param frame The frame.
+   * @param now When it arrived, in milliseconds.
+   */
+  received(frame: Frame, now: number): void {
+    if (this.#flowing && isMetered(frame.type)) {
+      this.#ledger.received(wireSize(frame.payload.length), now);
+    }
+  }
+
+  /**
+   * Take a PONG as the barrier it is for the credit: every metered frame the robot sent before it
+   * has arrived or never will. A total that no loss within the window explains, such as one below
+   * what already arrived, means the count is off, whether the robot started over or not, and only
+   * a new handshake sets it straight.
+   *
+   * @param sentTotal The total the PONG carries.
+   * @returns Whether the count could be brought in line with it.
+   */
+  resync(sentTotal: number): boolean {
+    if (!this.#flowing) {
+      return true;
+    }
+
+    const recovered = this.#ledger.resync(sentTotal, performance.now());
+
+    if (recovered === null) {
+      return false;
+    }
+
+    this.#context.counters.add('creditRecovered', recovered);
+    return true;
+  }
+
+  /** Give back the credit due now, and come back when more will be due. */
+  giveBack(): void {
+    clearTimeout(this.#timer);
+
+    if (!this.#flowing) {
+      return;
+    }
+
+    const now = performance.now();
+    const grant = this.#ledger.take(now);
+
+    if (grant) {
+      this.#context.send(encodeCredit(grant.payload));
+      this.#context.counters.add('creditReturned', grant.bytes);
+    }
+
+    const dueAt = this.#ledger.dueAt();
+
+    if (dueAt !== null) {
+      this.#timer = setTimeout(() => this.giveBack(), Math.max(0, dueAt - now));
+    }
   }
 }
 

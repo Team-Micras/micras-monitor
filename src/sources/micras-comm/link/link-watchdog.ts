@@ -1,32 +1,5 @@
-import type { LinkTiming } from './link-events';
+import type { HandshakeReason, LinkContext } from './link-events';
 import { encodePing } from './messages';
-import type { PendingRequests } from './requests';
-
-/** What the watchdog needs from the link. */
-export interface LinkWatchdogHost {
-  /** Send a frame to the robot. */
-  send(frame: Uint8Array): void;
-
-  /** Where PINGs wait for their PONG. */
-  readonly requests: PendingRequests;
-
-  readonly timing: LinkTiming;
-
-  /**
-   * How long a period of the fastest group streaming is, in milliseconds, or null when nothing
-   * is supposed to be streaming.
-   */
-  streamingPeriodMs(): number | null;
-
-  /** A PONG came back; how long its PING took, in milliseconds. */
-  answered(roundTripMs: number): void;
-
-  /** The robot has sent nothing intact for too long. */
-  silent(): void;
-
-  /** Groups are streaming but no sample arrived for too long. */
-  stalled(): void;
-}
 
 /**
  * Keeps an eye on a link that looks up: PINGs the robot so that silence is noticed and the round
@@ -39,12 +12,30 @@ export interface LinkWatchdogHost {
  * never more than one out.
  */
 export class LinkWatchdog {
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private lastHeardAt = 0;
-  private lastSampleAt = 0;
-  private lastPingAt = Number.NEGATIVE_INFINITY;
+  readonly #context: LinkContext;
+  readonly #streamingPeriodMs: () => number | null;
+  readonly #alarm: (reason: Extract<HandshakeReason, 'keepalive' | 'stall'>) => void;
+  #timer: ReturnType<typeof setInterval> | undefined;
+  #lastHeardAt = 0;
+  #lastSampleAt = 0;
+  #lastPingAt = Number.NEGATIVE_INFINITY;
 
-  constructor(private readonly host: LinkWatchdogHost) {}
+  /**
+   * @param context What the watchdog shares with its link.
+   * @param streamingPeriodMs How long a period of the fastest group streaming is, in
+   *   milliseconds, or null when nothing is supposed to be streaming.
+   * @param alarm Told `keepalive` when the robot has sent nothing intact for too long, and
+   *   `stall` when groups are streaming but no sample arrived for too long.
+   */
+  constructor(
+    context: LinkContext,
+    streamingPeriodMs: () => number | null,
+    alarm: (reason: Extract<HandshakeReason, 'keepalive' | 'stall'>) => void
+  ) {
+    this.#context = context;
+    this.#streamingPeriodMs = streamingPeriodMs;
+    this.#alarm = alarm;
+  }
 
   /**
    * Start watching, as the handshake completes.
@@ -53,43 +44,43 @@ export class LinkWatchdog {
    */
   start(now: number): void {
     this.stop();
-    this.lastHeardAt = now;
-    this.lastSampleAt = now;
-    this.lastPingAt = Number.NEGATIVE_INFINITY;
-    this.timer = setInterval(() => this.check(performance.now()), this.checkIntervalMs());
+    this.#lastHeardAt = now;
+    this.#lastSampleAt = now;
+    this.#lastPingAt = Number.NEGATIVE_INFINITY;
+    this.#timer = setInterval(() => this.#check(performance.now()), this.#checkIntervalMs());
   }
 
   /** Stop watching. */
   stop(): void {
-    clearInterval(this.timer);
-    this.timer = undefined;
+    clearInterval(this.#timer);
+    this.#timer = undefined;
   }
 
   /** Something intact arrived. */
   heard(now: number): void {
-    this.lastHeardAt = now;
+    this.#lastHeardAt = now;
   }
 
   /** A sample arrived, or a group started streaming. */
   sampled(now: number): void {
-    this.lastSampleAt = now;
+    this.#lastSampleAt = now;
   }
 
-  private checkIntervalMs(): number {
-    const { pingIntervalMs, minStallMs } = this.host.timing;
+  #checkIntervalMs(): number {
+    const { pingIntervalMs, minStallMs } = this.#context.timing;
     return Math.max(10, Math.min(pingIntervalMs, minStallMs / 4));
   }
 
-  private check(now: number): void {
-    const stallMs = this.stallThresholdMs();
-    const quietMs = now - this.lastSampleAt;
+  #check(now: number): void {
+    const stallMs = this.#stallThresholdMs();
+    const quietMs = now - this.#lastSampleAt;
 
-    if (now - this.lastHeardAt > this.host.timing.silenceTimeoutMs) {
-      this.host.silent();
+    if (now - this.#lastHeardAt > this.#context.timing.silenceTimeoutMs) {
+      this.#alarm('keepalive');
     } else if (stallMs !== null && quietMs > stallMs) {
-      this.host.stalled();
-    } else if (!this.host.requests.has('ping') && this.pingDue(now, stallMs, quietMs)) {
-      this.ping(now);
+      this.#alarm('stall');
+    } else if (!this.#context.requests.has('ping') && this.#pingDue(now, stallMs, quietMs)) {
+      this.#ping(now);
     }
   }
 
@@ -98,8 +89,8 @@ export class LinkWatchdog {
    * threshold without one sent since: its PONG gives back credit lost with corrupted frames,
    * which usually restarts the stream before the stall has to redo the handshake.
    */
-  private pingDue(now: number, stallMs: number | null, quietMs: number): boolean {
-    if (now - this.lastPingAt >= this.host.timing.pingIntervalMs) {
+  #pingDue(now: number, stallMs: number | null, quietMs: number): boolean {
+    if (now - this.#lastPingAt >= this.#context.timing.pingIntervalMs) {
       return true;
     }
 
@@ -108,27 +99,27 @@ export class LinkWatchdog {
     }
 
     const suspiciousMs = stallMs / 2;
-    return quietMs > suspiciousMs && this.lastPingAt < this.lastSampleAt + suspiciousMs;
+    return quietMs > suspiciousMs && this.#lastPingAt < this.#lastSampleAt + suspiciousMs;
   }
 
-  private stallThresholdMs(): number | null {
-    const periodMs = this.host.streamingPeriodMs();
+  #stallThresholdMs(): number | null {
+    const periodMs = this.#streamingPeriodMs();
 
     if (periodMs === null) {
       return null;
     }
 
-    const { minStallMs, stallPeriods } = this.host.timing;
+    const { minStallMs, stallPeriods } = this.#context.timing;
     return Math.max(minStallMs, stallPeriods * periodMs);
   }
 
-  private ping(sentAt: number): void {
-    const answer = this.host.requests.add('ping', 0, this.host.timing.pingIntervalMs);
+  #ping(sentAt: number): void {
+    const answer = this.#context.requests.add('ping', 0, this.#context.timing.pingIntervalMs);
 
-    this.lastPingAt = sentAt;
-    this.host.send(encodePing());
+    this.#lastPingAt = sentAt;
+    this.#context.send(encodePing());
     answer.then(
-      () => this.host.answered(performance.now() - sentAt),
+      () => this.#context.counters.set('rttMs', performance.now() - sentAt),
       () => undefined
     );
   }

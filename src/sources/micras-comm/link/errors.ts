@@ -3,16 +3,19 @@ import { ErrorCode } from '../wire';
 /** The robot answered a request with ERROR. */
 export class RobotError extends Error {
   override readonly name = 'RobotError';
+  /** Why the robot refused. */
+  readonly code: ErrorCode;
+  /** What identifies the refused request, such as a variable id. */
+  readonly context: number;
 
   /**
    * @param code Why the robot refused.
    * @param context What identifies the refused request, such as a variable id.
    */
-  constructor(
-    readonly code: ErrorCode,
-    readonly context: number
-  ) {
+  constructor(code: ErrorCode, context: number) {
     super(`The robot refused the request: ${ErrorCode[code] ?? code} (${context})`);
+    this.code = code;
+    this.context = context;
   }
 }
 
@@ -41,12 +44,15 @@ export type LinkErrorReason =
 /** A request ended because of what happened to the link, not because of the robot. */
 export class LinkError extends Error {
   override readonly name = 'LinkError';
+  readonly reason: LinkErrorReason;
 
-  constructor(
-    readonly reason: LinkErrorReason,
-    message: string = reason
-  ) {
+  /**
+   * @param reason Why the request ended.
+   * @param message What to tell, the reason by default.
+   */
+  constructor(reason: LinkErrorReason, message: string = reason) {
     super(message);
+    this.reason = reason;
   }
 }
 

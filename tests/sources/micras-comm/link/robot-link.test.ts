@@ -52,6 +52,7 @@ const TIMING: Partial<LinkTiming> = {
 /** A transport the test plays the robot on, frame by frame. */
 class ScriptedTransport extends BaseTransport {
   private readonly reader = new FrameReader();
+  private answeredPings = 0;
   readonly sent: Frame[] = [];
 
   open(): void {
@@ -81,6 +82,15 @@ class ScriptedTransport extends BaseTransport {
 
   robotSendsBytes(bytes: Uint8Array): void {
     this.receive(bytes);
+  }
+
+  /** Answer with a PONG every PING not answered yet, as the robot does, in order. */
+  answerPings(sentTotal: number): void {
+    const pings = this.sentOf(MessageType.PING).length;
+
+    for (; this.answeredPings < pings; this.answeredPings++) {
+      this.robotSends(MessageType.PONG, pong(sentTotal));
+    }
   }
 
   creditTotals(): number[] {
@@ -877,9 +887,38 @@ describe('epochs', () => {
 
     await vi.advanceTimersByTimeAsync(1);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.answerPings(0);
 
     expect(applied(await epochs)).toEqual(opened);
     expect(transport.sentOf(MessageType.GROUP_ENABLE)).toHaveLength(2);
+  });
+
+  test('the late answer to a request sent again cannot answer the next one', async () => {
+    const { transport, session } = await streaming();
+    const opened: Epoch[] = [];
+    session.on('epoch', (epoch) => opened.push(epoch));
+    const epochs = session.setGroups([{ variableIds: [0, 1], periodTicks: 8 }]);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(transport.sentOf(MessageType.GROUP_DEFINE)).toHaveLength(2);
+
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(transport.sentOf(MessageType.GROUP_ENABLE)).toEqual([]);
+    expect(opened).toEqual([]);
+
+    transport.answerPings(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(transport.sentOf(MessageType.GROUP_ENABLE)).toHaveLength(1);
+    expect(opened).toEqual([]);
+
+    transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    expect(applied(await epochs)).toEqual(opened);
+    expect(opened).toHaveLength(1);
   });
 
   test('the first sample in the same batch as the enable answer is decoded into its epoch', async () => {
@@ -923,6 +962,8 @@ describe('epochs', () => {
 
     await vi.advanceTimersByTimeAsync(100);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
+    await vi.advanceTimersByTimeAsync(0);
+    transport.answerPings(2 * wireSize(13));
 
     expect(applied(await epochs)).toEqual(opened);
     expect(
@@ -942,6 +983,8 @@ describe('epochs', () => {
 
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
     await vi.advanceTimersByTimeAsync(300);
+    transport.answerPings(0);
+    await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
 
     expect(await epochs).toBeInstanceOf(TimeoutError);

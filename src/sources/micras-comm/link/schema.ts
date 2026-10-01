@@ -1,5 +1,6 @@
 import { decodeAccess, TYPE_SIZE, TypeCode, type Access } from '../wire';
 import { asError } from './errors';
+import type { LinkContext } from './link-events';
 import { encodeSchemaRequest, type SchemaPage } from './messages';
 
 /** One variable of the robot, as its schema describes it. */
@@ -28,14 +29,14 @@ export interface SchemaCache {
 
 /** A schema cache that lasts as long as the page. */
 export class MemorySchemaCache implements SchemaCache {
-  private readonly schemas = new Map<number, readonly SchemaEntry[]>();
+  readonly #schemas = new Map<number, readonly SchemaEntry[]>();
 
   load(hash: number): readonly SchemaEntry[] | undefined {
-    return this.schemas.get(hash);
+    return this.#schemas.get(hash);
   }
 
   store(hash: number, entries: readonly SchemaEntry[]): void {
-    this.schemas.set(hash, entries);
+    this.#schemas.set(hash, entries);
   }
 }
 
@@ -57,18 +58,19 @@ export type PageOutcome =
  * window and the radio module drops what does not fit its buffer.
  */
 export class SchemaAssembler {
-  private readonly entries: (SchemaEntry | undefined)[];
-  private filled = 0;
+  readonly hash: number;
+  readonly total: number;
+  readonly #entries: (SchemaEntry | undefined)[];
+  #filled = 0;
 
   /**
    * @param hash The hash HELLO_ACK announced.
    * @param total How many variables HELLO_ACK announced.
    */
-  constructor(
-    readonly hash: number,
-    readonly total: number
-  ) {
-    this.entries = Array.from({ length: total }, () => undefined);
+  constructor(hash: number, total: number) {
+    this.hash = hash;
+    this.total = total;
+    this.#entries = Array.from({ length: total }, () => undefined);
   }
 
   /**
@@ -88,7 +90,7 @@ export class SchemaAssembler {
 
     const gap = page.first > this.firstMissing;
 
-    page.entries.forEach((entry, offset) => this.fill(page.first + offset, entry));
+    page.entries.forEach((entry, offset) => this.#fill(page.first + offset, entry));
 
     if (this.complete) {
       return 'complete';
@@ -99,41 +101,41 @@ export class SchemaAssembler {
 
   /** The first entry still missing, which is where to ask the robot to start again. */
   get firstMissing(): number {
-    const index = this.entries.indexOf(undefined);
+    const index = this.#entries.indexOf(undefined);
     return index === -1 ? this.total : index;
   }
 
   /** How many entries have arrived. */
   get received(): number {
-    return this.filled;
+    return this.#filled;
   }
 
   /** Whether every entry has arrived. */
   get complete(): boolean {
-    return this.filled === this.total;
+    return this.#filled === this.total;
   }
 
   /** The schema, once complete. */
   result(): readonly SchemaEntry[] {
     if (!this.complete) {
-      throw new Error(`Schema has ${this.filled} of ${this.total} entries`);
+      throw new Error(`Schema has ${this.#filled} of ${this.total} entries`);
     }
 
-    return this.entries.filter((entry) => entry !== undefined);
+    return this.#entries.filter((entry) => entry !== undefined);
   }
 
-  private fill(id: number, entry: SchemaPage['entries'][number]): void {
+  #fill(id: number, entry: SchemaPage['entries'][number]): void {
     if (id >= this.total) {
       return;
     }
 
-    if (!this.entries[id]) {
-      this.filled++;
+    if (!this.#entries[id]) {
+      this.#filled++;
     }
 
     const base = { id, name: entry.name, type: entry.type, access: decodeAccess(entry.access) };
 
-    this.entries[id] = entry.typeTag === null ? base : { ...base, typeTag: entry.typeTag };
+    this.#entries[id] = entry.typeTag === null ? base : { ...base, typeTag: entry.typeTag };
   }
 }
 
@@ -157,15 +159,6 @@ export type SchemaProgress =
   /** The page changed nothing. */
   | { readonly kind: 'ignored' };
 
-/** What the schema loader needs from the link. */
-export interface SchemaLoaderHost {
-  /** Send a frame to the robot. */
-  send(frame: Uint8Array): void;
-
-  /** Report something that went wrong without stopping the link. */
-  report(message: string): void;
-}
-
 /**
  * Learns the robot's schema: from what is already in use, from the cache, or page by page from
  * the robot, asking again from the first missing entry when a page is lost.
@@ -173,27 +166,29 @@ export interface SchemaLoaderHost {
  * It keeps a partly assembled schema across handshakes, so a retry only asks for what is missing.
  */
 export class SchemaLoader {
-  private adopted: { hash: number; entries: readonly SchemaEntry[] } | undefined;
-  private assembler: SchemaAssembler | undefined;
-  private gapRequestedFrom = -1;
+  readonly #cache: SchemaCache;
+  readonly #context: LinkContext;
+  #adopted: { hash: number; entries: readonly SchemaEntry[] } | undefined;
+  #assembler: SchemaAssembler | undefined;
+  #gapRequestedFrom = -1;
 
   /**
    * @param cache Where schemas are kept between connections.
-   * @param host What the loader needs from the link.
+   * @param context What the loader shares with its link.
    */
-  constructor(
-    private readonly cache: SchemaCache,
-    private readonly host: SchemaLoaderHost
-  ) {}
+  constructor(cache: SchemaCache, context: LinkContext) {
+    this.#cache = cache;
+    this.#context = context;
+  }
 
   /** The schema in use: the one the last HELLO_ACK announced, once it is known. */
   get schema(): readonly SchemaEntry[] | undefined {
-    return this.adopted?.entries;
+    return this.#adopted?.entries;
   }
 
   /** The hash of the schema in use. */
   get hash(): number | undefined {
-    return this.adopted?.hash;
+    return this.#adopted?.hash;
   }
 
   /**
@@ -204,24 +199,24 @@ export class SchemaLoader {
    * @param total The announced number of variables.
    */
   begin(hash: number, total: number): SchemaProgress {
-    if (this.adopted?.hash === hash && this.adopted.entries.length === total) {
+    if (this.#adopted?.hash === hash && this.#adopted.entries.length === total) {
       return { kind: 'unchanged' };
     }
 
-    this.adopted = undefined;
+    this.#adopted = undefined;
 
-    const cached = this.loadCached(hash);
+    const cached = this.#loadCached(hash);
 
     if (cached?.length === total) {
-      return this.adopt(hash, cached, true);
+      return this.#adopt(hash, cached, true);
     }
 
-    if (this.assembler?.hash !== hash || this.assembler.total !== total) {
-      this.assembler = new SchemaAssembler(hash, total);
+    if (this.#assembler?.hash !== hash || this.#assembler.total !== total) {
+      this.#assembler = new SchemaAssembler(hash, total);
     }
 
-    this.gapRequestedFrom = -1;
-    return this.request(this.assembler);
+    this.#gapRequestedFrom = -1;
+    return this.#request(this.#assembler);
   }
 
   /**
@@ -230,7 +225,7 @@ export class SchemaLoader {
    * @param page The page as it arrived.
    */
   accept(page: SchemaPage): SchemaProgress {
-    const assembler = this.assembler;
+    const assembler = this.#assembler;
 
     if (!assembler) {
       return { kind: 'ignored' };
@@ -239,22 +234,24 @@ export class SchemaLoader {
     const outcome = assembler.accept(page);
 
     if (outcome === 'complete') {
-      this.assembler = undefined;
-      this.storeCached(assembler.hash, assembler.result());
-      return this.adopt(assembler.hash, assembler.result(), false);
+      this.#assembler = undefined;
+      this.#storeCached(assembler.hash, assembler.result());
+      return this.#adopt(assembler.hash, assembler.result(), false);
     }
 
     if (outcome === 'gap') {
-      return this.askAgainAfterGap(assembler);
+      return this.#askAgainAfterGap(assembler);
     }
 
     if (outcome === 'progress') {
-      this.gapRequestedFrom = -1;
+      this.#gapRequestedFrom = -1;
       return progressOf(assembler);
     }
 
     if (outcome === 'invalid') {
-      this.host.report(`A schema page from ${page.first} names a type this monitor does not know`);
+      this.#context.report(
+        `A schema page from ${page.first} names a type this monitor does not know`
+      );
     }
 
     return { kind: 'ignored' };
@@ -264,39 +261,39 @@ export class SchemaLoader {
    * Pages the robot sent before it saw the new request still arrive after the same gap, and must
    * not each trigger a request of their own.
    */
-  private askAgainAfterGap(assembler: SchemaAssembler): SchemaProgress {
-    if (assembler.firstMissing === this.gapRequestedFrom) {
+  #askAgainAfterGap(assembler: SchemaAssembler): SchemaProgress {
+    if (assembler.firstMissing === this.#gapRequestedFrom) {
       return progressOf(assembler);
     }
 
-    this.gapRequestedFrom = assembler.firstMissing;
-    return this.request(assembler);
+    this.#gapRequestedFrom = assembler.firstMissing;
+    return this.#request(assembler);
   }
 
-  private request(assembler: SchemaAssembler): SchemaProgress {
-    this.host.send(encodeSchemaRequest(assembler.firstMissing));
+  #request(assembler: SchemaAssembler): SchemaProgress {
+    this.#context.send(encodeSchemaRequest(assembler.firstMissing));
     return progressOf(assembler);
   }
 
-  private adopt(hash: number, entries: readonly SchemaEntry[], fromCache: boolean): SchemaProgress {
-    this.adopted = { hash, entries };
+  #adopt(hash: number, entries: readonly SchemaEntry[], fromCache: boolean): SchemaProgress {
+    this.#adopted = { hash, entries };
     return { kind: 'ready', hash, entries, fromCache };
   }
 
-  private loadCached(hash: number): readonly SchemaEntry[] | undefined {
+  #loadCached(hash: number): readonly SchemaEntry[] | undefined {
     try {
-      return this.cache.load(hash);
+      return this.#cache.load(hash);
     } catch (error) {
-      this.host.report(`Reading the schema cache failed: ${asError(error).message}`);
+      this.#context.report(`Reading the schema cache failed: ${asError(error).message}`);
       return undefined;
     }
   }
 
-  private storeCached(hash: number, entries: readonly SchemaEntry[]): void {
+  #storeCached(hash: number, entries: readonly SchemaEntry[]): void {
     try {
-      this.cache.store(hash, entries);
+      this.#cache.store(hash, entries);
     } catch (error) {
-      this.host.report(`Keeping the schema in the cache failed: ${asError(error).message}`);
+      this.#context.report(`Keeping the schema in the cache failed: ${asError(error).message}`);
     }
   }
 }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { ErrorCode } from '@/sources/micras-comm/wire';
 import { RobotError, TimeoutError } from '@/sources/micras-comm/link/errors';
-import { CommandResult } from '@/sources/micras-comm/wire';
+import { CommandResult, MessageType, Severity } from '@/sources/micras-comm/wire';
 import { AsyncMutex, PendingRequests } from '@/sources/micras-comm/link/requests';
 
 beforeEach(() => {
@@ -53,6 +53,29 @@ test('an ERROR fails the oldest request it answers, of any kind', async () => {
   await expect(read).rejects.toBeInstanceOf(RobotError);
   requests.resolve('write', 7, 0);
   await expect(write).resolves.toBe(0);
+});
+
+test('a message settles the request it answers, and anything else answers nothing', async () => {
+  const requests = new PendingRequests();
+  const command = requests.add('command', 4, 100);
+  const ping = requests.add('ping', 0, 100);
+
+  expect(
+    requests.answer({
+      type: MessageType.COMMAND_ACK,
+      code: 4,
+      result: CommandResult.REFUSED,
+      reason: 2,
+    })
+  ).toBe(true);
+  expect(requests.answer({ type: MessageType.PONG, sentTotal: 9 })).toBe(true);
+  expect(requests.answer({ type: MessageType.PONG, sentTotal: 9 })).toBe(false);
+  expect(
+    requests.answer({ type: MessageType.LOG, severity: Severity.INFO, timestampUs: 0, text: '' })
+  ).toBe(false);
+
+  await expect(command).resolves.toEqual({ result: CommandResult.REFUSED, reason: 2 });
+  await expect(ping).resolves.toMatchObject({ sentTotal: 9 });
 });
 
 interface Deferred {
