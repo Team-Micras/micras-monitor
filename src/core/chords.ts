@@ -38,10 +38,11 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
  * Parses a chord written as modifiers and a key joined by `+`, such as `Ctrl+K`, `/` or
  * `Alt+Shift+1`. Letters are case-insensitive; `Space` names the space bar.
  *
- * @throws {Error} When the text has no key, an unknown or repeated modifier.
+ * @throws {Error} When the text has no key, an unknown or repeated modifier, or a key name that
+ *   no keyboard event produces.
  */
 export function parseChord(text: string): Chord {
-  const parts = text.split('+');
+  const parts = (text === ' ' ? 'Space' : text.trim()).split('+');
   const key = parts.pop() ?? '';
 
   if (key === '') {
@@ -58,13 +59,32 @@ export function parseChord(text: string): Chord {
     modifiers.add(part);
   }
 
+  const named = normalizeKey(key);
+
+  if (!isProducibleKey(named)) {
+    throw new Error(`"${text}" names a key no keyboard produces ("${key}")`);
+  }
+
   return {
     ctrl: modifiers.has('Ctrl'),
     alt: modifiers.has('Alt'),
     shift: modifiers.has('Shift'),
     meta: modifiers.has('Meta'),
-    key: normalizeKey(key),
+    key: named,
   };
+}
+
+function isProducibleKey(key: string): boolean {
+  if (key.length === 1) {
+    return key.trim() !== '';
+  }
+
+  return (
+    /^[A-Z][A-Za-z0-9]+$/.test(key) &&
+    !MODIFIER_KEYS.has(key) &&
+    !MODIFIERS.some((modifier) => modifier === key) &&
+    key !== 'Unidentified'
+  );
 }
 
 function normalizeKey(key: string): string {
@@ -134,8 +154,8 @@ export function matchesChordHeld(chord: Chord, event: KeyInput): boolean {
 }
 
 /**
- * A text that is the same for chords that match the same events: `Alt+Shift+E` and
- * `Shift+Alt+E` share it, and so do `/` and `Shift+/`, since a symbol matches with or without Shift.
+ * A text that is the same for chords that match the same events: `Alt+Shift+E` and `Shift+Alt+E`
+ * share it, and so do `/` and `Shift+/`, since a symbol matches with or without Shift.
  */
 export function chordId(chord: Chord): string {
   const keep = (modifier: (typeof MODIFIERS)[number]) =>

@@ -155,6 +155,38 @@ export function commandAction(command: Pick<CommandSpec, 'name'>): CommandAction
   return `${COMMAND_PREFIX}${command.name}`;
 }
 
+/**
+ * Why a set of overrides cannot be applied, or null: an action other than a command gets the
+ * chord a command's key has, which the command would then lose to or share with it.
+ *
+ * @param overrides The chords the user chose, by action.
+ * @param bindings The chords every action has with those overrides.
+ * @param commands The robot package's commands.
+ */
+export function commandKeyTaken(
+  overrides: KeyOverrides,
+  bindings: KeyBindings,
+  commands: readonly CommandSpec[]
+): string | null {
+  for (const command of commands) {
+    const owner = commandAction(command);
+    const owned = new Set((bindings.get(owner) ?? []).map(chordId));
+
+    for (const [action, texts] of Object.entries(overrides)) {
+      const taker = (texts ?? []).find((text) => {
+        const chords = parseAll([text]);
+        return chords !== undefined && owned.has(chordId(chords[0]));
+      });
+
+      if (action !== owner && taker !== undefined) {
+        return `${taker} is already the key of ${command.label}`;
+      }
+    }
+  }
+
+  return null;
+}
+
 /** The name of the command an action sends, or null for an action of the app. */
 export function commandOf(action: KeyAction): string | null {
   return action.startsWith(COMMAND_PREFIX) ? action.slice(COMMAND_PREFIX.length) : null;

@@ -13,17 +13,13 @@ import { useLayouts } from './layouts/use-layouts';
 import { TooltipProvider } from './components/ui/tooltip';
 import { LazyPart } from './lib/lazy-part';
 import { useEver } from './lib/use-ever';
-import {
-  commandAnswered,
-  commandSent,
-  noRobotFor,
-  noRobotForCommands,
-} from './lib/command-outcome';
+import { commandAnswered, commandSent, noRobotFor, spaceUnbound } from './lib/command-outcome';
 import {
   MonitorContext,
   PackageChooser,
   useLiveMonitor,
   useRobotPackage,
+  useStatus,
   useVariables,
   type AppMonitor,
   type MonitorScope,
@@ -175,6 +171,7 @@ function Shell({
   const askedOnce = useEver(asking);
   const phone = usePhone();
   const livePackage = useRobotPackage(live)?.package ?? null;
+  const status = useStatus(live);
   const plan = phonePlan(livePackage, useVariables(live));
   const blockedBy = useReloadBlocked();
 
@@ -226,7 +223,7 @@ function Shell({
 
   const noCommandKey = () => {
     presses.current += 1;
-    store.getState().showCommandNotice(noRobotForCommands(presses.current));
+    store.getState().showCommandNotice(spaceUnbound(presses.current, status.kind === 'linked'));
   };
 
   const sendByName = (name: string) => {

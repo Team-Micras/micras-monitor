@@ -32,6 +32,16 @@ describe('chordId', () => {
 });
 
 describe('parseChord', () => {
+  test('trims the text and refuses key names no keyboard event produces', () => {
+    expect(parseChord('  Alt+E ')).toMatchObject({ alt: true, key: 'E' });
+    expect(() => parseChord('Alt+')).toThrow('names no key');
+    expect(() => parseChord('Alt+arrowleft')).toThrow('no keyboard produces');
+    expect(() => parseChord('Alt+Ctrl')).toThrow('no keyboard produces');
+    expect(() => parseChord('Control')).toThrow('no keyboard produces');
+    expect(() => parseChord('Alt+Enter')).not.toThrow();
+    expect(() => parseChord('F5')).not.toThrow();
+  });
+
   test('reads modifiers and a key', () => {
     expect(parseChord('Alt+Shift+ArrowLeft')).toEqual({
       ctrl: false,

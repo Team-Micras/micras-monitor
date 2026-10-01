@@ -226,6 +226,7 @@ describe('pinned commands and command keys', () => {
     await connect(context);
     await userEvent.keyboard(' ');
     expect(context.sent).toEqual([]);
+    await expect.poll(context.outcomes).toContain('Space sends no command');
     await expect
       .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
       .not.toBeInTheDocument();

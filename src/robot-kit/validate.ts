@@ -13,9 +13,9 @@ import type { BitmaskType, EnumType, PresetNode, RobotPackage } from './types';
 const MAX_BIT = 52;
 
 /**
- * Checks a package's internal consistency: a non-empty id, unique command codes and names, keys that are chords no two commands or app actions share,
- * unique enum values and bits, unique type tags, variables that name known types, and presets
- * whose ratios lie strictly inside (0, 1).
+ * Checks a package's internal consistency: a non-empty id, unique command codes and names, keys
+ * that are chords no two commands or app actions share, unique enum values and bits, unique type
+ * tags, variables that name known types, and presets whose ratios lie strictly inside (0, 1).
  *
  * @param pkg The package to check.
  * @param reservedChord Tells which chords the app keeps for itself, which no command key may use.

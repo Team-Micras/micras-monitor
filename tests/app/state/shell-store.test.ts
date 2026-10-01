@@ -150,6 +150,22 @@ describe('viewport, theme and overlays', () => {
     expect(shell.getState().bindings.get('drawer')?.[0]?.ctrl).toBe(true);
   });
 
+  test('refuses an override that takes the chord of a command', () => {
+    const shell = store();
+    const stop = { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any', key: 'Space' } as const;
+    shell.getState().setCommands([stop]);
+
+    expect(shell.getState().setKeyOverrides({ drawer: ['Space'] })).toBe(
+      'Space is already the key of Stop'
+    );
+    expect(shell.getState().keyOverrides).toEqual({});
+    expect(shell.getState().bindings.get('drawer')?.[0]?.key).toBe('/');
+    expect(shell.getState().setKeyOverrides({ 'command.STOP': ['Ctrl+Space'] })).toBeNull();
+    expect(
+      shell.getState().setKeyOverrides({ drawer: ['Ctrl+B'], 'command.STOP': ['Space'] })
+    ).toBeNull();
+  });
+
   test('binds the keys of the package commands, and a rebinding of them', () => {
     const shell = store();
     const stop = { code: 5, name: 'STOP', label: 'Stop', acceptedIn: 'any', key: 'Space' } as const;

@@ -319,7 +319,9 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
       this.#addLog({
         severity: 'warning',
         source: 'link',
-        text: `stream ${id} names variables the robot does not have (${unknown.join(', ')}) and is ignored`,
+        text:
+          `stream ${id} names variables the robot does not have ` +
+          `(${unknown.join(', ')}) and is ignored`,
       });
       return;
     }

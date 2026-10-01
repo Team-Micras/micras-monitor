@@ -34,8 +34,8 @@ const TONE_ICONS = { ok: CircleCheckIcon, refused: CircleAlertIcon, failed: Circ
  * with a confirmation asks first; a button says when the robot's state is not one its table
  * accepts it in, and the robot's answer, a refusal with its reason included, shows below. The
  * shell asks for every confirmation. A pinned command goes through the shell, as its button in the
- * top bar and its key do, to the live robot and with the shell's notice; a view that keeps the pinned commands in reach of its own,
- * such as the phone's, leaves them out with `showPinned`.
+ * top bar and its key do, to the live robot and with the shell's notice; a view that keeps the
+ * pinned commands in reach of its own, such as the phone's, leaves them out with `showPinned`.
  */
 export function CommandsWindow({
   window,

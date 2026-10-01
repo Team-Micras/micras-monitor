@@ -34,7 +34,12 @@ import {
   type WindowId,
 } from '@/tiling';
 
-import { resolveBindings, type KeyBindings, type KeyOverrides } from '../keymap/keymap';
+import {
+  commandKeyTaken,
+  resolveBindings,
+  type KeyBindings,
+  type KeyOverrides,
+} from '../keymap/keymap';
 import { presetWorkspace, workspacePreset } from '../layouts/presets';
 import type { CommandNotice } from '../lib/command-outcome';
 import { PLOT_KIND, windowKind } from '../windows/registry';
@@ -244,7 +249,12 @@ export interface ShellState {
   readonly undoDelete: () => void;
   /** Forgets the deleted preset of a notice, if it is still the one kept. */
   readonly clearDeleted: (id: number) => void;
-  readonly setKeyOverrides: (overrides: KeyOverrides) => void;
+  /**
+   * Rebinds keys. Nothing changes when an override takes the chord of a command's key.
+   *
+   * @returns Why it was refused, or null when it was applied.
+   */
+  readonly setKeyOverrides: (overrides: KeyOverrides) => string | null;
   /** Binds the keys of a robot package's commands, replacing those of the package before. */
   readonly setCommands: (commands: readonly CommandSpec[]) => void;
   readonly beginDrag: (subject: DragSubject, pointer: Point) => void;
@@ -665,8 +675,18 @@ export function createShellStore(options: ShellStoreOptions = {}): ShellStore {
         }
       },
 
-      setKeyOverrides: (keyOverrides) =>
-        set({ keyOverrides, bindings: resolveBindings(keyOverrides, get().commands) }),
+      setKeyOverrides: (keyOverrides) => {
+        const { commands } = get();
+        const bindings = resolveBindings(keyOverrides, commands);
+        const taken = commandKeyTaken(keyOverrides, bindings, commands);
+
+        if (taken !== null) {
+          return taken;
+        }
+
+        set({ keyOverrides, bindings });
+        return null;
+      },
 
       setCommands: (commands) =>
         set({ commands, bindings: resolveBindings(get().keyOverrides, commands) }),
