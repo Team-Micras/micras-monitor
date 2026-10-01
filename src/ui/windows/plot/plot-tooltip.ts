@@ -78,6 +78,7 @@ export class PlotTooltip {
     this.#element.style.top = `${over.top - root.top + 8}px`;
   }
 
+  /** Hides the tooltip until it is shown again. */
   hide(): void {
     this.#element.classList.add('hidden');
   }
