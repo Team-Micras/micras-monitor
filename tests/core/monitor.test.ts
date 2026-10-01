@@ -128,7 +128,7 @@ describe('Monitor fed by a source', () => {
       },
       {
         severity: 'warning',
-        text: 'run 1 sent samples back in time; the history leaves them out',
+        text: 'stream 7 sent samples back in time; the history leaves them out',
         count: 2,
       },
       {

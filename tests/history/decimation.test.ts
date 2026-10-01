@@ -17,7 +17,7 @@ import {
 import { FANOUT, LEAF_SIZE } from '@/history/min-max-pyramid';
 import { HistoryStore } from '@/history/history-store';
 import { ManualScheduler } from '@/history';
-import { toLineSeries } from '@/ui/windows/plot/line-series';
+import { toLineSeries } from '@/ui/windows/plot/plot-data';
 
 const MS = 1000;
 

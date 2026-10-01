@@ -72,7 +72,7 @@ export function loadRecording(
   let skipped = 0;
 
   for (const { run, blocks, gaps } of recording.runs) {
-    skipped += store.restoreRun(run, blocks, latestGaps(gaps), source);
+    skipped += store.restoreRun(run, blocks, gaps, source);
   }
 
   for (const { kind, timeUs } of recording.boundaries.toSorted((a, b) => a.timeUs - b.timeUs)) {
@@ -84,20 +84,4 @@ export function loadRecording(
   }
 
   return { store, skipped };
-}
-
-/**
- * The gaps of a run as they ended up: a recorder writes a gap again when it grows, so the last
- * gap written with a start replaces the ones before it; ordered by index, and among gaps of one
- * index by when they were last written.
- */
-function latestGaps(gaps: readonly RecordedGap[]): RecordedGap[] {
-  const byStart = new Map<number, RecordedGap>();
-
-  for (const gap of gaps) {
-    byStart.delete(gap.startUs);
-    byStart.set(gap.startUs, gap);
-  }
-
-  return [...byStart.values()].toSorted((left, right) => left.index - right.index);
 }

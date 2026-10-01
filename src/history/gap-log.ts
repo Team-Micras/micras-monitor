@@ -179,12 +179,23 @@ export class GapLog {
   }
 
   /**
-   * Take back the gaps of a recording, final and in sample order.
+   * Take back the gaps of a recording, final. A recorder writes a gap again when it grows, so
+   * the last gap written with a start replaces the ones before it; they end up ordered by index,
+   * and among gaps of one index by when they were last written.
    *
-   * @param gaps One gap per start, ordered by index.
+   * @param gaps The gaps, in the order they were written.
    */
   restore(gaps: readonly RecordedGap[]): void {
-    for (const { kind, index, count, startUs, afterUs, untilUs } of gaps) {
+    const byStart = new Map<number, RecordedGap>();
+
+    for (const gap of gaps) {
+      byStart.delete(gap.startUs);
+      byStart.set(gap.startUs, gap);
+    }
+
+    const latest = [...byStart.values()].toSorted((left, right) => left.index - right.index);
+
+    for (const { kind, index, count, startUs, afterUs, untilUs } of latest) {
       this.#gaps.push({ kind, index, count, startUs, afterUs, untilUs });
       this.#memory.account(GAP_BYTES);
     }

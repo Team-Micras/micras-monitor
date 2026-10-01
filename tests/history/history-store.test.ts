@@ -6,7 +6,7 @@ import { GAP_BYTES } from '@/history/gap-log';
 import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store';
 import type { HistoryVariable, RecordingRecord, StoreWarning, VariableSpec } from '@/history/types';
 import { ManualScheduler } from '@/history';
-import { toLineSeries } from '@/ui/windows/plot/line-series';
+import { toLineSeries } from '@/ui/windows/plot/plot-data';
 
 const MS = 1000;
 const SECOND = 1_000_000;

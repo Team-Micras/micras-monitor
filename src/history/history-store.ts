@@ -211,7 +211,8 @@ export class HistoryStore {
    *
    * @param run The run, with the names its variables had.
    * @param blocks Its blocks, in index order.
-   * @param gaps Its gaps, one per start, ordered by index.
+   * @param gaps Its gaps, in the order they were written; a later one with the start of an
+   *   earlier one replaces it.
    * @param source Where the blocks can be read back from.
    * @returns How many blocks did not fit under the cap and were left out.
    * @throws If the run appears twice, or a block does not fit it.

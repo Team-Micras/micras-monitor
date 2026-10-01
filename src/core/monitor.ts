@@ -143,18 +143,18 @@ function isHistoryProblem(warning: { readonly type: string }): warning is Histor
   return LOGGED_PROBLEMS.has(warning.type);
 }
 
-function problemLog(problem: HistoryProblem): SourceLog {
+function problemLog(problem: HistoryProblem, stream: (runId: number) => string): SourceLog {
   const severity = problem.type === 'persistence-recovered' ? 'info' : 'warning';
-  return { severity, source: 'link', text: problemText(problem) };
+  return { severity, source: 'link', text: problemText(problem, stream) };
 }
 
-function problemText(problem: HistoryProblem): string {
+function problemText(problem: HistoryProblem, stream: (runId: number) => string): string {
   if (problem.type === 'precision-loss') {
     return `${problem.name} holds integers past 2^53; the history keeps them rounded`;
   }
 
   if (problem.type === 'time-backwards') {
-    return `run ${problem.runId} sent samples back in time; the history leaves them out`;
+    return `${stream(problem.runId)} sent samples back in time; the history leaves them out`;
   }
 
   if (problem.type === 'persistence-error') {
@@ -209,7 +209,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     };
     this.history.onWarning((warning) => {
       if (isHistoryProblem(warning)) {
-        this.#addLog(problemLog(warning));
+        this.#addLog(problemLog(warning, (runId) => this.#streamOf(runId)));
       }
     });
   }
@@ -399,6 +399,16 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     }
 
     this.#streams.set(id, { runId, clock });
+  }
+
+  #streamOf(runId: number): string {
+    for (const [id, open] of this.#streams) {
+      if (open.runId === runId) {
+        return `stream ${id}`;
+      }
+    }
+
+    return `run ${runId}`;
   }
 
   #closeStream(id: number): void {

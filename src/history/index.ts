@@ -15,13 +15,7 @@ export {
   type Decimation,
   type DecimationStats,
 } from './decimation';
-export {
-  blockKey,
-  type BlockBacking,
-  type BlockRef,
-  type BlockData,
-  type ColumnData,
-} from './block-backing';
+export { type BlockBacking, type BlockRef, type BlockData, type ColumnData } from './block-backing';
 export { ManualScheduler, type Scheduler } from './scheduler';
 export { nextUp, type ColumnKind } from './columns';
 export {
@@ -45,7 +39,6 @@ export type {
   RecordedGap,
   RecordedValue,
   RecordingRecord,
-  RunGap,
   SampleRun,
   SampleValue,
   HistoryVariable,

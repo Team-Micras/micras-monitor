@@ -76,7 +76,7 @@ export class BlockMemory {
   #roomChanged = false;
   #warned = false;
   #resetCount = 0;
-  #status: StoreStatus | undefined;
+  #status: StoreStatus;
 
   /**
    * @param options The cap, the clock, the runs and where to report.
@@ -89,6 +89,7 @@ export class BlockMemory {
     this.#statusSignal = options.statusSignal;
     this.loader = new BlockLoader(this, options.scheduler, options.maxConcurrentLoads);
     this.writer = new BlockWriter(this, options.now, options.flushIntervalMs);
+    this.#status = this.#snapshot();
   }
 
   /** Every block, oldest first. */
@@ -103,27 +104,6 @@ export class BlockMemory {
 
   /** The memory the blocks take and what is recording; the same object until it changes. */
   status(): StoreStatus {
-    if (this.#status) {
-      return this.#status;
-    }
-
-    let residentBlocks = 0;
-
-    for (const block of this.#blocks) {
-      if (block.resident) {
-        residentBlocks++;
-      }
-    }
-
-    this.#status = {
-      usedBytes: this.#usedBytes,
-      capBytes: this.#capBytes,
-      historyStopped: this.#historyStopped,
-      recording: this.writer.recording,
-      persistenceFailing: this.writer.failing,
-      residentBlocks,
-      evictedBlocks: this.#blocks.length - residentBlocks,
-    };
     return this.#status;
   }
 
@@ -170,11 +150,11 @@ export class BlockMemory {
     this.writer.persistSealed();
   }
 
-  /** Seal every block being filled that holds anything, so that it can be written away now. */
+  /** Seal the block every open run is filling, in the order the runs opened. */
   sealOpenBlocks(): void {
-    for (const block of this.#blocks) {
-      if (!block.sealed && block.length > 0) {
-        this.seal(block);
+    for (const run of this.#runs.values()) {
+      if (!run.closed) {
+        run.sealOpenBlock();
       }
     }
   }
@@ -273,7 +253,7 @@ export class BlockMemory {
 
   /** {@link status} changed. */
   statusChanged(): void {
-    this.#status = undefined;
+    this.#status = this.#snapshot();
     this.#statusSignal.touch();
   }
 
@@ -285,6 +265,26 @@ export class BlockMemory {
   /** The run a block belongs to, if the store still holds it. */
   ownerOf(block: Block): StreamRun | undefined {
     return this.#runs.get(block.ref.runId);
+  }
+
+  #snapshot(): StoreStatus {
+    let residentBlocks = 0;
+
+    for (const block of this.#blocks) {
+      if (block.resident) {
+        residentBlocks++;
+      }
+    }
+
+    return {
+      usedBytes: this.#usedBytes,
+      capBytes: this.#capBytes,
+      historyStopped: this.#historyStopped,
+      recording: this.writer.recording,
+      persistenceFailing: this.writer.failing,
+      residentBlocks,
+      evictedBlocks: this.#blocks.length - residentBlocks,
+    };
   }
 
   #stopHistory(): void {

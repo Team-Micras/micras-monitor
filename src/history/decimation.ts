@@ -77,7 +77,7 @@ export class DecimationBuilder implements Decimation {
   /** Where the source's history stood when the result was built. */
   mark: HistoryMark | undefined;
 
-  private scale = 0;
+  #scale = 0;
 
   /**
    * Empty every column for a new window.
@@ -98,7 +98,7 @@ export class DecimationBuilder implements Decimation {
     this.startUs = startUs;
     this.endUs = endUs;
     this.pixels = pixels;
-    this.scale = pixels / (endUs - startUs);
+    this.#scale = pixels / (endUs - startUs);
     this.source = undefined;
     this.mark = undefined;
     this.resetFrom(0);
@@ -112,7 +112,7 @@ export class DecimationBuilder implements Decimation {
   /** Empty the columns from one on, keeping those before it. */
   resetFrom(column: number): void {
     this.fromColumn = column;
-    this.scanFromUs = Math.max(this.startUs, this.startUs + (column - 1) / this.scale);
+    this.scanFromUs = Math.max(this.startUs, this.startUs + (column - 1) / this.#scale);
     this.min.fill(Number.POSITIVE_INFINITY, column, this.pixels);
     this.max.fill(Number.NEGATIVE_INFINITY, column, this.pixels);
     this.flags.fill(0, column, this.pixels);
@@ -120,7 +120,7 @@ export class DecimationBuilder implements Decimation {
 
   /** {@inheritDoc Decimation.columnOf} */
   columnOf(timeUs: number): number {
-    const column = Math.floor((timeUs - this.startUs) * this.scale);
+    const column = Math.floor((timeUs - this.startUs) * this.#scale);
     return column < 0 ? 0 : column >= this.pixels ? this.pixels - 1 : column;
   }
 
@@ -132,7 +132,7 @@ export class DecimationBuilder implements Decimation {
   /** Break the line after the column a time falls in. */
   breakAt(timeUs: number): void {
     if (this.covers(timeUs)) {
-      this.setFlag(this.columnOf(timeUs), COLUMN_BREAKS);
+      this.#setFlag(this.columnOf(timeUs), COLUMN_BREAKS);
     }
   }
 
@@ -154,7 +154,7 @@ export class DecimationBuilder implements Decimation {
       return;
     }
 
-    this.setFlag(column, COLUMN_BREAKS);
+    this.#setFlag(column, COLUMN_BREAKS);
   }
 
   /** Take one sample into account. */
@@ -224,7 +224,7 @@ export class DecimationBuilder implements Decimation {
     return first;
   }
 
-  private setFlag(column: number, flag: number): void {
+  #setFlag(column: number, flag: number): void {
     if (column >= this.fromColumn) {
       this.flags[column] |= flag;
     }

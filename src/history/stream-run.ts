@@ -230,6 +230,18 @@ export class StreamRun {
   }
 
   /**
+   * Seal the block being filled, if it holds anything, so that it can be written away now. The
+   * next sample starts a new block.
+   */
+  sealOpenBlock(): void {
+    const last = this.blocks.at(-1);
+
+    if (last && !last.sealed && last.length > 0) {
+      this.#memory.seal(last);
+    }
+  }
+
+  /**
    * Take no more samples: seal the last block, and make the gaps still open final.
    */
   close(): void {
@@ -238,11 +250,7 @@ export class StreamRun {
     }
 
     this.#closed = true;
-    const last = this.blocks.at(-1);
-
-    if (last && !last.sealed && last.length > 0) {
-      this.#memory.seal(last);
-    }
+    this.sealOpenBlock();
 
     this.#gapLog.endUnstoredRun(Number.NaN, this.storedCount, this.lastTimeUs);
     this.#gapLog.resolvePending(Number.NaN);
@@ -344,7 +352,7 @@ export class StreamRun {
    * End a restore: take the run's gaps, take no more samples, and work the counts out from the
    * blocks and gaps taken back.
    *
-   * @param gaps One gap per start, ordered by index.
+   * @param gaps Its gaps, in the order they were written.
    */
   finishRestore(gaps: readonly RecordedGap[]): void {
     this.#gapLog.restore(gaps);
