@@ -73,7 +73,7 @@ export interface CreditPolicy {
   reset(window?: number): void;
 }
 
-/** When `CumulativeCredit` gives credit back. */
+/** When `CreditLedger` gives credit back. */
 export interface CumulativeCreditOptions {
   /** Give back as soon as this many bytes are owed. */
   minBytes: number;
@@ -99,7 +99,7 @@ const U32_RANGE = 2 ** 32;
  * The total is sent again after every PONG, lost bytes or not, because a CREDIT lost when nothing
  * else is owed would otherwise leave a robot whose window is full waiting for one forever.
  */
-export class CumulativeCredit implements CreditPolicy {
+export class CreditLedger implements CreditPolicy {
   private consumed = 0;
   private told = 0;
   private owedSince: number | null = null;

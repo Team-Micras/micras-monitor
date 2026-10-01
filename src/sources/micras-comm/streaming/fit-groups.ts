@@ -44,7 +44,7 @@ export interface PlannedRate {
 
 /** Stream groups that fit a budget, and what they cost. */
 export interface StreamPlan {
-  /** One request per group, fastest first, ready for `Session.setGroups`. */
+  /** One request per group, fastest first, ready for `RobotLink.setGroups`. */
   readonly groups: readonly GroupRequest[];
   /** Every variable asked for that can stream, in the order first asked. */
   readonly rates: readonly PlannedRate[];
@@ -95,7 +95,7 @@ interface Group {
  * @param input What to stream, the schema and the budget.
  * @returns The groups and the rate of every variable.
  */
-export function planStreams(input: PlanInput): StreamPlan {
+export function fitGroups(input: PlanInput): StreamPlan {
   const { schema, loopTimeUs, budgetBytesPerSecond } = input;
   const { wanted, unstreamable } = gather(schema, input.requests);
   const { groups, leftOut } = formGroups(wanted, loopTimeUs);

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { OneAtATime } from '@/sources/micras-comm/link/async-mutex';
+import { AsyncMutex } from '@/sources/micras-comm/link/async-mutex';
 
 interface Deferred {
   promise: Promise<void>;
@@ -23,7 +23,7 @@ function deferred(): Deferred {
 }
 
 test('starts a task at once when none runs, and the next one only once it settled', async () => {
-  const turns = new OneAtATime();
+  const turns = new AsyncMutex();
   const first = deferred();
   const started: string[] = [];
 
@@ -46,7 +46,7 @@ test('starts a task at once when none runs, and the next one only once it settle
 });
 
 test('a task that fails lets the next one run', async () => {
-  const turns = new OneAtATime();
+  const turns = new AsyncMutex();
   const first = deferred();
 
   const failing = turns.run(() => first.promise);

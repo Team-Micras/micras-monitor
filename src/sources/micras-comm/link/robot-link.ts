@@ -11,12 +11,12 @@ import {
   validateValue,
   writeValue,
   type Frame,
-  type Fundamental,
+  type WireValue,
 } from '../wire';
-import { OneAtATime } from './async-mutex';
+import { AsyncMutex } from './async-mutex';
 import { Backoff } from './backoff';
 import { TimestampUnwrapper } from './clock';
-import { CumulativeCredit, isMetered, wireSize, type CreditPolicy } from './credit';
+import { CreditLedger, isMetered, wireSize, type CreditPolicy } from './credit';
 import {
   EpochRegistry,
   sharedEpochIds,
@@ -26,19 +26,19 @@ import {
   type GroupRequest,
   type OpenEpoch,
 } from './epochs';
-import { SessionError } from './errors';
+import { LinkError } from './errors';
 import { GroupConfigurator } from './group-configurator';
-import { LinkCounters } from './link-counters';
+import { LinkTally } from './link-counters';
 import {
   DEFAULT_TIMING,
   type GroupsResult,
   type HandshakeReason,
-  type LinkStats,
+  type LinkCounters,
   type ReadResult,
   type RobotInfo,
-  type SessionEvents,
-  type SessionState,
-  type SessionTiming,
+  type LinkEvents,
+  type LinkState,
+  type LinkTiming,
   type TimelineEvent,
   type WriteResult,
 } from './link-events';
@@ -61,10 +61,10 @@ import {
 import { PendingRequests, type RequestKind } from './requests';
 import { MemorySchemaCache, type SchemaCache, type SchemaEntry } from './schema';
 import { SchemaLoader, type SchemaProgress } from './schema-loader';
-import { VariableWrites } from './write-queue';
+import { WriteQueue } from './write-queue';
 
 /** What a session is built from; everything has a default. */
-export interface SessionOptions {
+export interface RobotLinkOptions {
   /** Where schemas are kept between sessions; in memory by default. */
   schemaCache?: SchemaCache;
 
@@ -72,7 +72,7 @@ export interface SessionOptions {
   creditPolicy?: CreditPolicy;
 
   /** Timeouts and periods, over the defaults for a radio link. */
-  timing?: Partial<SessionTiming>;
+  timing?: Partial<LinkTiming>;
 
   /** Where epoch ids come from; a counter shared by every session on the page by default. */
   epochIds?: EpochIdSource;
@@ -80,10 +80,10 @@ export interface SessionOptions {
 
 type Timer = ReturnType<typeof setTimeout>;
 
-const LINK_UP_STATES = new Set<SessionState['kind']>(['loadingSchema', 'configuring', 'streaming']);
+const LINK_UP_STATES = new Set<LinkState['kind']>(['loadingSchema', 'configuring', 'streaming']);
 
 /**
- * A session with one robot over one transport: the handshake, the schema, the stream groups,
+ * The link to one robot over one transport: the handshake, the schema, the stream groups,
  * the credit window and every request with its answer.
  *
  * It is a state machine driven by the bytes the transport pushes and by its own timers, and it
@@ -92,24 +92,24 @@ const LINK_UP_STATES = new Set<SessionState['kind']>(['loadingSchema', 'configur
  * goes silent. While the transport is open it never gives up on the robot; only what retrying
  * cannot fix, such as another protocol version, ends in `error`.
  */
-export class Session {
-  private readonly events = new Emitter<SessionEvents>();
+export class RobotLink {
+  private readonly events = new Emitter<LinkEvents>();
   private readonly reader = new FrameReader();
   private readonly requests = new PendingRequests();
   private readonly clock = new TimestampUnwrapper();
-  private readonly counters = new LinkCounters();
-  private readonly sizeRefusals = new OneAtATime();
+  private readonly counters = new LinkTally();
+  private readonly sizeRefusals = new AsyncMutex();
   private readonly credit: CreditPolicy;
-  private readonly timing: SessionTiming;
+  private readonly timing: LinkTiming;
   private readonly helloBackoff: Backoff;
   private readonly schemaLoader: SchemaLoader;
   private readonly epochs: EpochRegistry;
   private readonly groups: GroupConfigurator;
   private readonly watchdog: LinkWatchdog;
-  private readonly writes: VariableWrites;
+  private readonly writes: WriteQueue;
   private readonly detach: Unsubscribe[];
 
-  private current: SessionState = { kind: 'disconnected' };
+  private current: LinkState = { kind: 'disconnected' };
   private info: RobotInfo | undefined;
   private adoptedHash: number | undefined;
   private handshakeReason: HandshakeReason = 'connected';
@@ -130,9 +130,9 @@ export class Session {
    */
   constructor(
     private readonly transport: Transport,
-    options: SessionOptions = {}
+    options: RobotLinkOptions = {}
   ) {
-    this.credit = options.creditPolicy ?? new CumulativeCredit();
+    this.credit = options.creditPolicy ?? new CreditLedger();
     this.timing = { ...DEFAULT_TIMING, ...options.timing };
     this.helloBackoff = new Backoff({
       initialMs: this.timing.helloTimeoutMs,
@@ -152,7 +152,7 @@ export class Session {
     );
     this.groups = this.createGroupConfigurator();
     this.watchdog = this.createWatchdog();
-    this.writes = new VariableWrites({
+    this.writes = new WriteQueue({
       send: (frame) => this.send(frame),
       requests: this.requests,
       timing: this.timing,
@@ -166,7 +166,7 @@ export class Session {
   }
 
   /** Where the session is now. */
-  get state(): SessionState {
+  get state(): LinkState {
     return this.current;
   }
 
@@ -187,7 +187,7 @@ export class Session {
   }
 
   /** The counters of the link. The same object until one of them changes. */
-  get stats(): LinkStats {
+  get stats(): LinkCounters {
     return this.counters.snapshot;
   }
 
@@ -196,7 +196,7 @@ export class Session {
    *
    * @returns A function that removes the listener.
    */
-  on<K extends keyof SessionEvents>(event: K, listener: Listener<SessionEvents[K]>): Unsubscribe {
+  on<K extends keyof LinkEvents>(event: K, listener: Listener<LinkEvents[K]>): Unsubscribe {
     return this.events.on(event, listener);
   }
 
@@ -226,7 +226,7 @@ export class Session {
       return;
     }
 
-    const closed = new SessionError('closed', 'The session was closed');
+    const closed = new LinkError('closed', 'The session was closed');
 
     this.stopActivity(closed, 'disconnected');
     this.stopStats();
@@ -251,7 +251,7 @@ export class Session {
    */
   setGroups(requests: readonly GroupRequest[]): Promise<GroupsResult> {
     if (this.current.kind === 'closed') {
-      return Promise.reject(new SessionError('closed'));
+      return Promise.reject(new LinkError('closed'));
     }
 
     if (this.current.kind === 'error') {
@@ -261,7 +261,7 @@ export class Session {
     const schema = this.schema;
 
     if (!schema) {
-      return Promise.reject(new SessionError('not-ready', 'The schema is not known yet'));
+      return Promise.reject(new LinkError('not-ready', 'The schema is not known yet'));
     }
 
     const result = this.groups.request(schema, requests);
@@ -284,7 +284,7 @@ export class Session {
    * @param value Its new value, which has to fit its type.
    * @returns What the robot answered, or that a newer write replaced this one before it was sent.
    */
-  async write(variableId: number, value: Fundamental): Promise<WriteResult> {
+  async write(variableId: number, value: WireValue): Promise<WriteResult> {
     const entry = this.requireEntry(variableId);
 
     if (entry.type === TypeCode.BLOB) {
@@ -296,7 +296,7 @@ export class Session {
   }
 
   /** The value of the newest write to a variable that the robot has not answered yet. */
-  pendingWrite(variableId: number): Fundamental | undefined {
+  pendingWrite(variableId: number): WireValue | undefined {
     return this.writes.pending(variableId);
   }
 
@@ -415,7 +415,7 @@ export class Session {
       this.startStats();
       this.startHandshake('connected');
     } else if (this.current.kind !== 'disconnected') {
-      this.stopActivity(new SessionError('disconnected', 'The transport closed'), 'disconnected');
+      this.stopActivity(new LinkError('disconnected', 'The transport closed'), 'disconnected');
       this.stopStats();
       this.reader.clear();
       this.setState({ kind: 'disconnected' });
@@ -424,7 +424,7 @@ export class Session {
 
   private startHandshake(reason: HandshakeReason): void {
     this.stopActivity(
-      new SessionError('restarted', `The handshake restarted (${reason})`),
+      new LinkError('restarted', `The handshake restarted (${reason})`),
       'restarted',
       ['group', 'ping']
     );
@@ -508,7 +508,7 @@ export class Session {
     this.stopTimer(this.stateTimer);
 
     if (this.adoptedHash !== undefined && this.adoptedHash !== ready.hash) {
-      this.groups.dropLayout(new SessionError('restarted', 'The robot has a different schema now'));
+      this.groups.dropLayout(new LinkError('restarted', 'The robot has a different schema now'));
     }
 
     this.adoptedHash = ready.hash;
@@ -859,8 +859,8 @@ export class Session {
     return entry;
   }
 
-  private notReady(): SessionError {
-    return new SessionError('not-ready', `The session is ${this.current.kind}`);
+  private notReady(): LinkError {
+    return new LinkError('not-ready', `The session is ${this.current.kind}`);
   }
 
   private send(frame: Uint8Array): void {
@@ -872,7 +872,7 @@ export class Session {
     this.counters.add('bytesOut', frame.length);
   }
 
-  private setState(state: SessionState): void {
+  private setState(state: LinkState): void {
     this.current = state;
     this.events.emit('state', state);
   }

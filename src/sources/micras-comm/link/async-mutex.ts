@@ -6,7 +6,7 @@
  * The session uses it for requests whose ERROR could be taken for another's, which only waiting
  * can tell apart.
  */
-export class OneAtATime {
+export class AsyncMutex {
   private running: Promise<void> | null = null;
 
   /**

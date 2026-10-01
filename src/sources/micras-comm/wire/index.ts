@@ -8,7 +8,7 @@
  */
 
 export * as Cobs from './cobs';
-export { encodeFrame, FrameReader, Reader, Writer, type Frame } from './frame';
+export { encodeFrame, FrameReader, PayloadReader, PayloadWriter, type Frame } from './frame';
 export {
   CommandResult,
   CREDIT_WINDOW,
@@ -33,5 +33,5 @@ export {
   typeName,
   validateValue,
   writeValue,
-  type Fundamental,
+  type WireValue,
 } from './value-codec';

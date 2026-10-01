@@ -38,7 +38,7 @@ export interface Frame {
 /**
  * Append little endian values to a payload.
  */
-export class Writer {
+export class PayloadWriter {
   private bytes: number[] = [];
 
   /** Append an unsigned byte. */
@@ -82,7 +82,7 @@ export class Writer {
 /**
  * Take little endian values from a payload.
  */
-export class Reader {
+export class PayloadReader {
   private view: DataView;
   private index = 0;
 

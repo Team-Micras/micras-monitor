@@ -1,15 +1,15 @@
 import { asError } from '../transports/transport';
 import { ErrorCode, MAX_GROUPS } from '../wire';
-import type { OneAtATime } from './async-mutex';
+import type { AsyncMutex } from './async-mutex';
 import {
-  planGroups,
+  toGroupLayouts,
   sameLayout,
   type EpochRegistry,
   type GroupLayout,
   type GroupRequest,
 } from './epochs';
-import { RobotError, SessionError, TimeoutError } from './errors';
-import type { GroupsResult, SessionTiming } from './link-events';
+import { RobotError, LinkError, TimeoutError } from './errors';
+import type { GroupsResult, LinkTiming } from './link-events';
 import { encodeGroupDefine, encodeGroupEnable, type GroupAck } from './messages';
 import type { ErrorMatcher, PendingRequests } from './requests';
 import type { SchemaEntry } from './schema';
@@ -27,9 +27,9 @@ export interface GroupConfiguratorHost {
    * GROUP_TOO_LARGE and a context that may be the same number, so only one of them may wait for
    * its answer at a time.
    */
-  readonly sizeRefusals: OneAtATime;
+  readonly sizeRefusals: AsyncMutex;
 
-  readonly timing: SessionTiming;
+  readonly timing: LinkTiming;
 
   /** The handshake the robot's groups belong to; a pass stops as soon as it changes. */
   generation(): number;
@@ -92,7 +92,7 @@ export class GroupConfigurator {
     let layouts: GroupLayout[];
 
     try {
-      layouts = planGroups(schema, requests);
+      layouts = toGroupLayouts(schema, requests);
     } catch (error) {
       return Promise.reject(asError(error));
     }
@@ -314,7 +314,7 @@ export class GroupConfigurator {
 
   private throwIfRestarted(generation: number): void {
     if (generation !== this.host.generation()) {
-      throw new SessionError('restarted');
+      throw new LinkError('restarted');
     }
   }
 

@@ -99,7 +99,7 @@ export type SampleValue = number | bigint;
  * @returns The layouts to send.
  * @throws If a request cannot be streamed as asked.
  */
-export function planGroups(
+export function toGroupLayouts(
   schema: readonly SchemaEntry[],
   requests: readonly GroupRequest[]
 ): GroupLayout[] {

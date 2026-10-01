@@ -17,11 +17,11 @@ import { parseArgs } from 'node:util';
 
 import { TypeCode } from '../src/sources/micras-comm/wire';
 import {
-  Session,
+  RobotLink,
   WebSocketTransport,
   type Epoch,
   type HandshakeReason,
-  type LinkStats,
+  type LinkCounters,
   type SchemaEntry,
 } from '../src/sources/micras-comm/link';
 
@@ -72,7 +72,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function describeStats(stats: LinkStats, elapsed: number): string {
+function describeStats(stats: LinkCounters, elapsed: number): string {
   return [
     `in ${stats.bytesIn} B (${Math.round(stats.bytesIn / elapsed)} B/s)`,
     `out ${stats.bytesOut} B`,
@@ -85,7 +85,7 @@ function describeStats(stats: LinkStats, elapsed: number): string {
   ].join(', ');
 }
 
-const session = new Session(new WebSocketTransport(args.url));
+const session = new RobotLink(new WebSocketTransport(args.url));
 const reasons: HandshakeReason[] = [];
 const samplesPerEpoch = new Map<number, number>();
 const lastValues = new Map<number, readonly (number | bigint)[]>();

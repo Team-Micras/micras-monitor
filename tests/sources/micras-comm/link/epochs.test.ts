@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { decodeAccess, TypeCode, writeValue } from '@/sources/micras-comm/wire';
 import {
   EpochRegistry,
-  planGroups,
+  toGroupLayouts,
   sameLayout,
   type Epoch,
   type EpochEndReason,
@@ -22,9 +22,9 @@ const SCHEMA: SchemaEntry[] = [
   { id: 5, name: 'maze', type: TypeCode.BLOB, access: STREAM },
 ];
 
-describe('planGroups', () => {
+describe('toGroupLayouts', () => {
   test('adds up the sample size from the schema', () => {
-    const [layout] = planGroups(SCHEMA, [{ variableIds: [0, 1, 2], periodTicks: 80 }]);
+    const [layout] = toGroupLayouts(SCHEMA, [{ variableIds: [0, 1, 2], periodTicks: 80 }]);
 
     expect(layout).toMatchObject({
       group: 0,
@@ -41,7 +41,7 @@ describe('planGroups', () => {
     [[{ variableIds: [0], periodTicks: 0 }], 'period'],
     [Array.from({ length: 5 }, () => ({ variableIds: [0], periodTicks: 1 })), '4 groups'],
   ])('refuses %j', (requests, message) => {
-    expect(() => planGroups(SCHEMA, requests)).toThrow(message);
+    expect(() => toGroupLayouts(SCHEMA, requests)).toThrow(message);
   });
 });
 
@@ -60,7 +60,7 @@ function recordingRegistry() {
 }
 
 describe('epochs', () => {
-  const [layout] = planGroups(SCHEMA, [{ variableIds: [0, 2, 3], periodTicks: 8 }]);
+  const [layout] = toGroupLayouts(SCHEMA, [{ variableIds: [0, 2, 3], periodTicks: 8 }]);
   const define = (registry: EpochRegistry, timeline = 1) =>
     registry.define(layout, 8, layout.sampleSize, timeline);
 

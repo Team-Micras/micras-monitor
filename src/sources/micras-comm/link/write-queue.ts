@@ -1,6 +1,6 @@
 import { asError } from '../transports/transport';
-import { ErrorCode, WriteStatus, type Fundamental } from '../wire';
-import type { SessionTiming, WriteEvent, WriteResult } from './link-events';
+import { ErrorCode, WriteStatus, type WireValue } from '../wire';
+import type { LinkTiming, WriteEvent, WriteResult } from './link-events';
 import { encodeWrite } from './messages';
 import type { PendingRequests } from './requests';
 
@@ -12,14 +12,14 @@ export interface VariableWritesHost {
   /** Where writes wait for their WRITE_ACK. */
   readonly requests: PendingRequests;
 
-  readonly timing: SessionTiming;
+  readonly timing: LinkTiming;
 
   /** Report a step in the life of a write. */
   emit(event: WriteEvent): void;
 }
 
 interface Write {
-  readonly value: Fundamental;
+  readonly value: WireValue;
   readonly bytes: Uint8Array;
   resolve(result: WriteResult): void;
   reject(error: Error): void;
@@ -33,7 +33,7 @@ interface Write {
  * its answer is held back and sent after it; a newer one replaces it before it is sent, and the
  * newest value always ends up on the robot.
  */
-export class VariableWrites {
+export class WriteQueue {
   private readonly inFlight = new Map<number, Write>();
   private readonly held = new Map<number, Write>();
 
@@ -47,7 +47,7 @@ export class VariableWrites {
    * @param bytes The value as it goes on the wire.
    * @returns What the robot answered, or that a newer write replaced this one first.
    */
-  write(variableId: number, value: Fundamental, bytes: Uint8Array): Promise<WriteResult> {
+  write(variableId: number, value: WireValue, bytes: Uint8Array): Promise<WriteResult> {
     return new Promise<WriteResult>((resolve, reject) => {
       const write: Write = { value, bytes, resolve, reject };
 
@@ -69,7 +69,7 @@ export class VariableWrites {
   }
 
   /** The newest value written to a variable that the robot has not answered yet. */
-  pending(variableId: number): Fundamental | undefined {
+  pending(variableId: number): WireValue | undefined {
     return (this.held.get(variableId) ?? this.inFlight.get(variableId))?.value;
   }
 

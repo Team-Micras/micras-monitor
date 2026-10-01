@@ -29,7 +29,7 @@ import { connectionStatus, isLinkUp, sameStatus } from './connection-status';
 import {
   BluetoothTransport,
   MemorySchemaCache,
-  Session,
+  RobotLink,
   StreamPlanner,
   WebSocketTransport,
   type BluetoothLike,
@@ -39,8 +39,8 @@ import {
   type SampleEvent,
   type SchemaCache,
   type SchemaEntry,
-  type SessionState,
-  type SessionTiming,
+  type LinkState,
+  type LinkTiming,
   type StreamPlannerOptions,
   type TimelineEvent,
   type Transport,
@@ -53,7 +53,7 @@ import { CommandResult, Severity, WriteStatus } from './wire';
 /** What the source is built from; everything has a default. */
 export interface MicrasCommOptions {
   /** The session's timeouts and periods, over the defaults for a radio link. */
-  readonly timing?: Partial<SessionTiming>;
+  readonly timing?: Partial<LinkTiming>;
   /** How the stream planner plans. */
   readonly planner?: StreamPlannerOptions;
   /** `navigator.bluetooth`, when the browser has it. */
@@ -67,7 +67,7 @@ export interface MicrasCommOptions {
 /** A session with the transport under it and the planner over it. */
 interface Link {
   readonly transport: Transport;
-  readonly session: Session;
+  readonly session: RobotLink;
   readonly planner: StreamPlanner;
 }
 
@@ -108,7 +108,7 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function describeState(state: SessionState): string | null {
+function describeState(state: LinkState): string | null {
   switch (state.kind) {
     case 'handshaking':
       return state.attempt === 1 ? `handshake (${state.reason})` : null;
@@ -197,7 +197,7 @@ export class MicrasCommSource implements Source {
   }
 
   /** The session of the latest connection, if it has one, for diagnostics. */
-  get session(): Session | undefined {
+  get session(): RobotLink | undefined {
     return this.#current?.link?.session;
   }
 
@@ -251,7 +251,7 @@ export class MicrasCommSource implements Source {
   }
 
   #link(transport: Transport): Link {
-    const session = new Session(transport, {
+    const session = new RobotLink(transport, {
       timing: this.#options.timing,
       schemaCache: this.#schemaCache,
     });
@@ -445,7 +445,7 @@ class MicrasCommConnection implements SourceConnection {
     }
   }
 
-  #linkedSession(): Session | undefined {
+  #linkedSession(): RobotLink | undefined {
     return this.#status?.kind === 'linked' ? this.#link?.session : undefined;
   }
 
@@ -477,7 +477,7 @@ class MicrasCommConnection implements SourceConnection {
     });
   }
 
-  #onState(state: SessionState): void {
+  #onState(state: LinkState): void {
     const text = describeState(state);
 
     if (text !== null) {

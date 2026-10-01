@@ -1,9 +1,9 @@
 /**
- * The link to a robot: transports that carry bytes, and the session that speaks the protocol
- * over them.
+ * The link to a robot: transports that carry bytes, the {@link RobotLink} that speaks the protocol
+ * over them, and the stream planner that fits its groups.
  *
- * It depends only on `src/protocol` and on no framework, so the application, the tools and the
- * tests all drive the same session.
+ * It depends only on `wire/`, `src/core` and no framework, so the source, the scripts and the
+ * tests all drive the same link.
  *
  * @module
  */
@@ -26,7 +26,7 @@ export {
 } from '../transports/bluetooth/bluetooth-types';
 export { DEFAULT_WRAP_SLACK_US, TimestampUnwrapper } from './clock';
 export {
-  CumulativeCredit,
+  CreditLedger,
   DEFAULT_CUMULATIVE,
   isMetered,
   wireSize,
@@ -35,11 +35,11 @@ export {
   type CreditPolicy,
 } from './credit';
 export { Emitter, type Listener, type Unsubscribe } from '@/core/emitter';
-export { RobotError, SessionError, TimeoutError, type SessionErrorReason } from './errors';
+export { RobotError, LinkError, TimeoutError, type LinkErrorReason } from './errors';
 export {
   EpochRegistry,
   OpenEpoch,
-  planGroups,
+  toGroupLayouts,
   SAMPLE_HEADER_SIZE,
   sharedEpochIds,
   type Epoch,
@@ -52,7 +52,7 @@ export {
 } from './epochs';
 export {
   DEFAULT_LINK_BUDGET,
-  LinkBudget,
+  BandwidthEstimator,
   UART_BYTES_PER_SECOND,
   type BudgetEstimate,
   type LinkBudgetOptions,
@@ -65,10 +65,10 @@ export {
   type SchemaCache,
   type SchemaEntry,
 } from './schema';
-export { Session, type SessionOptions } from './robot-link';
+export { RobotLink, type RobotLinkOptions } from './robot-link';
 export {
   MIN_DEGRADED_RATE_HZ,
-  planStreams,
+  fitGroups,
   type PlanInput,
   type PlannedRate,
   type RateRequest,
@@ -76,7 +76,7 @@ export {
 } from '../streaming/fit-groups';
 export {
   StreamPlanner,
-  type PlannerSession,
+  type PlannerLink,
   type StreamPlannerEvents,
   type StreamPlannerOptions,
 } from '../streaming/stream-planner';
@@ -86,16 +86,16 @@ export {
   type EpochEndEvent,
   type GroupsResult,
   type HandshakeReason,
-  type LinkStats,
+  type LinkCounters,
   type LogEvent,
   type ProtocolErrorEvent,
   type ReadResult,
   type RobotInfo,
   type SampleEvent,
   type SchemaReady,
-  type SessionEvents,
-  type SessionState,
-  type SessionTiming,
+  type LinkEvents,
+  type LinkState,
+  type LinkTiming,
   type TimelineEvent,
   type ValueEvent,
   type WriteEvent,

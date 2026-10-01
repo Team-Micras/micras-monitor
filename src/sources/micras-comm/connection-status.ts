@@ -6,26 +6,26 @@
 
 import type { SourceIdentity, SourceStatus, Target } from '@/core/source';
 
-import type { RobotInfo, SessionState, TransportState } from './link';
+import type { RobotInfo, LinkState, TransportState } from './link';
 
 /** Where a live connection is, as {@link connectionStatus} reads it. */
 export interface LinkSnapshot {
   readonly target: Target;
   readonly transport: TransportState;
-  readonly session: SessionState;
+  readonly session: LinkState;
   readonly robot: RobotInfo | undefined;
   /** When the link last came up, in `Date.now()` milliseconds. */
   readonly since: number;
 }
 
-const UP_STATES: ReadonlySet<SessionState['kind']> = new Set([
+const UP_STATES: ReadonlySet<LinkState['kind']> = new Set([
   'loadingSchema',
   'configuring',
   'streaming',
 ]);
 
 /** Whether a session's link is up: the robot said who it is and takes commands. */
-export function isLinkUp(state: SessionState): boolean {
+export function isLinkUp(state: LinkState): boolean {
   return UP_STATES.has(state.kind);
 }
 

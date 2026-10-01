@@ -26,7 +26,7 @@ import {
   Severity,
   TYPE_SIZE,
   TypeCode,
-  Writer,
+  PayloadWriter,
   WriteStatus,
   writeValue,
   type Frame,
@@ -303,7 +303,7 @@ export class Robot {
 
     group.counter = group.period - 1;
 
-    const payload = new Writer()
+    const payload = new PayloadWriter()
       .u8(index)
       .u16(group.sequence)
       .u32(this.timestampUs())
@@ -326,7 +326,7 @@ export class Robot {
       return;
     }
 
-    const header = new Writer()
+    const header = new PayloadWriter()
       .u32(this.schemaHash)
       .u16(this.schemaIndex)
       .u16(this.variables.length)
@@ -417,7 +417,7 @@ export class Robot {
         this.onCommand(reader);
         break;
       case MessageType.PING:
-        this.send(MessageType.PONG, new Writer().u32(this.window.sentTotal).done());
+        this.send(MessageType.PONG, new PayloadWriter().u32(this.window.sentTotal).done());
         break;
       default:
         this.sendError(ErrorCode.UNKNOWN_TYPE, frame.type);
@@ -437,7 +437,7 @@ export class Robot {
 
     this.send(
       MessageType.HELLO_ACK,
-      new Writer()
+      new PayloadWriter()
         .u8(PROTOCOL_VERSION)
         .u32(this.schemaHash)
         .u16(this.variables.length)
@@ -522,7 +522,10 @@ export class Robot {
   }
 
   private sendGroupAck(index: number, period: number, sampleSize: number): void {
-    this.send(MessageType.GROUP_ACK, new Writer().u8(index).u16(period).u16(sampleSize).done());
+    this.send(
+      MessageType.GROUP_ACK,
+      new PayloadWriter().u8(index).u16(period).u16(sampleSize).done()
+    );
   }
 
   private onCredit(reader: LenientReader): void {
@@ -552,7 +555,7 @@ export class Robot {
 
     const status = this.write(id, reader.rest());
 
-    this.send(MessageType.WRITE_ACK, new Writer().u16(id).u8(status).done());
+    this.send(MessageType.WRITE_ACK, new PayloadWriter().u16(id).u8(status).done());
   }
 
   private write(id: number, bytes: Uint8Array): WriteStatus {
@@ -598,7 +601,7 @@ export class Robot {
       return;
     }
 
-    this.send(MessageType.VALUE, new Writer().u16(id).raw(value).done());
+    this.send(MessageType.VALUE, new PayloadWriter().u16(id).raw(value).done());
   }
 
   private onCommand(reader: LenientReader): void {
@@ -614,7 +617,7 @@ export class Robot {
 
     const [result, reason] = this.runCommand(code);
 
-    this.send(MessageType.COMMAND_ACK, new Writer().u8(code).u8(result).u8(reason).done());
+    this.send(MessageType.COMMAND_ACK, new PayloadWriter().u8(code).u8(result).u8(reason).done());
   }
 
   private runCommand(code: number): [CommandResult, Reason] {
@@ -713,7 +716,7 @@ export class Robot {
       return;
     }
 
-    const payload = new Writer()
+    const payload = new PayloadWriter()
       .u8(severity)
       .u32(this.timestampUs())
       .raw(new TextEncoder().encode(text).subarray(0, MAX_PAYLOAD_SIZE - LOG_HEADER_SIZE))
@@ -767,7 +770,7 @@ export class Robot {
   }
 
   private sendError(code: ErrorCode, context: number): void {
-    this.send(MessageType.ERROR, new Writer().u8(code).u16(context).done());
+    this.send(MessageType.ERROR, new PayloadWriter().u8(code).u16(context).done());
   }
 }
 

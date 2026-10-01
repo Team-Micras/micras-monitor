@@ -7,7 +7,7 @@
  */
 
 import {
-  Session,
+  RobotLink,
   WebSocketTransport,
   type Epoch,
   type GroupRequest,
@@ -16,9 +16,9 @@ import {
   type ProtocolErrorEvent,
   type SampleEvent,
   type SchemaReady,
-  type SessionOptions,
-  type SessionState,
-  type SessionTiming,
+  type RobotLinkOptions,
+  type LinkState,
+  type LinkTiming,
   type TimelineEvent,
   type WriteEvent,
 } from '@/sources/micras-comm/link';
@@ -29,7 +29,7 @@ import {
 import type { SimulatedRobotOptions } from '@scripts/simulated-robot/server';
 
 /** Timeouts short enough for a test over a local socket. */
-export const TEST_TIMING: Partial<SessionTiming> = {
+export const TEST_TIMING: Partial<LinkTiming> = {
   helloTimeoutMs: 500,
   schemaTimeoutMs: 300,
   requestTimeoutMs: 300,
@@ -41,7 +41,7 @@ export const TEST_TIMING: Partial<SessionTiming> = {
 
 /** Everything a session emitted. */
 export class Recording {
-  readonly states: SessionState[] = [];
+  readonly states: LinkState[] = [];
   readonly schemas: SchemaReady[] = [];
   readonly epochs: Epoch[] = [];
   readonly samples: SampleEvent[] = [];
@@ -51,7 +51,7 @@ export class Recording {
   readonly protocolErrors: ProtocolErrorEvent[] = [];
   readonly timelines: TimelineEvent[] = [];
 
-  constructor(session: Session) {
+  constructor(session: RobotLink) {
     session.on('state', (state) => this.states.push(state));
     session.on('schema', (schema) => this.schemas.push(schema));
     session.on('epoch', (epoch) => this.epochs.push(epoch));
@@ -86,7 +86,7 @@ export class Recording {
 /** A session talking to a simulated robot of its own. */
 export interface Harness {
   readonly robot: InMemoryRobot;
-  readonly session: Session;
+  readonly session: RobotLink;
   readonly recording: Recording;
 
   /** The id of a variable of the robot, by name. */
@@ -105,11 +105,11 @@ export interface Harness {
  */
 export async function connect(
   faults: Partial<Omit<SimulatedRobotOptions, 'port'>> = {},
-  options: SessionOptions = {}
+  options: RobotLinkOptions = {}
 ): Promise<Harness> {
   const robot = startInMemoryRobot(faults);
   const transport = new WebSocketTransport('ws://in-memory', { createSocket: robot.createSocket });
-  const session = new Session(transport, {
+  const session = new RobotLink(transport, {
     timing: TEST_TIMING,
     ...options,
   });
@@ -130,7 +130,7 @@ export async function connect(
   };
 }
 
-function variableId(session: Session, name: string): number {
+function variableId(session: RobotLink, name: string): number {
   const entry = session.schema?.find((candidate) => candidate.name === name);
 
   if (!entry) {
@@ -170,7 +170,7 @@ export async function waitFor(
  * @param requests One request per group.
  */
 export async function applyGroups(
-  session: Session,
+  session: RobotLink,
   requests: readonly GroupRequest[]
 ): Promise<readonly Epoch[]> {
   const result = await session.setGroups(requests);

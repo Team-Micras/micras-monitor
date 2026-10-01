@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { TypeCode } from '@/sources/micras-comm/wire/constants';
 import {
   defaultValue,
-  type Fundamental,
+  type WireValue,
   readValue,
   TYPE_SIZE,
   typeName,
@@ -14,7 +14,7 @@ import {
 interface CodecCase {
   type: TypeCode;
   name: string;
-  value: Fundamental;
+  value: WireValue;
   bytes: number[];
 }
 

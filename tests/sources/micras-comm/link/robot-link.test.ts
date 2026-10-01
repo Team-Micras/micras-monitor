@@ -8,10 +8,10 @@ import {
   FrameReader,
   MessageType,
   TypeCode,
-  Writer,
+  PayloadWriter,
   type Frame,
 } from '@/sources/micras-comm/wire';
-import { RobotError, SessionError, TimeoutError } from '@/sources/micras-comm/link/errors';
+import { RobotError, LinkError, TimeoutError } from '@/sources/micras-comm/link/errors';
 import type { Epoch } from '@/sources/micras-comm/link/epochs';
 import {
   MemorySchemaCache,
@@ -19,14 +19,14 @@ import {
   type SchemaEntry,
 } from '@/sources/micras-comm/link/schema';
 import { wireSize } from '@/sources/micras-comm/link/credit';
-import { Session } from '@/sources/micras-comm/link/robot-link';
+import { RobotLink } from '@/sources/micras-comm/link/robot-link';
 import type {
   EpochEndEvent,
   GroupsResult,
   LogEvent,
   SampleEvent,
-  SessionState,
-  SessionTiming,
+  LinkState,
+  LinkTiming,
   TimelineEvent,
 } from '@/sources/micras-comm/link/link-events';
 import { BaseTransport } from '@/sources/micras-comm/transports/transport';
@@ -39,7 +39,7 @@ const SCHEMA: SchemaEntry[] = [
   { id: 1, name: 'n', type: TypeCode.U16, access: decodeAccess(0x01) },
 ];
 
-const TIMING: Partial<SessionTiming> = {
+const TIMING: Partial<LinkTiming> = {
   helloTimeoutMs: 100,
   helloBackoffMaxMs: 400,
   requestTimeoutMs: 100,
@@ -102,7 +102,7 @@ function helloAck(fields: HelloAckFields = {}): Uint8Array {
   const { bootId = BOOT_ID, hash = HASH, count = SCHEMA.length, creditWindow = 256 } = fields;
   const name = new TextEncoder().encode('micras');
 
-  return new Writer()
+  return new PayloadWriter()
     .u8(2)
     .u32(hash)
     .u16(count)
@@ -115,23 +115,23 @@ function helloAck(fields: HelloAckFields = {}): Uint8Array {
 }
 
 function helloAckV1(): Uint8Array {
-  return new Writer().u8(1).u32(HASH).u16(SCHEMA.length).u32(LOOP_TIME_US).u16(256).done();
+  return new PayloadWriter().u8(1).u32(HASH).u16(SCHEMA.length).u32(LOOP_TIME_US).u16(256).done();
 }
 
 function log(text: string, timestampUs = 0): Uint8Array {
-  return new Writer().u8(1).u32(timestampUs).raw(new TextEncoder().encode(text)).done();
+  return new PayloadWriter().u8(1).u32(timestampUs).raw(new TextEncoder().encode(text)).done();
 }
 
 function pong(sentTotal: number): Uint8Array {
-  return new Writer().u32(sentTotal).done();
+  return new PayloadWriter().u32(sentTotal).done();
 }
 
 function sample(group: number, seq: number, timestampUs: number, x: number, n: number) {
-  return new Writer().u8(group).u16(seq).u32(timestampUs).f32(x).u16(n).done();
+  return new PayloadWriter().u8(group).u16(seq).u32(timestampUs).f32(x).u16(n).done();
 }
 
 function schemaPage(first: number, count: number): Uint8Array {
-  const writer = new Writer().u32(HASH).u16(first).u16(SCHEMA.length).u8(count);
+  const writer = new PayloadWriter().u32(HASH).u16(first).u16(SCHEMA.length).u8(count);
 
   for (const entry of SCHEMA.slice(first, first + count)) {
     const name = new TextEncoder().encode(entry.name);
@@ -142,7 +142,7 @@ function schemaPage(first: number, count: number): Uint8Array {
 }
 
 function groupAck(group: number, period: number, size: number): Uint8Array {
-  return new Writer().u8(group).u16(period).u16(size).done();
+  return new PayloadWriter().u8(group).u16(period).u16(size).done();
 }
 
 function inOneBatch(...frames: [MessageType, Uint8Array][]): Uint8Array {
@@ -168,7 +168,7 @@ function withBlobSchema(): SchemaCache {
 }
 
 function setup(
-  options: { cached?: boolean; timing?: Partial<SessionTiming>; cache?: SchemaCache } = {}
+  options: { cached?: boolean; timing?: Partial<LinkTiming>; cache?: SchemaCache } = {}
 ) {
   const transport = new ScriptedTransport();
   const schemaCache = options.cache ?? new MemorySchemaCache();
@@ -177,11 +177,11 @@ function setup(
     schemaCache.store(HASH, SCHEMA);
   }
 
-  const session = new Session(transport, {
+  const session = new RobotLink(transport, {
     schemaCache,
     timing: { ...TIMING, ...options.timing },
   });
-  const states: SessionState[] = [];
+  const states: LinkState[] = [];
   const samples: SampleEvent[] = [];
   const errors: string[] = [];
 
@@ -320,7 +320,7 @@ describe('keepalive', () => {
     const { transport, session } = await streaming();
 
     const talking = setInterval(
-      () => transport.robotSends(MessageType.WRITE_ACK, new Writer().u16(9).u8(0).done()),
+      () => transport.robotSends(MessageType.WRITE_ACK, new PayloadWriter().u16(9).u8(0).done()),
       100
     );
     await vi.advanceTimersByTimeAsync(1000);
@@ -378,7 +378,10 @@ describe('credit', () => {
     const { transport } = await withGroup();
 
     transport.robotSends(MessageType.SAMPLE, sample(0, 0, 0, 1, 1));
-    transport.robotSends(MessageType.VALUE, new Writer().u16(0).raw(new Uint8Array(80)).done());
+    transport.robotSends(
+      MessageType.VALUE,
+      new PayloadWriter().u16(0).raw(new Uint8Array(80)).done()
+    );
     transport.robotSendsBytes(new Uint8Array([7, 7, 7, 0]));
     expect(transport.sentOf(MessageType.CREDIT)).toHaveLength(0);
 
@@ -417,7 +420,10 @@ describe('samples', () => {
     const { transport, samples, errors, epoch } = await withGroup();
 
     transport.robotSends(MessageType.SAMPLE, sample(0, 0, 1000, 2.5, 7));
-    transport.robotSends(MessageType.SAMPLE, new Writer().u8(0).u16(1).u32(2000).u8(1).done());
+    transport.robotSends(
+      MessageType.SAMPLE,
+      new PayloadWriter().u8(0).u16(1).u32(2000).u8(1).done()
+    );
 
     expect(samples).toEqual([
       { epoch: epoch.id, seq: 0, timeUs: 1000, values: [2.5, 7], missingBefore: 0 },
@@ -452,7 +458,7 @@ describe('samples', () => {
 test('an ERROR no request was waiting for is reported', async () => {
   const { transport, errors } = await streaming();
 
-  transport.robotSends(MessageType.ERROR, new Writer().u8(0).u16(0x42).done());
+  transport.robotSends(MessageType.ERROR, new PayloadWriter().u8(0).u16(0x42).done());
 
   expect(errors).toEqual(['The robot sent UNKNOWN_TYPE (66)']);
 });
@@ -554,9 +560,9 @@ describe('groups', () => {
       .catch((error: unknown) => error);
     const second = session.setGroups([{ variableIds: [1], periodTicks: 8 }]);
 
-    transport.robotSends(MessageType.ERROR, new Writer().u8(4).u16(0).done());
+    transport.robotSends(MessageType.ERROR, new PayloadWriter().u8(4).u16(0).done());
     await vi.advanceTimersByTimeAsync(0);
-    transport.robotSends(MessageType.ERROR, new Writer().u8(2).u16(0).done());
+    transport.robotSends(MessageType.ERROR, new PayloadWriter().u8(2).u16(0).done());
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 2));
     await vi.advanceTimersByTimeAsync(0);
@@ -590,9 +596,9 @@ describe('groups', () => {
       { variableIds: [1], periodTicks: 8 },
     ]);
 
-    transport.robotSends(MessageType.ERROR, new Writer().u8(4).u16(0).done());
+    transport.robotSends(MessageType.ERROR, new PayloadWriter().u8(4).u16(0).done());
     await vi.advanceTimersByTimeAsync(0);
-    transport.robotSends(MessageType.ERROR, new Writer().u8(2).u16(0).done());
+    transport.robotSends(MessageType.ERROR, new PayloadWriter().u8(2).u16(0).done());
     await vi.advanceTimersByTimeAsync(0);
     transport.robotSends(MessageType.GROUP_ACK, groupAck(1, 8, 2));
     await vi.advanceTimersByTimeAsync(0);
@@ -619,7 +625,7 @@ describe('groups', () => {
 
     session.close();
 
-    expect(await epochs).toBeInstanceOf(SessionError);
+    expect(await epochs).toBeInstanceOf(LinkError);
   });
 });
 
@@ -639,7 +645,7 @@ describe('requests', () => {
     const { transport, session } = await streaming();
     const result = session.command(3, 9);
 
-    transport.robotSends(MessageType.COMMAND_ACK, new Writer().u8(3).u8(2).u8(1).done());
+    transport.robotSends(MessageType.COMMAND_ACK, new PayloadWriter().u8(3).u8(2).u8(1).done());
 
     expect(await result).toEqual({ result: CommandResult.REFUSED, reason: 1 });
     expect([...transport.sentOf(MessageType.COMMAND)[0].payload]).toEqual([3, 9, 0, 0, 0]);
@@ -649,7 +655,7 @@ describe('requests', () => {
     const { transport, session } = await streaming();
     const value = session.read(1);
 
-    transport.robotSends(MessageType.ERROR, new Writer().u8(5).u16(1).done());
+    transport.robotSends(MessageType.ERROR, new PayloadWriter().u8(5).u16(1).done());
 
     await expect(value).rejects.toMatchObject({ code: 5, context: 1 });
   });
@@ -667,7 +673,7 @@ describe('requests', () => {
 
     transport.robotSends(
       MessageType.ERROR,
-      new Writer().u8(ErrorCode.GROUP_TOO_LARGE).u16(2).done()
+      new PayloadWriter().u8(ErrorCode.GROUP_TOO_LARGE).u16(2).done()
     );
     await expect(value).rejects.toMatchObject({ code: ErrorCode.GROUP_TOO_LARGE, context: 2 });
     await vi.advanceTimersByTimeAsync(0);
@@ -714,7 +720,7 @@ describe('requests', () => {
     transport.robotSends(MessageType.GROUP_ACK, groupAck(0, 8, 6));
     transport.robotSends(
       MessageType.VALUE,
-      new Writer()
+      new PayloadWriter()
         .u16(2)
         .raw(new Uint8Array([1, 2, 3]))
         .done()
@@ -953,7 +959,7 @@ describe('epochs', () => {
 
     transport.robotSends(MessageType.SAMPLE, sample(2, 0, 0, 0, 0));
     await vi.advanceTimersByTimeAsync(0);
-    transport.robotSends(MessageType.ERROR, new Writer().u8(2).u16(2).done());
+    transport.robotSends(MessageType.ERROR, new PayloadWriter().u8(2).u16(2).done());
     await vi.advanceTimersByTimeAsync(0);
 
     expect(Array.from(transport.sentOf(MessageType.GROUP_ENABLE)[0].payload)).toEqual([2, 0]);
@@ -974,7 +980,7 @@ describe('epochs', () => {
     const transport = new ScriptedTransport();
     const cache = new MemorySchemaCache();
     cache.store(HASH, SCHEMA);
-    const session = new Session(transport, {
+    const session = new RobotLink(transport, {
       schemaCache: cache,
       timing: TIMING,
       epochIds: () => next++,
@@ -1014,15 +1020,15 @@ describe('writes across a reconnection', () => {
 
     transport.drop();
 
-    expect(await inFlight).toBeInstanceOf(SessionError);
-    expect(await held).toBeInstanceOf(SessionError);
+    expect(await inFlight).toBeInstanceOf(LinkError);
+    expect(await held).toBeInstanceOf(LinkError);
     expect(session.pendingWrite(0)).toBeUndefined();
 
     transport.open();
     transport.robotSends(MessageType.HELLO_ACK, helloAck());
     await vi.advanceTimersByTimeAsync(0);
     const next = session.write(0, 3);
-    transport.robotSends(MessageType.WRITE_ACK, new Writer().u16(0).u8(0).done());
+    transport.robotSends(MessageType.WRITE_ACK, new PayloadWriter().u16(0).u8(0).done());
 
     expect(await next).toEqual({ status: 'answered', writeStatus: 0 });
     expect(transport.sentOf(MessageType.WRITE)).toHaveLength(2);
@@ -1037,9 +1043,9 @@ describe('writes across a reconnection', () => {
     expect(await replaced).toEqual({ status: 'superseded' });
     expect(session.pendingWrite(0)).toBe(3);
 
-    transport.robotSends(MessageType.WRITE_ACK, new Writer().u16(0).u8(0).done());
+    transport.robotSends(MessageType.WRITE_ACK, new PayloadWriter().u16(0).u8(0).done());
     await first;
-    transport.robotSends(MessageType.WRITE_ACK, new Writer().u16(0).u8(0).done());
+    transport.robotSends(MessageType.WRITE_ACK, new PayloadWriter().u16(0).u8(0).done());
     await newest;
 
     const values = transport

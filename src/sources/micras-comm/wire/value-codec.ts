@@ -14,7 +14,7 @@ import { TypeCode } from './constants';
 /**
  * TypeScript equivalent of C++ primitive types.
  */
-export type Fundamental = number | boolean | bigint;
+export type WireValue = number | boolean | bigint;
 
 /**
  * How many bytes a value of each type takes on the wire; a blob has no fixed size.
@@ -68,7 +68,7 @@ export function typeName(type: TypeCode): string {
 /**
  * The value a variable holds before anything has arrived for it.
  */
-export function defaultValue(type: TypeCode): Fundamental {
+export function defaultValue(type: TypeCode): WireValue {
   if (type === TypeCode.BOOL) {
     return false;
   }
@@ -88,7 +88,7 @@ export function defaultValue(type: TypeCode): Fundamental {
  * @param type What the schema says it is.
  * @returns The value, or null if the buffer is too short for it.
  */
-export function readValue(data: Uint8Array, offset: number, type: TypeCode): Fundamental | null {
+export function readValue(data: Uint8Array, offset: number, type: TypeCode): WireValue | null {
   if (offset + TYPE_SIZE[type] > data.length) {
     return null;
   }
@@ -130,7 +130,7 @@ export function readValue(data: Uint8Array, offset: number, type: TypeCode): Fun
  * @param type What the schema says it is.
  * @returns The bytes of the value.
  */
-export function writeValue(value: Fundamental, type: TypeCode): Uint8Array {
+export function writeValue(value: WireValue, type: TypeCode): Uint8Array {
   const buffer = new ArrayBuffer(TYPE_SIZE[type]);
   const view = new DataView(buffer);
 
@@ -182,7 +182,7 @@ export function writeValue(value: Fundamental, type: TypeCode): Uint8Array {
  * @param type What the schema says it is.
  * @throws If the value does not fit the type.
  */
-export function validateValue(value: Fundamental, type: TypeCode): void {
+export function validateValue(value: WireValue, type: TypeCode): void {
   if (type === TypeCode.BOOL) {
     if (typeof value !== 'boolean') {
       throw new Error(`Expected a boolean, got ${typeof value}`);

@@ -1,13 +1,15 @@
-import type { LinkStats } from './link-events';
+import type { LinkCounters } from './link-events';
 
-type Counter = { [K in keyof LinkStats]: LinkStats[K] extends number ? K : never }[keyof LinkStats];
+type Counter = {
+  [K in keyof LinkCounters]: LinkCounters[K] extends number ? K : never;
+}[keyof LinkCounters];
 
 /**
  * The counters of a link, and a snapshot of them that stays the same object until one changes, so
  * that a view reading it on every render only renders again when something did change.
  */
-export class LinkCounters {
-  private readonly values: { -readonly [K in keyof LinkStats]: LinkStats[K] } = {
+export class LinkTally {
+  private readonly values: { -readonly [K in keyof LinkCounters]: LinkCounters[K] } = {
     bytesIn: 0,
     bytesOut: 0,
     framesIn: 0,
@@ -21,10 +23,10 @@ export class LinkCounters {
     handshakes: 0,
     clockResets: 0,
   };
-  private frozen: LinkStats | null = null;
+  private frozen: LinkCounters | null = null;
 
   /** The counters as they are now. */
-  get snapshot(): LinkStats {
+  get snapshot(): LinkCounters {
     this.frozen ??= Object.freeze({ ...this.values });
     return this.frozen;
   }
@@ -38,7 +40,7 @@ export class LinkCounters {
   }
 
   /** Set a value that is measured rather than counted. */
-  set<K extends 'rttMs' | 'clockResets'>(key: K, value: LinkStats[K]): void {
+  set<K extends 'rttMs' | 'clockResets'>(key: K, value: LinkCounters[K]): void {
     if (this.values[key] !== value) {
       this.values[key] = value;
       this.frozen = null;

@@ -26,7 +26,7 @@ export class TimeoutError extends Error {
 }
 
 /** Why a request ended without an answer from the robot. */
-export type SessionErrorReason =
+export type LinkErrorReason =
   /** The session is not in a state that allows the request. */
   | 'not-ready'
   /** The transport dropped. */
@@ -39,11 +39,11 @@ export type SessionErrorReason =
   | 'closed';
 
 /** A request ended because of what happened to the session, not because of the robot. */
-export class SessionError extends Error {
-  override readonly name = 'SessionError';
+export class LinkError extends Error {
+  override readonly name = 'LinkError';
 
   constructor(
-    readonly reason: SessionErrorReason,
+    readonly reason: LinkErrorReason,
     message: string = reason
   ) {
     super(message);

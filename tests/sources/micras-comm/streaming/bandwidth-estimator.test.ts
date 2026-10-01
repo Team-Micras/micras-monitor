@@ -2,12 +2,12 @@ import { describe, expect, test } from 'vitest';
 
 import {
   DEFAULT_LINK_BUDGET,
-  LinkBudget,
+  BandwidthEstimator,
   UART_BYTES_PER_SECOND,
 } from '@/sources/micras-comm/streaming/bandwidth-estimator';
-import type { LinkStats } from '@/sources/micras-comm/link/link-events';
+import type { LinkCounters } from '@/sources/micras-comm/link/link-events';
 
-const BASE: LinkStats = {
+const BASE: LinkCounters = {
   bytesIn: 0,
   bytesOut: 0,
   framesIn: 0,
@@ -26,7 +26,7 @@ const WINDOW = 256;
 const HEADROOM = DEFAULT_LINK_BUDGET.headroom;
 
 class Feed {
-  readonly budget = new LinkBudget({ smoothing: 1 });
+  readonly budget = new BandwidthEstimator({ smoothing: 1 });
   stats = BASE;
   now = 0;
   robotDropped: number | undefined;
@@ -47,7 +47,7 @@ class Feed {
     }
   }
 
-  second(change: Partial<LinkStats>, wantsMore = false) {
+  second(change: Partial<LinkCounters>, wantsMore = false) {
     const { stats } = this;
     this.stats = {
       ...stats,
@@ -62,9 +62,9 @@ class Feed {
   }
 }
 
-describe('LinkBudget', () => {
+describe('BandwidthEstimator', () => {
   test('assumes a radio round trip until a PING measures one', () => {
-    const budget = new LinkBudget();
+    const budget = new BandwidthEstimator();
 
     expect(budget.update(BASE, WINDOW, 0, false).bytesPerSecond).toBeCloseTo(
       ((WINDOW * 1000) / DEFAULT_LINK_BUDGET.assumedRttMs) * HEADROOM

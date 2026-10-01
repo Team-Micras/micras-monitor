@@ -1,4 +1,4 @@
-import type { ErrorCode, Fundamental, Severity, WriteStatus } from '../wire';
+import type { ErrorCode, WireValue, Severity, WriteStatus } from '../wire';
 import type { Epoch, EpochEndReason, SampleValue } from './epochs';
 import type { SchemaEntry } from './schema';
 
@@ -27,7 +27,7 @@ export type HandshakeReason =
  * sending HELLO for as long as the transport is open; `error` is only for what retrying cannot
  * fix, such as a robot that speaks another protocol version.
  */
-export type SessionState =
+export type LinkState =
   | { readonly kind: 'disconnected' }
   | { readonly kind: 'handshaking'; readonly reason: HandshakeReason; readonly attempt: number }
   | { readonly kind: 'loadingSchema'; readonly received: number; readonly total: number }
@@ -91,7 +91,7 @@ export interface DroppedEvent {
 }
 
 /** What a READ returns: a primitive, or the bytes of a blob. */
-export type ReadResult = Fundamental | Uint8Array;
+export type ReadResult = WireValue | Uint8Array;
 
 /** The answer to a READ. */
 export interface ValueEvent {
@@ -104,18 +104,18 @@ export interface ValueEvent {
  * replaced by a newer write before it was sent is `superseded`.
  */
 export type WriteEvent =
-  | { readonly variableId: number; readonly value: Fundamental; readonly state: 'pending' }
-  | { readonly variableId: number; readonly value: Fundamental; readonly state: 'superseded' }
-  | { readonly variableId: number; readonly value: Fundamental; readonly state: 'confirmed' }
+  | { readonly variableId: number; readonly value: WireValue; readonly state: 'pending' }
+  | { readonly variableId: number; readonly value: WireValue; readonly state: 'superseded' }
+  | { readonly variableId: number; readonly value: WireValue; readonly state: 'confirmed' }
   | {
       readonly variableId: number;
-      readonly value: Fundamental;
+      readonly value: WireValue;
       readonly state: 'refused';
       readonly status: WriteStatus;
     }
   | {
       readonly variableId: number;
-      readonly value: Fundamental;
+      readonly value: WireValue;
       readonly state: 'failed';
       readonly error: Error;
     };
@@ -147,7 +147,7 @@ export interface ProtocolErrorEvent {
 }
 
 /** Counters of the link since the session was created. */
-export interface LinkStats {
+export interface LinkCounters {
   readonly bytesIn: number;
   readonly bytesOut: number;
   /** Frames that passed the frame check. */
@@ -172,8 +172,8 @@ export interface LinkStats {
 }
 
 /** Every event a session emits, by name. */
-export interface SessionEvents {
-  state: SessionState;
+export interface LinkEvents {
+  state: LinkState;
   schema: SchemaReady;
   epoch: Epoch;
   epochEnd: EpochEndEvent;
@@ -184,11 +184,11 @@ export interface SessionEvents {
   write: WriteEvent;
   log: LogEvent;
   protocolError: ProtocolErrorEvent;
-  stats: LinkStats;
+  stats: LinkCounters;
 }
 
 /** Every timeout and period of a session, in milliseconds unless named otherwise. */
-export interface SessionTiming {
+export interface LinkTiming {
   /** How long to wait for the first HELLO_ACK before sending HELLO again. */
   helloTimeoutMs: number;
   /** The longest wait between two HELLOs, which the wait grows to as HELLOs go unanswered. */
@@ -215,7 +215,7 @@ export interface SessionTiming {
 }
 
 /** Timing for a radio link with a round trip of 50 to 100 ms. */
-export const DEFAULT_TIMING: SessionTiming = {
+export const DEFAULT_TIMING: LinkTiming = {
   helloTimeoutMs: 1000,
   helloBackoffMaxMs: 5000,
   schemaTimeoutMs: 1500,

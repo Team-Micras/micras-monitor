@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { CommandResult, TypeCode, WriteStatus } from '@/sources/micras-comm/wire';
-import { MemorySchemaCache, SessionError } from '@/sources/micras-comm/link';
+import { MemorySchemaCache, LinkError } from '@/sources/micras-comm/link';
 import {
   applyGroups,
   connect,
@@ -219,7 +219,7 @@ describe('a session against the simulated robot', { timeout: 10_000 }, () => {
 
     session.close();
 
-    expect(await read).toBeInstanceOf(SessionError);
+    expect(await read).toBeInstanceOf(LinkError);
     expect(session.state.kind).toBe('closed');
     robot.close();
     harness = undefined;

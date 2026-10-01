@@ -1,14 +1,18 @@
 import { Emitter, type Listener, type Unsubscribe } from '@/core/emitter';
 
 import type { Epoch, GroupRequest } from '../link/epochs';
-import { RobotError, SessionError } from '../link/errors';
-import type { LinkStats, SampleEvent } from '../link/link-events';
-import type { Session } from '../link/robot-link';
-import { LinkBudget, type BudgetEstimate, type LinkBudgetOptions } from './bandwidth-estimator';
-import { planStreams, type PlannedRate, type RateRequest, type StreamPlan } from './fit-groups';
+import { RobotError, LinkError } from '../link/errors';
+import type { LinkCounters, SampleEvent } from '../link/link-events';
+import type { RobotLink } from '../link/robot-link';
+import {
+  BandwidthEstimator,
+  type BudgetEstimate,
+  type LinkBudgetOptions,
+} from './bandwidth-estimator';
+import { fitGroups, type PlannedRate, type RateRequest, type StreamPlan } from './fit-groups';
 
-/** The part of a {@link Session} a planner uses. */
-export type PlannerSession = Pick<Session, 'on' | 'schema' | 'robot' | 'openEpochs' | 'setGroups'>;
+/** The part of a {@link RobotLink} a planner uses. */
+export type PlannerLink = Pick<RobotLink, 'on' | 'schema' | 'robot' | 'openEpochs' | 'setGroups'>;
 
 /** How a {@link StreamPlanner} plans. */
 export interface StreamPlannerOptions {
@@ -64,9 +68,9 @@ function sameRequests(a: readonly RateRequest[], b: readonly RateRequest[]): boo
   );
 }
 
-function isSessionChange(error: unknown): boolean {
+function isLinkChange(error: unknown): boolean {
   return (
-    error instanceof SessionError &&
+    error instanceof LinkError &&
     (error.reason === 'restarted' ||
       error.reason === 'disconnected' ||
       error.reason === 'closed' ||
@@ -104,7 +108,7 @@ function sameGroups(a: readonly GroupRequest[], b: readonly GroupRequest[]): boo
  */
 export class StreamPlanner {
   private readonly events = new Emitter<StreamPlannerEvents>();
-  private readonly estimator: LinkBudget;
+  private readonly estimator: BandwidthEstimator;
   private readonly debounceMs: number;
   private readonly growthToReplan: number;
   private readonly overspendToReplan: number;
@@ -129,10 +133,10 @@ export class StreamPlanner {
    * @param options How to plan.
    */
   constructor(
-    private readonly session: PlannerSession,
+    private readonly session: PlannerLink,
     options: StreamPlannerOptions = {}
   ) {
-    this.estimator = new LinkBudget(options.budget);
+    this.estimator = new BandwidthEstimator(options.budget);
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.growthToReplan = options.growthToReplan ?? DEFAULT_GROWTH_TO_REPLAN;
     this.overspendToReplan = options.overspendToReplan ?? DEFAULT_OVERSPEND_TO_REPLAN;
@@ -237,7 +241,7 @@ export class StreamPlanner {
     }
   }
 
-  private onStats(stats: LinkStats): void {
+  private onStats(stats: LinkCounters): void {
     const window = this.session.robot?.creditWindow ?? 0;
     const plan = this.current;
     const revision = this.estimator.value.revision;
@@ -296,7 +300,7 @@ export class StreamPlanner {
       return;
     }
 
-    const planned = planStreams({
+    const planned = fitGroups({
       schema,
       loopTimeUs: robot.loopTimeUs,
       requests: this.requests.filter((request) => !this.refused.has(request.variable)),
@@ -345,7 +349,7 @@ export class StreamPlanner {
   }
 
   private onRefused(groups: readonly GroupRequest[], error: unknown): void {
-    if (this.closed || this.applied !== groups || isSessionChange(error)) {
+    if (this.closed || this.applied !== groups || isLinkChange(error)) {
       return;
     }
 

@@ -13,10 +13,10 @@ import {
   ErrorCode,
   MessageType,
   PROTOCOL_VERSION,
-  Reader,
+  PayloadReader,
   Severity,
   TypeCode,
-  Writer,
+  PayloadWriter,
   WriteStatus,
   type Frame,
 } from '../wire';
@@ -145,7 +145,7 @@ export type RobotMessage =
   | Log
   | RobotErrorMessage;
 
-type Decoder = (reader: Reader) => RobotMessage;
+type Decoder = (reader: PayloadReader) => RobotMessage;
 
 const DECODERS: Partial<Record<MessageType, Decoder>> = {
   [MessageType.HELLO_ACK]: decodeHelloAck,
@@ -175,7 +175,7 @@ export function decodeMessage(frame: Frame): RobotMessage | null {
   }
 
   try {
-    return decode(new Reader(frame.payload));
+    return decode(new PayloadReader(frame.payload));
   } catch (error) {
     if (error instanceof RangeError) {
       return null;
@@ -185,7 +185,7 @@ export function decodeMessage(frame: Frame): RobotMessage | null {
   }
 }
 
-function decodeHelloAck(reader: Reader): HelloAck | ForeignHelloAck {
+function decodeHelloAck(reader: PayloadReader): HelloAck | ForeignHelloAck {
   const version = reader.u8();
 
   if (version !== PROTOCOL_VERSION) {
@@ -209,7 +209,7 @@ export function isSupported(ack: HelloAck | ForeignHelloAck): ack is HelloAck {
   return ack.version === PROTOCOL_VERSION;
 }
 
-function decodeSchemaPage(reader: Reader): SchemaPage {
+function decodeSchemaPage(reader: PayloadReader): SchemaPage {
   const schemaHash = reader.u32();
   const first = reader.u16();
   const total = reader.u16();
@@ -228,7 +228,7 @@ function decodeSchemaPage(reader: Reader): SchemaPage {
   return { type: MessageType.SCHEMA_PAGE, schemaHash, first, total, entries };
 }
 
-function decodeGroupAck(reader: Reader): GroupAck {
+function decodeGroupAck(reader: PayloadReader): GroupAck {
   return {
     type: MessageType.GROUP_ACK,
     group: reader.u8(),
@@ -237,7 +237,7 @@ function decodeGroupAck(reader: Reader): GroupAck {
   };
 }
 
-function decodeSample(reader: Reader): Sample {
+function decodeSample(reader: PayloadReader): Sample {
   return {
     type: MessageType.SAMPLE,
     group: reader.u8(),
@@ -247,7 +247,7 @@ function decodeSample(reader: Reader): Sample {
   };
 }
 
-function decodeWriteAck(reader: Reader): WriteAck {
+function decodeWriteAck(reader: PayloadReader): WriteAck {
   return {
     type: MessageType.WRITE_ACK,
     variableId: reader.u16(),
@@ -255,11 +255,11 @@ function decodeWriteAck(reader: Reader): WriteAck {
   };
 }
 
-function decodeValue(reader: Reader): Value {
+function decodeValue(reader: PayloadReader): Value {
   return { type: MessageType.VALUE, variableId: reader.u16(), bytes: reader.rest() };
 }
 
-function decodeCommandAck(reader: Reader): CommandAck {
+function decodeCommandAck(reader: PayloadReader): CommandAck {
   return {
     type: MessageType.COMMAND_ACK,
     code: reader.u8(),
@@ -268,11 +268,11 @@ function decodeCommandAck(reader: Reader): CommandAck {
   };
 }
 
-function decodePong(reader: Reader): Pong {
+function decodePong(reader: PayloadReader): Pong {
   return { type: MessageType.PONG, sentTotal: reader.u32() };
 }
 
-function decodeLog(reader: Reader): Log {
+function decodeLog(reader: PayloadReader): Log {
   return {
     type: MessageType.LOG,
     severity: reader.u8(),
@@ -281,7 +281,7 @@ function decodeLog(reader: Reader): Log {
   };
 }
 
-function decodeError(reader: Reader): RobotErrorMessage {
+function decodeError(reader: PayloadReader): RobotErrorMessage {
   return { type: MessageType.ERROR, code: reader.u8(), context: reader.u16() };
 }
 
@@ -294,7 +294,7 @@ export function encodeHello(): Uint8Array {
 
 /** SCHEMA_REQUEST: send the schema from an entry to the end. */
 export function encodeSchemaRequest(first: number): Uint8Array {
-  return encodeFrame(MessageType.SCHEMA_REQUEST, new Writer().u16(first).done());
+  return encodeFrame(MessageType.SCHEMA_REQUEST, new PayloadWriter().u16(first).done());
 }
 
 /** GROUP_DEFINE: replace a group, which leaves it disabled with its sequence back at zero. */
@@ -303,7 +303,7 @@ export function encodeGroupDefine(
   periodTicks: number,
   variableIds: readonly number[]
 ): Uint8Array {
-  const writer = new Writer().u8(group).u16(periodTicks).u8(variableIds.length);
+  const writer = new PayloadWriter().u8(group).u16(periodTicks).u8(variableIds.length);
 
   for (const id of variableIds) {
     writer.u16(id);
@@ -316,7 +316,7 @@ export function encodeGroupDefine(
 export function encodeGroupEnable(group: number, enabled: boolean): Uint8Array {
   return encodeFrame(
     MessageType.GROUP_ENABLE,
-    new Writer()
+    new PayloadWriter()
       .u8(group)
       .u8(enabled ? 1 : 0)
       .done()
@@ -328,7 +328,7 @@ export function encodeGroupEnable(group: number, enabled: boolean): Uint8Array {
  * the window again by whatever the robot had not been told yet.
  */
 export function creditPayload(consumedTotal: number): Uint8Array {
-  return new Writer().u32(consumedTotal >>> 0).done();
+  return new PayloadWriter().u32(consumedTotal >>> 0).done();
 }
 
 /** CREDIT, around its payload. */
@@ -338,17 +338,17 @@ export function encodeCredit(payload: Uint8Array): Uint8Array {
 
 /** WRITE: set a variable. */
 export function encodeWrite(variableId: number, bytes: Uint8Array): Uint8Array {
-  return encodeFrame(MessageType.WRITE, new Writer().u16(variableId).raw(bytes).done());
+  return encodeFrame(MessageType.WRITE, new PayloadWriter().u16(variableId).raw(bytes).done());
 }
 
 /** READ: ask for the current value of a variable. */
 export function encodeRead(variableId: number): Uint8Array {
-  return encodeFrame(MessageType.READ, new Writer().u16(variableId).done());
+  return encodeFrame(MessageType.READ, new PayloadWriter().u16(variableId).done());
 }
 
 /** COMMAND: ask the robot to act once. */
 export function encodeCommand(code: number, argument: number): Uint8Array {
-  return encodeFrame(MessageType.COMMAND, new Writer().u8(code).u32(argument).done());
+  return encodeFrame(MessageType.COMMAND, new PayloadWriter().u8(code).u32(argument).done());
 }
 
 /** PING: ask for a PONG, which proves the robot is still there. */

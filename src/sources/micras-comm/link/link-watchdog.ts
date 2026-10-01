@@ -1,4 +1,4 @@
-import type { SessionTiming } from './link-events';
+import type { LinkTiming } from './link-events';
 import { encodePing } from './messages';
 import type { PendingRequests } from './requests';
 
@@ -10,7 +10,7 @@ export interface LinkWatchdogHost {
   /** Where PINGs wait for their PONG. */
   readonly requests: PendingRequests;
 
-  readonly timing: SessionTiming;
+  readonly timing: LinkTiming;
 
   /**
    * How long a period of the fastest group streaming is, in milliseconds, or null when nothing

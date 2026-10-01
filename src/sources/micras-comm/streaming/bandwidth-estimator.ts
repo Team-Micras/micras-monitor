@@ -1,9 +1,9 @@
-import type { LinkStats } from '../link/link-events';
+import type { LinkCounters } from '../link/link-events';
 
 /** What the UART between the robot and its radio carries at 115200 baud, 8N1. */
 export const UART_BYTES_PER_SECOND = 11_520;
 
-/** How a {@link LinkBudget} estimates what the link carries. */
+/** How a {@link BandwidthEstimator} estimates what the link carries. */
 export interface LinkBudgetOptions {
   /** The most the link can carry, whatever the credit allows; the robot's UART by default. */
   capBytesPerSecond: number;
@@ -41,7 +41,7 @@ export const DEFAULT_LINK_BUDGET: LinkBudgetOptions = {
   smoothing: 0.5,
 };
 
-/** What a {@link LinkBudget} made of the link's counters. */
+/** What a {@link BandwidthEstimator} made of the link's counters. */
 export interface BudgetEstimate {
   /** The bytes per second samples may take. */
   readonly bytesPerSecond: number;
@@ -59,7 +59,7 @@ export interface BudgetEstimate {
 
 interface Sample {
   readonly at: number;
-  readonly stats: LinkStats;
+  readonly stats: LinkCounters;
   readonly robotDropped: number | undefined;
 }
 
@@ -80,7 +80,7 @@ interface Sample {
  * worse, lets probing start again from there, so the link is found again when it recovers. Traffic the credit does not meter is taken
  * off what samples may use.
  */
-export class LinkBudget {
+export class BandwidthEstimator {
   private readonly options: LinkBudgetOptions;
   private last: Sample | undefined;
   private bytesIn = 0;
@@ -121,7 +121,7 @@ export class LinkBudget {
    * @returns The new estimate.
    */
   update(
-    stats: LinkStats,
+    stats: LinkCounters,
     creditWindow: number,
     now: number,
     wantsMore: boolean,
@@ -175,7 +175,7 @@ export class LinkBudget {
 
   private saturatedSince(
     previous: Sample,
-    stats: LinkStats,
+    stats: LinkCounters,
     robotDropped: number | undefined
   ): boolean {
     if (robotDropped !== undefined && previous.robotDropped !== undefined) {

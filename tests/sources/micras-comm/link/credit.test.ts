@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { encodeFrame, MessageType } from '@/sources/micras-comm/wire';
-import { CumulativeCredit, isMetered, wireSize } from '@/sources/micras-comm/link/credit';
+import { CreditLedger, isMetered, wireSize } from '@/sources/micras-comm/link/credit';
 
 test('only what the robot sends on its own is metered', () => {
   expect(isMetered(MessageType.SAMPLE)).toBe(true);
@@ -22,7 +22,7 @@ function total(grant: { payload: Uint8Array } | null): number | undefined {
 }
 
 test('holds credit back until 64 bytes are owed, then says the total consumed', () => {
-  const credit = new CumulativeCredit();
+  const credit = new CreditLedger();
 
   credit.received(30, 0);
   expect(credit.take(1)).toBeNull();
@@ -37,7 +37,7 @@ test('holds credit back until 64 bytes are owed, then says the total consumed', 
 });
 
 test('gives a small debt back 10 ms after its first byte', () => {
-  const credit = new CumulativeCredit();
+  const credit = new CreditLedger();
 
   credit.received(12, 100);
   expect(credit.dueAt()).toBe(110);
@@ -46,7 +46,7 @@ test('gives a small debt back 10 ms after its first byte', () => {
 });
 
 test('the total wraps at 2 to the 32', () => {
-  const credit = new CumulativeCredit({ minBytes: 1, maxDelayMs: 0 });
+  const credit = new CreditLedger({ minBytes: 1, maxDelayMs: 0 });
 
   expect(credit.resync(2 ** 32 - 100, 0)).toBeNull();
 
@@ -65,7 +65,7 @@ test('the total wraps at 2 to the 32', () => {
 });
 
 test('a PONG gives back what was lost on the way, at once', () => {
-  const credit = new CumulativeCredit();
+  const credit = new CreditLedger();
 
   credit.received(100, 0);
   credit.take(0);
@@ -80,7 +80,7 @@ test('a PONG gives back what was lost on the way, at once', () => {
 });
 
 test('a PONG with nothing lost says the total again, in case its CREDIT was lost', () => {
-  const credit = new CumulativeCredit();
+  const credit = new CreditLedger();
 
   credit.received(100, 0);
   credit.take(0);
@@ -91,14 +91,14 @@ test('a PONG with nothing lost says the total again, in case its CREDIT was lost
 });
 
 test('a PONG before anything was sent says nothing', () => {
-  const credit = new CumulativeCredit();
+  const credit = new CreditLedger();
 
   expect(credit.resync(0, 1)).toBe(0);
   expect(credit.take(1)).toBeNull();
 });
 
 test('a PONG counting less than already arrived is a robot that started over', () => {
-  const credit = new CumulativeCredit();
+  const credit = new CreditLedger();
 
   credit.received(100, 0);
 
@@ -107,7 +107,7 @@ test('a PONG counting less than already arrived is a robot that started over', (
 });
 
 test('starts over from zero when the window resets', () => {
-  const credit = new CumulativeCredit();
+  const credit = new CreditLedger();
 
   credit.received(100, 0);
   credit.reset();

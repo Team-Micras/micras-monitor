@@ -6,7 +6,12 @@ import {
   VECTORS_PROTOCOL_VERSION,
   type FrameVector,
 } from '@tests/support/sources/micras-comm/frame-vectors';
-import { encodeFrame, FrameReader, Reader, Writer } from '@/sources/micras-comm/wire/frame';
+import {
+  encodeFrame,
+  FrameReader,
+  PayloadReader,
+  PayloadWriter,
+} from '@/sources/micras-comm/wire/frame';
 import {
   MAX_FRAME_SIZE,
   MAX_PAYLOAD_SIZE,
@@ -117,16 +122,16 @@ describe('encodeFrame', () => {
   });
 });
 
-describe('Writer and Reader', () => {
+describe('PayloadWriter and PayloadReader', () => {
   test('read back what was written, little endian', () => {
-    const payload = new Writer()
+    const payload = new PayloadWriter()
       .u8(0xab)
       .u16(0x1234)
       .u32(0xdeadbeef)
       .f32(1.5)
       .raw(new TextEncoder().encode('ok'))
       .done();
-    const reader = new Reader(payload);
+    const reader = new PayloadReader(payload);
 
     expect([...payload.subarray(1, 3)]).toEqual([0x34, 0x12]);
     expect(reader.u8()).toBe(0xab);
@@ -141,6 +146,6 @@ describe('Writer and Reader', () => {
   test('reads from a view into a larger buffer', () => {
     const buffer = new Uint8Array([0xff, 0x01, 0x02, 0xff]);
 
-    expect(new Reader(buffer.subarray(1, 3)).u16()).toBe(0x0201);
+    expect(new PayloadReader(buffer.subarray(1, 3)).u16()).toBe(0x0201);
   });
 });

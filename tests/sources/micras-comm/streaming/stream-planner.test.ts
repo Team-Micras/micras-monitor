@@ -2,16 +2,16 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { decodeAccess, ErrorCode, TypeCode } from '@/sources/micras-comm/wire';
 import { Emitter } from '@/core/emitter';
-import { RobotError, SessionError } from '@/sources/micras-comm/link/errors';
+import { RobotError, LinkError } from '@/sources/micras-comm/link/errors';
 import type { Epoch, GroupRequest } from '@/sources/micras-comm/link/epochs';
 import type { SchemaEntry } from '@/sources/micras-comm/link/schema';
 import type {
   GroupsResult,
-  LinkStats,
+  LinkCounters,
   RobotInfo,
-  SessionEvents,
+  LinkEvents,
 } from '@/sources/micras-comm/link/link-events';
-import { StreamPlanner, type PlannerSession } from '@/sources/micras-comm/streaming/stream-planner';
+import { StreamPlanner, type PlannerLink } from '@/sources/micras-comm/streaming/stream-planner';
 
 const STREAM = decodeAccess(0x01);
 const SCHEMA: SchemaEntry[] = ['a', 'b', 'c'].map((name, id) => ({
@@ -29,7 +29,7 @@ const ROBOT: RobotInfo = {
   bootId: 1,
   robotName: 'robot',
 };
-const STATS: LinkStats = {
+const STATS: LinkCounters = {
   bytesIn: 0,
   bytesOut: 0,
   framesIn: 0,
@@ -44,8 +44,8 @@ const STATS: LinkStats = {
   clockResets: 0,
 };
 
-class FakeSession implements PlannerSession {
-  readonly events = new Emitter<SessionEvents>();
+class FakeLink implements PlannerLink {
+  readonly events = new Emitter<LinkEvents>();
   readonly calls: GroupRequest[][] = [];
   schema: readonly SchemaEntry[] | undefined = SCHEMA;
   robot: RobotInfo | undefined = ROBOT;
@@ -53,7 +53,7 @@ class FakeSession implements PlannerSession {
   answer: (groups: readonly GroupRequest[]) => Promise<GroupsResult> = () =>
     Promise.resolve({ status: 'applied', epochs: [] });
 
-  on: PlannerSession['on'] = (event, listener) => this.events.on(event, listener);
+  on: PlannerLink['on'] = (event, listener) => this.events.on(event, listener);
 
   setGroups(requests: readonly GroupRequest[]): Promise<GroupsResult> {
     this.calls.push([...requests]);
@@ -65,12 +65,12 @@ function epochOf(id: number, variableIds: number[]): Epoch {
   return { id, group: 0, variableIds, periodTicks: 80, sampleSize: 4, timeline: 1 };
 }
 
-let session: FakeSession;
+let session: FakeLink;
 let planner: StreamPlanner;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  session = new FakeSession();
+  session = new FakeLink();
   planner = new StreamPlanner(session, { debounceMs: 10, retryMs: 100, now: () => Date.now() });
 });
 
@@ -93,10 +93,10 @@ describe('StreamPlanner', () => {
   test('ignores a plan the session dropped because it restarted or lost the transport', async () => {
     const errors: Error[] = [];
     planner.on('error', (error) => errors.push(error));
-    session.answer = () => Promise.reject(new SessionError('restarted'));
+    session.answer = () => Promise.reject(new LinkError('restarted'));
     planner.request([{ variable: 'a', rateHz: 10 }]);
     await vi.advanceTimersByTimeAsync(20);
-    session.answer = () => Promise.reject(new SessionError('disconnected'));
+    session.answer = () => Promise.reject(new LinkError('disconnected'));
     planner.request([{ variable: 'b', rateHz: 10 }]);
     await vi.advanceTimersByTimeAsync(1000);
 

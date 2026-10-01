@@ -6,7 +6,7 @@ import { SAMPLE_HEADER_SIZE } from '@/sources/micras-comm/link/epochs';
 import type { SchemaEntry } from '@/sources/micras-comm/link/schema';
 import {
   MIN_DEGRADED_RATE_HZ,
-  planStreams,
+  fitGroups,
   type RateRequest,
 } from '@/sources/micras-comm/streaming/fit-groups';
 
@@ -32,7 +32,7 @@ const at =
     ({ variable, rateHz, pinned }) satisfies RateRequest;
 
 function plan(requests: readonly RateRequest[], budget = 1e9, schema = SCHEMA) {
-  return planStreams({
+  return fitGroups({
     schema,
     loopTimeUs: LOOP_US,
     requests,
@@ -44,7 +44,7 @@ function rateOf(result: ReturnType<typeof plan>, variable: string): number {
   return result.rates.find((rate) => rate.variable === variable)?.grantedHz ?? Number.NaN;
 }
 
-describe('planStreams', () => {
+describe('fitGroups', () => {
   test('costs a group as its framed sample times its rate', () => {
     const result = plan(CONTROL.map(at(100)));
     const frame = wireSize(SAMPLE_HEADER_SIZE + 7 * 4);

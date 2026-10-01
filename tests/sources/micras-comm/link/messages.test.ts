@@ -6,7 +6,7 @@ import {
   MessageType,
   Severity,
   TypeCode,
-  Writer,
+  PayloadWriter,
   writeValue,
 } from '@/sources/micras-comm/wire';
 import {
@@ -92,7 +92,7 @@ describe('decoders against the firmware vectors', () => {
 
 describe('decodeMessage', () => {
   test('reads only the version of a HELLO_ACK of protocol version 1', () => {
-    const v1 = new Writer().u8(1).u32(0xf7737285).u16(4).u32(125).u16(256).done();
+    const v1 = new PayloadWriter().u8(1).u32(0xf7737285).u16(4).u32(125).u16(256).done();
     const ack = decodeMessage({ type: MessageType.HELLO_ACK, payload: v1 });
 
     expect(ack).toEqual({ type: MessageType.HELLO_ACK, version: 1 });
