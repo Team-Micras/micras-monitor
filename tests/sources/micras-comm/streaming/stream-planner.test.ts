@@ -187,6 +187,28 @@ describe('StreamPlanner', () => {
     expect(link.calls).toHaveLength(2);
   });
 
+  test('plans again when samples drop, but not while they keep dropping under the same cut', async () => {
+    const plans: number[] = [];
+    planner.on('plan', (plan) => plans.push(plan.budgetBytesPerSecond));
+    planner.request([{ variable: 'a', rateHz: 8000 }]);
+    await vi.advanceTimersByTimeAsync(20);
+    link.events.emit('stats', STATS);
+
+    for (let second = 1; second <= 4; second++) {
+      vi.advanceTimersByTime(1000);
+      link.events.emit('stats', {
+        ...STATS,
+        bytesIn: 3000 * second,
+        creditReturned: 3000 * second,
+        droppedSamples: 40 * second,
+      });
+    }
+
+    expect(plans).toHaveLength(3);
+    expect(plans[2]).toBeLessThan(plans[1]);
+    expect(plans[1]).toBeLessThan(plans[0]);
+  });
+
   test('falls back to gaps once the epoch carrying the drop counter ends', async () => {
     planner.request([
       { variable: 'a', rateHz: 100 },

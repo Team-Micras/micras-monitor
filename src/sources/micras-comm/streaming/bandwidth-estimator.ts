@@ -23,6 +23,16 @@ export interface BandwidthEstimatorOptions {
    * probing starts again; each failed probe doubles it.
    */
   quietHolds: number;
+  /**
+   * How much a run of drops that outlasts a cut cuts the ceiling again, as a factor of what the
+   * link was taken to carry; drops that follow a cut closely are taken as from before it.
+   */
+  backoff: number;
+  /**
+   * How long, in milliseconds, after the ceiling was cut, samples dropping are taken as dropped
+   * before the cut reached the robot, so they cut nothing more.
+   */
+  recoveryMs: number;
   /** The lowest the budget goes, in bytes per second. */
   floorBytesPerSecond: number;
   /** How much of each new measurement the smoothed rates take, from 0 to 1. */
@@ -37,6 +47,8 @@ export const DEFAULT_BANDWIDTH_ESTIMATOR: BandwidthEstimatorOptions = {
   holdMs: 10_000,
   probeGrowth: 1.1,
   quietHolds: 6,
+  backoff: 0.8,
+  recoveryMs: 2500,
   floorBytesPerSecond: 200,
   smoothing: 0.5,
 };
@@ -65,18 +77,23 @@ interface Sample {
  * Estimates the bytes per second a link carries from its counters.
  *
  * The credit bounds the link at one window per round trip, and the robot's UART bounds it
- * again. Neither says what the radio carries: that only shows when samples drop because the
- * robot ran out of credit. The robot's own count of dropped samples says so when it is known;
- * otherwise gaps in the sequence beyond what corrupted frames explain do. The most that arrived
- * over a run of such updates becomes a ceiling.
+ * again. Neither says what the radio carries, nor how long the monitor may take to give credit
+ * back: that only shows when samples drop because the robot ran out of credit. The robot's own
+ * count of dropped samples says so when it is known; otherwise gaps in the sequence beyond what
+ * corrupted frames explain do.
+ *
+ * The first drops put a ceiling at what arrived, below what the link was taken to carry. Drops
+ * that outlast the cut, once the robot had time to get the plan made for it, cut it again by the
+ * backoff, so a link that drops for a reason the counters do not show, such as a monitor that
+ * stalls, is backed off from until it stops. A saturated link never raises the ceiling.
  *
  * A ceiling that ran a hold period without drops is safe. While the plan wants more, it is then
  * raised by one probe, over the most that arrived, and held again. A probe that makes samples
  * drop puts the ceiling back to the last safe one and stops probing for a quiet period that
  * doubles with every failed probe, so on a stable link the estimate settles and drops all but
- * stop. A run of drops that pulls the ceiling below the last safe one, as when the link got
- * worse, lets probing start again from there, so the link is found again when it recovers. Traffic the credit does not meter is taken
- * off what samples may use.
+ * stop. A cut below the last safe ceiling, as when the link got worse, lets probing start again
+ * from there, so the link is found again when it recovers. Traffic the credit does not meter is
+ * taken off what samples may use.
  */
 export class BandwidthEstimator {
   readonly #options: BandwidthEstimatorOptions;
@@ -90,8 +107,7 @@ export class BandwidthEstimator {
   #probeFrom: number | undefined;
   #probing = true;
   #failedProbes = 0;
-  #wasSaturated = false;
-  #episodeCapped = false;
+  #cutAt = Number.NEGATIVE_INFINITY;
   #revision = 0;
   #current: BudgetEstimate;
 
@@ -143,12 +159,11 @@ export class BandwidthEstimator {
     this.#arrivedMax = Math.max(this.#arrivedMax, arrived);
 
     if (saturated) {
-      this.#onSaturated(arrived, now);
+      this.#onSaturated(arrived, this.#capacity(stats.rttMs, creditWindow), now);
     } else if (now - this.#ceilingAt >= this.#options.holdMs && Number.isFinite(this.#ceiling)) {
       this.#onHeld(wantsMore, now);
     }
 
-    this.#wasSaturated = saturated;
     this.#current = this.#estimate(stats.rttMs, creditWindow, saturated);
     return this.#current;
   }
@@ -167,33 +182,35 @@ export class BandwidthEstimator {
     return dropped > discarded;
   }
 
-  #onSaturated(arrived: number, now: number): void {
-    const { floorBytesPerSecond } = this.#options;
+  #onSaturated(arrived: number, capacity: number, now: number): void {
+    const { floorBytesPerSecond, backoff, recoveryMs } = this.#options;
 
     if (this.#probeFrom !== undefined) {
-      this.#setCeiling(this.#probeFrom, now);
+      this.#cut(this.#probeFrom, now);
       this.#probeFrom = undefined;
       this.#probing = false;
       this.#failedProbes++;
-      this.#episodeCapped = true;
       return;
     }
 
-    if (this.#wasSaturated && this.#episodeCapped) {
+    if (now - this.#cutAt < recoveryMs) {
       this.#ceilingAt = now;
       return;
     }
 
-    this.#episodeCapped = false;
-    const episodeMax = this.#wasSaturated ? Math.max(this.#ceiling, arrived) : arrived;
-    const ceiling = Math.max(floorBytesPerSecond, episodeMax);
+    const ceiling = Math.max(floorBytesPerSecond, Math.min(arrived, capacity * backoff));
 
     if (this.#safe !== undefined && ceiling < this.#safe) {
       this.#safe = ceiling;
       this.#probing = true;
     }
 
-    this.#setCeiling(ceiling, now);
+    this.#cut(ceiling, now);
+  }
+
+  #cut(ceiling: number, now: number): void {
+    this.#cutAt = now;
+    this.#setCeiling(Math.min(this.#ceiling, ceiling), now);
   }
 
   #onHeld(wantsMore: boolean, now: number): void {
@@ -229,11 +246,16 @@ export class BandwidthEstimator {
     return previous + this.#options.smoothing * (next - previous);
   }
 
-  #estimate(rttMs: number | null, creditWindow: number, saturated: boolean): BudgetEstimate {
-    const { capBytesPerSecond, headroom, assumedRttMs, floorBytesPerSecond } = this.#options;
+  #capacity(rttMs: number | null, creditWindow: number): number {
+    const { capBytesPerSecond, assumedRttMs } = this.#options;
     const rtt = rttMs !== null && rttMs > 0 ? rttMs : assumedRttMs;
     const credit = creditWindow > 0 ? (creditWindow * 1000) / rtt : capBytesPerSecond;
-    const capacity = Math.min(capBytesPerSecond, credit, this.#ceiling);
+    return Math.min(capBytesPerSecond, credit, this.#ceiling);
+  }
+
+  #estimate(rttMs: number | null, creditWindow: number, saturated: boolean): BudgetEstimate {
+    const { headroom, floorBytesPerSecond } = this.#options;
+    const capacity = this.#capacity(rttMs, creditWindow);
 
     return {
       bytesPerSecond: Math.max(floorBytesPerSecond, capacity * headroom - this.#unmetered),

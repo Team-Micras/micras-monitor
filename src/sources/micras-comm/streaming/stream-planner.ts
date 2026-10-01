@@ -98,11 +98,13 @@ function sameGroups(a: readonly GroupRequest[], b: readonly GroupRequest[]): boo
  * Requests are planned once they have been left alone for a moment, so a burst of layout changes
  * reconfigures the robot once, and requests equal to the last ones change nothing. The budget is
  * estimated again with every stats event of the link, from the robot's own count of dropped
- * samples when a request says which variable holds it. A plan that no longer fits, or that
- * samples drop under, is made again; one that was cut is made again when the ceiling of the
- * link moved or the budget grew enough to be worth a reconfiguration. Samples dropping and a
- * ceiling that moved do so at once, a budget that drifted only once it stayed there a while. The
- * robot is only reconfigured when the groups change.
+ * samples when a request says which variable holds it. A plan is made again at once when the
+ * ceiling of the link moved under a plan it bounds, as samples dropping move it; samples that
+ * keep dropping while the robot gets that plan move nothing, so they do not make it again. A
+ * plan that no longer fits, or one that was cut while the budget grew enough to be worth a
+ * reconfiguration, is made again only once the budget stayed there a while, since the share of
+ * unmetered traffic moves it back and forth. The robot is only reconfigured when the groups
+ * change.
  *
  * A plan the robot refuses is made again after a backoff, without the variables that did not
  * make it into a streaming group, which it reports as not granted until the schema changes.
@@ -260,9 +262,12 @@ export class StreamPlanner {
 
     const overspent =
       plan.usedBytesPerSecond > estimate.bytesPerSecond * (1 + this.#overspendToReplan);
+    const ceilingMoved =
+      estimate.revision !== revision &&
+      (plan.overBudget || plan.usedBytesPerSecond > estimate.bytesPerSecond);
 
     if (this.#retryTimer !== undefined) {
-      if (estimate.saturated || this.#settled(overspent, now)) {
+      if (ceilingMoved || this.#settled(overspent, now)) {
         clearTimeout(this.#retryTimer);
         this.#retryTimer = undefined;
         this.#replan();
@@ -271,12 +276,11 @@ export class StreamPlanner {
       return;
     }
 
-    const ceilingMoved = plan.overBudget && estimate.revision !== revision;
     const roomToGrow =
       plan.overBudget &&
       estimate.bytesPerSecond > plan.budgetBytesPerSecond * (1 + this.#growthToReplan);
 
-    if (estimate.saturated || ceilingMoved || this.#settled(overspent || roomToGrow, now)) {
+    if (ceilingMoved || this.#settled(overspent || roomToGrow, now)) {
       this.#replan();
     }
   }

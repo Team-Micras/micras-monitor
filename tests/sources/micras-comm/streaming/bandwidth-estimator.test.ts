@@ -132,13 +132,70 @@ describe('BandwidthEstimator', () => {
     ).toBeCloseTo(3000 * DEFAULT_BANDWIDTH_ESTIMATOR.probeGrowth);
   });
 
-  test('keeps the most that arrived over a run of saturated updates', () => {
+  test('takes drops right after a cut as from before it, and cuts nothing more', () => {
     const feed = new Feed();
     feed.second({ rttMs: 5 });
     feed.second({ bytesIn: 3000, creditReturned: 3000, droppedSamples: 40 });
     const after = feed.second({ bytesIn: 2400, creditReturned: 2400, droppedSamples: 5 });
 
     expect(after.capacityBytesPerSecond).toBeCloseTo(3000);
+  });
+
+  test('cuts again by the backoff while drops outlast the cut', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    feed.second({ bytesIn: 3000, creditReturned: 3000, droppedSamples: 40 });
+    const ceilings: number[] = [];
+
+    for (let second = 0; second < 6; second++) {
+      ceilings.push(
+        feed.second({ bytesIn: 2600, creditReturned: 2600, droppedSamples: 5 })
+          .capacityBytesPerSecond
+      );
+    }
+
+    const cut = 3000 * DEFAULT_BANDWIDTH_ESTIMATOR.backoff;
+    expect(ceilings[1]).toBeCloseTo(3000);
+    expect(ceilings[2]).toBeCloseTo(cut);
+    expect(ceilings[4]).toBeCloseTo(cut);
+    expect(ceilings[5]).toBeCloseTo(cut * DEFAULT_BANDWIDTH_ESTIMATOR.backoff);
+  });
+
+  test('never raises the ceiling while samples drop, whatever arrived', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 5 });
+    feed.second({ bytesIn: 3000, creditReturned: 3000, droppedSamples: 40 });
+    let highest = 0;
+
+    for (let second = 0; second < 12; second++) {
+      const dropping = second % 2 === 0;
+      const estimate = feed.second({
+        bytesIn: 4000,
+        creditReturned: 3000,
+        droppedSamples: dropping ? 5 : 0,
+      });
+      highest = Math.max(highest, estimate.capacityBytesPerSecond);
+    }
+
+    expect(highest).toBeCloseTo(3000);
+    expect(feed.budget.value.capacityBytesPerSecond).toBeLessThan(3000);
+  });
+
+  test('backs off from a link the credit bounds, below the bound', () => {
+    const feed = new Feed();
+    feed.second({ rttMs: 100 });
+    const credit = (WINDOW * 1000) / 100;
+    const first = feed.second({ bytesIn: 2500, creditReturned: 2500, droppedSamples: 4 });
+    feed.second({ bytesIn: 2400, creditReturned: 2400, droppedSamples: 4 });
+    feed.second({ bytesIn: 2400, creditReturned: 2400, droppedSamples: 4 });
+    const second = feed.second({ bytesIn: 2400, creditReturned: 2400, droppedSamples: 4 });
+
+    expect(first.capacityBytesPerSecond).toBeLessThanOrEqual(
+      credit * DEFAULT_BANDWIDTH_ESTIMATOR.backoff
+    );
+    expect(second.capacityBytesPerSecond).toBeCloseTo(
+      first.capacityBytesPerSecond * DEFAULT_BANDWIDTH_ESTIMATOR.backoff
+    );
   });
 
   test('settles on a stable link: a probe that drops goes back to the last safe ceiling', () => {
