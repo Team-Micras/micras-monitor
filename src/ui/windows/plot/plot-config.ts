@@ -1,6 +1,7 @@
 /**
  * The uPlot options of a plot: its series, one time axis and the value axes its variables share,
- * in the colors and font of the theme.
+ * in the colors and font of the theme, and the bands it draws behind the lines where samples were
+ * lost or not kept.
  *
  * @module
  */
@@ -8,7 +9,7 @@
 import type uPlot from 'uplot';
 
 import { formatClock } from '../../lib/format';
-import { layoutAxes, type PlotVariable } from './plot-data';
+import { layoutAxes, toSeconds, type GapSpan, type PlotVariable } from './plot-data';
 
 /** The colors and font a plot draws with, read from the theme. */
 export interface PlotTheme {
@@ -37,6 +38,7 @@ export interface PlotConfigOptions {
 
 const LABEL_CHAR_PX = 6.7;
 const AXIS_PADDING_PX = 14;
+const GAP_ALPHA = 0.14;
 
 function timeLabels(splits: number[], increment: number): string[] {
   return splits.map((seconds) => {
@@ -136,4 +138,34 @@ export function plotConfig({
       setCursor: [setCursor],
     },
   };
+}
+
+/** What of a uPlot chart its gap bands are drawn with. */
+export interface GapCanvas {
+  readonly ctx: Pick<
+    CanvasRenderingContext2D,
+    'save' | 'restore' | 'fillRect' | 'fillStyle' | 'globalAlpha'
+  >;
+  readonly bbox: Pick<uPlot.BBox, 'top' | 'height'>;
+  readonly valToPos: uPlot['valToPos'];
+}
+
+/** Shades the spans of a plot with no samples, in the color of why they are missing. */
+export function drawGaps(plot: GapCanvas, spans: readonly GapSpan[], theme: PlotTheme): void {
+  if (spans.length === 0) {
+    return;
+  }
+
+  const { ctx, bbox } = plot;
+  ctx.save();
+  ctx.globalAlpha = GAP_ALPHA;
+
+  for (const span of spans) {
+    const left = plot.valToPos(toSeconds(span.startUs), 'x', true);
+    const right = plot.valToPos(toSeconds(span.endUs), 'x', true);
+    ctx.fillStyle = span.kind === 'dropped' ? theme.dropped : theme.notStored;
+    ctx.fillRect(left, bbox.top, Math.max(devicePixelRatio, right - left), bbox.height);
+  }
+
+  ctx.restore();
 }

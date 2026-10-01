@@ -9,7 +9,7 @@ import uPlot from 'uplot';
 
 import type { HistoryMark, HistoryStore, TimeRange } from '@/history';
 
-import { plotConfig, type PlotTheme } from './plot-config';
+import { drawGaps, plotConfig, type PlotTheme } from './plot-config';
 import {
   followWindow,
   PlotData,
@@ -19,7 +19,6 @@ import {
   type GapSpan,
   type PlotVariable,
 } from './plot-data';
-import { drawGaps } from './plot-gaps';
 import {
   historyBounds,
   PAN_STEP,
