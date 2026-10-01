@@ -39,11 +39,11 @@ export interface Frame {
  * Append little endian values to a payload.
  */
 export class PayloadWriter {
-  private bytes: number[] = [];
+  readonly #bytes: number[] = [];
 
   /** Append an unsigned byte. */
   u8(value: number): this {
-    this.bytes.push(value & 0xff);
+    this.#bytes.push(value & 0xff);
     return this;
   }
 
@@ -67,7 +67,7 @@ export class PayloadWriter {
   /** Append bytes as they are. */
   raw(value: Uint8Array): this {
     for (const byte of value) {
-      this.bytes.push(byte);
+      this.#bytes.push(byte);
     }
 
     return this;
@@ -75,7 +75,7 @@ export class PayloadWriter {
 
   /** The payload written so far. */
   done(): Uint8Array {
-    return new Uint8Array(this.bytes);
+    return new Uint8Array(this.#bytes);
   }
 }
 
@@ -83,29 +83,34 @@ export class PayloadWriter {
  * Take little endian values from a payload.
  */
 export class PayloadReader {
-  private view: DataView;
-  private index = 0;
+  readonly #payload: Uint8Array;
+  readonly #view: DataView;
+  #index = 0;
 
-  constructor(private readonly payload: Uint8Array) {
-    this.view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  /**
+   * @param payload The bytes to read, from the first.
+   */
+  constructor(payload: Uint8Array) {
+    this.#payload = payload;
+    this.#view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   }
 
   /** Take an unsigned byte. */
   u8(): number {
-    return this.view.getUint8(this.index++);
+    return this.#view.getUint8(this.#index++);
   }
 
   /** Take an unsigned 16 bit integer. */
   u16(): number {
-    const value = this.view.getUint16(this.index, true);
-    this.index += 2;
+    const value = this.#view.getUint16(this.#index, true);
+    this.#index += 2;
     return value;
   }
 
   /** Take an unsigned 32 bit integer. */
   u32(): number {
-    const value = this.view.getUint32(this.index, true);
-    this.index += 4;
+    const value = this.#view.getUint32(this.#index, true);
+    this.#index += 4;
     return value;
   }
 
@@ -119,8 +124,8 @@ export class PayloadReader {
       throw new RangeError(`${count} bytes asked for, ${this.left} left`);
     }
 
-    const value = this.payload.subarray(this.index, this.index + count);
-    this.index += count;
+    const value = this.#payload.subarray(this.#index, this.#index + count);
+    this.#index += count;
     return value;
   }
 
@@ -131,12 +136,12 @@ export class PayloadReader {
 
   /** Take everything that is left, without copying it. */
   rest(): Uint8Array {
-    return this.payload.subarray(this.index);
+    return this.#payload.subarray(this.#index);
   }
 
   /** How many bytes are left to take. */
   get left(): number {
-    return this.payload.length - this.index;
+    return this.#payload.length - this.#index;
   }
 }
 
@@ -177,9 +182,9 @@ export function encodeFrame(type: MessageType, payload: Uint8Array): Uint8Array 
  * frame can be is thrown away whole at the next delimiter instead of growing the buffer.
  */
 export class FrameReader {
-  private encoded: number[] = [];
-  private overrun = false;
-  private discardedFrames = 0;
+  #encoded: number[] = [];
+  #overrun = false;
+  #discardedFrames = 0;
 
   /**
    * Feed whatever arrived.
@@ -192,20 +197,20 @@ export class FrameReader {
 
     for (const byte of data) {
       if (byte !== Cobs.DELIMITER) {
-        this.take(byte);
+        this.#take(byte);
         continue;
       }
 
-      const frame = this.overrun ? null : this.finish(new Uint8Array(this.encoded));
+      const frame = this.#overrun ? null : this.#finish(new Uint8Array(this.#encoded));
 
       if (frame) {
         frames.push(frame);
-      } else if (this.overrun || this.encoded.length > 0) {
-        this.discardedFrames++;
+      } else if (this.#overrun || this.#encoded.length > 0) {
+        this.#discardedFrames++;
       }
 
-      this.encoded = [];
-      this.overrun = false;
+      this.#encoded = [];
+      this.#overrun = false;
     }
 
     return frames;
@@ -215,26 +220,26 @@ export class FrameReader {
    * How many frames were thrown away for failing the frame check or for being malformed.
    */
   get discarded(): number {
-    return this.discardedFrames;
+    return this.#discardedFrames;
   }
 
   /**
    * Reset the reader, for when the transport reconnects.
    */
   clear(): void {
-    this.encoded = [];
-    this.overrun = false;
+    this.#encoded = [];
+    this.#overrun = false;
   }
 
-  private take(byte: number): void {
-    if (this.encoded.length >= MAX_FRAME_SIZE) {
-      this.overrun = true;
+  #take(byte: number): void {
+    if (this.#encoded.length >= MAX_FRAME_SIZE) {
+      this.#overrun = true;
     } else {
-      this.encoded.push(byte);
+      this.#encoded.push(byte);
     }
   }
 
-  private finish(encoded: Uint8Array): Frame | null {
+  #finish(encoded: Uint8Array): Frame | null {
     if (encoded.length === 0) {
       return null;
     }

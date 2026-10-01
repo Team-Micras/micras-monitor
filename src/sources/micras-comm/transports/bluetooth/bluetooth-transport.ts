@@ -41,9 +41,9 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
  * A transport over a BLE UART module such as the robot's HM-19.
  *
  * The first connection needs a user gesture, because only one can open the device chooser; that
- * is `BluetoothTransport.request`. After a drop, the transport reconnects to the same device on its own, with
- * backoff. Only when the browser refuses to connect without a gesture does it stop in the
- * `needs-user-gesture` state, and then `reconnect()` has to be called from a click.
+ * is `BluetoothTransport.request`. After a drop, the transport reconnects to the same device on
+ * its own, with backoff. Only when the browser refuses to connect without a gesture does it stop
+ * in the `needs-user-gesture` state, and then `reconnect()` has to be called from a click.
  */
 export class BluetoothTransport extends BaseTransport {
   readonly #device: BluetoothDeviceLike;
