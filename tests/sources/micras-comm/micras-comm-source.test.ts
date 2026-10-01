@@ -15,6 +15,8 @@ import { delay, TEST_TIMING, waitFor } from '@tests/support/sources/micras-comm/
 import { startSimulatedRobot, type SimulatedRobotOptions } from '@scripts/simulated-robot/server';
 import { useVirtualTime } from '@tests/support/virtual-time';
 
+/** The share over its budget the planner lets a plan go before making it again. */
+const OVERSPEND_TO_REPLAN = 0.1;
 const STOP = 5;
 const LEAVE_ERROR = 6;
 const NOT_IN_ERROR = 4;
@@ -366,7 +368,7 @@ describe('MicrasCommSource against the simulated robot', () => {
 
   test('keeps a group that went out of step as one stream, its lost samples as dropped', async () => {
     const { monitor, sim } = start();
-    monitor.request([{ variable: 'imu/gyro_z', rateHz: 100 }]);
+    monitor.request([...PINNED, { variable: 'imu/gyro_z', rateHz: 100 }]);
     await streaming(monitor);
     const stored = () => monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0;
     await waitFor(() => stored() >= 20, 3000, 'the first samples');
@@ -375,6 +377,7 @@ describe('MicrasCommSource against the simulated robot', () => {
     );
 
     sim.robot?.receive(encodeGroupDefine(0, 40, others));
+    await delay(200);
     sim.robot?.receive(encodeGroupEnable(0, true));
     await waitFor(
       () => monitor.state.log.some((entry) => entry.text.startsWith('A sample of group 0 has')),
@@ -386,10 +389,12 @@ describe('MicrasCommSource against the simulated robot', () => {
 
     const gaps = monitor.history.gaps('imu/gyro_z', 0, Number.POSITIVE_INFINITY);
     const dropped = gaps.filter((gap) => gap.kind === 'dropped');
+    const lost = dropped.reduce((total, gap) => total + (gap.count ?? 0), 0);
+    expect(monitor.history.variable('imu/gyro_z')?.runs).toBe(1);
     expect(gaps.filter((gap) => gap.kind === 'not-streamed')).toEqual([]);
-    expect(dropped.reduce((total, gap) => total + (gap.count ?? 0), 0)).toBe(
-      monitor.history.variable('imu/gyro_z')?.droppedSamples
-    );
+    expect(dropped.length).toBeGreaterThanOrEqual(1);
+    expect(lost).toBeGreaterThanOrEqual(1);
+    expect(lost).toBe(monitor.history.variable('imu/gyro_z')?.droppedSamples);
   });
 
   test('settles within a 3 KB/s link through several probes, then stops dropping', async () => {
@@ -397,7 +402,11 @@ describe('MicrasCommSource against the simulated robot', () => {
       { throughputBytesPerSecond: 3000 },
       {
         timing: { ...TEST_TIMING, statsIntervalMs: 1000 },
-        planner: { debounceMs: 20, budget: { holdMs: 2000, quietHolds: 30 } },
+        planner: {
+          debounceMs: 20,
+          overspendToReplan: OVERSPEND_TO_REPLAN,
+          budget: { holdMs: 2000, quietHolds: 30 },
+        },
       }
     );
     monitor.request([
@@ -410,11 +419,26 @@ describe('MicrasCommSource against the simulated robot', () => {
       5000,
       'the first ceiling'
     );
+    let reported = monitor.state.stats;
+    let worstOverspend = 0;
+    const stop = monitor.subscribe(() => {
+      if (monitor.state.stats === reported) {
+        return;
+      }
+
+      reported = monitor.state.stats;
+      const budget = gauge(monitor, 'Budget');
+
+      if (budget !== undefined && budget.capacity > 0) {
+        worstOverspend = Math.max(worstOverspend, budget.used / budget.capacity - 1);
+      }
+    });
 
     await delay(16_000);
     const settled = { ...sim.stats };
     const settledMonitor = monitor.state.stats;
     await delay(8000);
+    stop();
 
     const { stats } = monitor.state;
     const budget = gauge(monitor, 'Budget');
@@ -422,7 +446,7 @@ describe('MicrasCommSource against the simulated robot', () => {
 
     expect(budget?.warn).toBe(true);
     expect((sim.stats.meteredBytes - settled.meteredBytes) / 8).toBeLessThanOrEqual(3000);
-    expect(budget?.used).toBeLessThanOrEqual(budget?.capacity ?? 0);
+    expect(worstOverspend).toBeLessThanOrEqual(OVERSPEND_TO_REPLAN);
     expect(budget?.capacity).toBeGreaterThan(3000 * 0.75);
     expect(stats.streams.find((stream) => stream.variableId === state?.id)?.grantedHz).toBeCloseTo(
       10
