@@ -1,21 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { encodeFrame, MessageType } from '@/sources/micras-comm/wire';
-import { CreditLedger, isMetered, wireSize } from '@/sources/micras-comm/link/credit';
-
-test('only what the robot sends on its own is metered', () => {
-  expect(isMetered(MessageType.SAMPLE)).toBe(true);
-  expect(isMetered(MessageType.SCHEMA_PAGE)).toBe(true);
-  expect(isMetered(MessageType.LOG)).toBe(true);
-  expect(isMetered(MessageType.HELLO_ACK)).toBe(false);
-  expect(isMetered(MessageType.PONG)).toBe(false);
-});
-
-test.each([0, 1, 7, 60, 199, 200])('wire size matches the encoded frame for %i bytes', (size) => {
-  const payload = new Uint8Array(size).map((_, index) => index % 3);
-
-  expect(wireSize(size)).toBe(encodeFrame(MessageType.SAMPLE, payload).length);
-});
+import { CreditLedger } from '@/sources/micras-comm/link/credit';
 
 function total(grant: { payload: Uint8Array } | null): number | undefined {
   return grant ? new DataView(grant.payload.buffer).getUint32(0, true) : undefined;

@@ -3,12 +3,11 @@ import { describe, expect, test } from 'vitest';
 import { decodeAccess, TypeCode, writeValue } from '@/sources/micras-comm/wire';
 import {
   EpochRegistry,
-  toGroupLayouts,
-  sameLayout,
   type Epoch,
   type EpochEndReason,
   type OpenEpoch,
 } from '@/sources/micras-comm/link/epochs';
+import { sameLayout, toGroupLayouts } from '@/sources/micras-comm/link/group-configurator';
 import type { SchemaEntry } from '@/sources/micras-comm/link/schema';
 
 const STREAM = decodeAccess(0x01);
@@ -21,29 +20,6 @@ const SCHEMA: SchemaEntry[] = [
   { id: 4, name: 'hidden', type: TypeCode.F32, access: decodeAccess(0x02) },
   { id: 5, name: 'maze', type: TypeCode.BLOB, access: STREAM },
 ];
-
-describe('toGroupLayouts', () => {
-  test('adds up the sample size from the schema', () => {
-    const [layout] = toGroupLayouts(SCHEMA, [{ variableIds: [0, 1, 2], periodTicks: 80 }]);
-
-    expect(layout).toMatchObject({
-      group: 0,
-      sampleSize: 7,
-      types: [TypeCode.F32, TypeCode.U16, TypeCode.BOOL],
-    });
-  });
-
-  test.each([
-    [[{ variableIds: [4], periodTicks: 1 }], 'hidden cannot be streamed'],
-    [[{ variableIds: [5], periodTicks: 1 }], 'maze cannot be streamed'],
-    [[{ variableIds: [9], periodTicks: 1 }], 'No variable 9'],
-    [[{ variableIds: [], periodTicks: 1 }], '1 to 16 variables'],
-    [[{ variableIds: [0], periodTicks: 0 }], 'period'],
-    [Array.from({ length: 5 }, () => ({ variableIds: [0], periodTicks: 1 })), '4 groups'],
-  ])('refuses %j', (requests, message) => {
-    expect(() => toGroupLayouts(SCHEMA, requests)).toThrow(message);
-  });
-});
 
 function recordingRegistry() {
   const events: string[] = [];

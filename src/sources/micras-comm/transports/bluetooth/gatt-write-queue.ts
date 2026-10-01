@@ -1,4 +1,4 @@
-import { withTimeout } from '../../link/timeout';
+import { withTimeout } from '../../link/retry';
 
 /** Writes one chunk to the characteristic. */
 export type ChunkWriter = (chunk: Uint8Array) => Promise<void>;

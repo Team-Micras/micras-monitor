@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { decodeAccess, MAX_GROUPS, TypeCode } from '@/sources/micras-comm/wire';
-import { wireSize } from '@/sources/micras-comm/link/credit';
-import { SAMPLE_HEADER_SIZE } from '@/sources/micras-comm/link/epochs';
+import { SAMPLE_HEADER_SIZE, wireSize } from '@/sources/micras-comm/link/messages';
 import type { SchemaEntry } from '@/sources/micras-comm/link/schema';
 import {
   MIN_DEGRADED_RATE_HZ,

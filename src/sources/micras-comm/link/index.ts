@@ -60,28 +60,22 @@ export {
   type WebSocketTransportOptions,
 } from '../transports/websocket-transport';
 export { accessOf, valueTypeOf, variableOf } from '../value-types';
-export { Backoff, DEFAULT_BACKOFF, type BackoffOptions } from './backoff';
+export { Backoff, DEFAULT_BACKOFF, type BackoffOptions } from './retry';
 export { DEFAULT_WRAP_SLACK_US, TimestampUnwrapper } from './clock';
 export {
   CreditLedger,
   DEFAULT_CREDIT_LEDGER,
-  isMetered,
-  wireSize,
   type CreditGrant,
   type CreditLedgerOptions,
 } from './credit';
 export {
   EpochRegistry,
   OpenEpoch,
-  SAMPLE_HEADER_SIZE,
   sharedEpochIds,
-  toGroupLayouts,
   type Epoch,
   type EpochEndReason,
   type EpochIdSource,
   type EpochListener,
-  type GroupLayout,
-  type GroupRequest,
   type SampleValue,
 } from './epochs';
 export { LinkError, RobotError, TimeoutError, type LinkErrorReason } from './errors';
@@ -108,6 +102,7 @@ export {
 } from './link-events';
 export type { CommandReply } from './messages';
 export { RobotLink, type RobotLinkOptions } from './robot-link';
+export type { GroupRequest } from './group-configurator';
 export {
   MemorySchemaCache,
   SchemaAssembler,

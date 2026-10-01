@@ -49,3 +49,13 @@ export class LinkError extends Error {
     super(message);
   }
 }
+
+/**
+ * Turn anything thrown into an `Error`.
+ *
+ * @param error Whatever was thrown.
+ * @returns It, or an `Error` describing it.
+ */
+export function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}

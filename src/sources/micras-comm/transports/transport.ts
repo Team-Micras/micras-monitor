@@ -116,13 +116,3 @@ export abstract class BaseTransport implements Transport {
     this.reportError(new Error(`Dropped ${bytes.length} bytes sent while ${this.current.kind}`));
   }
 }
-
-/**
- * Turn anything thrown into an `Error`.
- *
- * @param error Whatever was thrown.
- * @returns It, or an `Error` describing it.
- */
-export function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
-}

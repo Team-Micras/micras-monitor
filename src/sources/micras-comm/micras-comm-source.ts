@@ -48,6 +48,7 @@ import {
   type WebSocketFactory,
   variableOf,
 } from './link';
+import { asError } from './link/errors';
 import { CommandResult, Severity, WriteStatus } from './wire';
 
 /** What the source is built from; everything has a default. */
@@ -103,10 +104,6 @@ const SEVERITIES: Readonly<Record<Severity, LogSeverity>> = {
   [Severity.WARNING]: 'warning',
   [Severity.ERROR]: 'error',
 };
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function describeState(state: LinkState): string | null {
   switch (state.kind) {
@@ -245,7 +242,7 @@ export class MicrasCommSource implements Source {
       (error: unknown) =>
         error instanceof Error && error.name === 'NotFoundError'
           ? connection.cancel()
-          : connection.fail(messageOf(error))
+          : connection.fail(asError(error).message)
     );
     return connection;
   }
@@ -379,7 +376,7 @@ class MicrasCommConnection implements SourceConnection {
       const reply = await session.command(code, argument);
       return { status: COMMAND_STATUS[reply.result], reason: reply.reason ?? null };
     } catch (error) {
-      return { status: 'failed', message: messageOf(error) };
+      return { status: 'failed', message: asError(error).message };
     }
   }
 
@@ -401,7 +398,7 @@ class MicrasCommConnection implements SourceConnection {
         ? { status: 'confirmed' }
         : { status: 'refused', reason: WRITE_REFUSAL[result.writeStatus] };
     } catch (error) {
-      return { status: 'failed', message: messageOf(error) };
+      return { status: 'failed', message: asError(error).message };
     }
   }
 
@@ -415,7 +412,7 @@ class MicrasCommConnection implements SourceConnection {
     try {
       return { status: 'ok', value: await session.read(variableId) };
     } catch (error) {
-      return { status: 'failed', message: messageOf(error) };
+      return { status: 'failed', message: asError(error).message };
     }
   }
 

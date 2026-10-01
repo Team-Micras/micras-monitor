@@ -1,5 +1,6 @@
-import { Backoff, DEFAULT_BACKOFF, type BackoffOptions } from '../link/backoff';
-import { asError, BaseTransport } from './transport';
+import { Backoff, DEFAULT_BACKOFF, type BackoffOptions } from '../link/retry';
+import { asError } from '../link/errors';
+import { BaseTransport } from './transport';
 
 /**
  * The part of a WebSocket the transport uses, which the browser's, Bun's and Node's all provide

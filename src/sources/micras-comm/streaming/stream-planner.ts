@@ -1,6 +1,7 @@
 import { Emitter, type Listener, type Unsubscribe } from '@/core/emitter';
 
-import type { Epoch, GroupRequest } from '../link/epochs';
+import type { Epoch } from '../link/epochs';
+import type { GroupRequest } from '../link/group-configurator';
 import { RobotError, LinkError } from '../link/errors';
 import type { LinkCounters, SampleEvent } from '../link/link-events';
 import type { RobotLink } from '../link/robot-link';

@@ -1,5 +1,5 @@
-import { wireSize } from '../link/credit';
-import { SAMPLE_HEADER_SIZE, type GroupRequest } from '../link/epochs';
+import type { GroupRequest } from '../link/group-configurator';
+import { SAMPLE_HEADER_SIZE, wireSize } from '../link/messages';
 import type { SchemaEntry } from '../link/schema';
 import { MAX_GROUP_VARIABLES, MAX_GROUPS, MAX_PAYLOAD_SIZE, TYPE_SIZE, TypeCode } from '../wire';
 

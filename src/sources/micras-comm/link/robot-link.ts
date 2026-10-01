@@ -13,22 +13,15 @@ import {
   type Frame,
   type WireValue,
 } from '../wire';
-import { AsyncMutex } from './async-mutex';
-import { Backoff } from './backoff';
+import { Backoff } from './retry';
 import { TimestampUnwrapper } from './clock';
-import { CreditLedger, isMetered, wireSize } from './credit';
-import {
-  EpochRegistry,
-  type Epoch,
-  type EpochEndReason,
-  type GroupRequest,
-  type OpenEpoch,
-} from './epochs';
+import { CreditLedger } from './credit';
+import { EpochRegistry, type Epoch, type EpochEndReason, type OpenEpoch } from './epochs';
 import { LinkError } from './errors';
-import { GroupConfigurator } from './group-configurator';
-import { LinkTally } from './link-counters';
+import { GroupConfigurator, type GroupRequest } from './group-configurator';
 import {
   DEFAULT_TIMING,
+  LinkTally,
   type GroupsResult,
   type HandshakeReason,
   type LinkCounters,
@@ -47,7 +40,9 @@ import {
   encodeCredit,
   encodeHello,
   encodeRead,
+  isMetered,
   isSupported,
+  wireSize,
   type CommandAck,
   type CommandReply,
   type ForeignHelloAck,
@@ -56,9 +51,14 @@ import {
   type RobotMessage,
   type Sample,
 } from './messages';
-import { PendingRequests, type RequestKind } from './requests';
-import { MemorySchemaCache, type SchemaCache, type SchemaEntry } from './schema';
-import { SchemaLoader, type SchemaProgress } from './schema-loader';
+import { AsyncMutex, PendingRequests, type RequestKind } from './requests';
+import {
+  MemorySchemaCache,
+  SchemaLoader,
+  type SchemaCache,
+  type SchemaEntry,
+  type SchemaProgress,
+} from './schema';
 import { WriteQueue } from './write-queue';
 
 /** What a link is built from; everything has a default. */

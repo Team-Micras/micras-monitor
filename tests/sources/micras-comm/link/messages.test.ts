@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { vectorNamed } from '@tests/support/sources/micras-comm/frame-vectors';
 import {
   CommandResult,
+  encodeFrame,
   MessageType,
   Severity,
   TypeCode,
@@ -18,6 +19,8 @@ import {
   encodeHello,
   encodeSchemaRequest,
   encodeWrite,
+  isMetered,
+  wireSize,
   isSupported,
 } from '@/sources/micras-comm/link/messages';
 
@@ -120,4 +123,18 @@ describe('decodeMessage', () => {
   test('refuses a type only the monitor sends', () => {
     expect(decodeMessage({ type: MessageType.HELLO, payload: new Uint8Array(0) })).toBeNull();
   });
+});
+
+test('only what the robot sends on its own is metered', () => {
+  expect(isMetered(MessageType.SAMPLE)).toBe(true);
+  expect(isMetered(MessageType.SCHEMA_PAGE)).toBe(true);
+  expect(isMetered(MessageType.LOG)).toBe(true);
+  expect(isMetered(MessageType.HELLO_ACK)).toBe(false);
+  expect(isMetered(MessageType.PONG)).toBe(false);
+});
+
+test.each([0, 1, 7, 60, 199, 200])('wire size matches the encoded frame for %i bytes', (size) => {
+  const payload = new Uint8Array(size).map((_, index) => index % 3);
+
+  expect(wireSize(size)).toBe(encodeFrame(MessageType.SAMPLE, payload).length);
 });

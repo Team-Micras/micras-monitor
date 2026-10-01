@@ -1,6 +1,6 @@
-import { Backoff, DEFAULT_BACKOFF, type BackoffOptions } from '../../link/backoff';
-import { withTimeout } from '../../link/timeout';
-import { asError, BaseTransport } from '../transport';
+import { asError } from '../../link/errors';
+import { Backoff, DEFAULT_BACKOFF, withTimeout, type BackoffOptions } from '../../link/retry';
+import { BaseTransport } from '../transport';
 import {
   DEFAULT_CHUNK_SIZE,
   HM19_UART,

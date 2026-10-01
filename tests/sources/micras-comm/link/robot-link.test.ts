@@ -18,7 +18,7 @@ import {
   type SchemaCache,
   type SchemaEntry,
 } from '@/sources/micras-comm/link/schema';
-import { wireSize } from '@/sources/micras-comm/link/credit';
+import { wireSize } from '@/sources/micras-comm/link/messages';
 import { RobotLink } from '@/sources/micras-comm/link/robot-link';
 import type {
   EpochEndEvent,

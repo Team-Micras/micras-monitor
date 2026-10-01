@@ -8,6 +8,7 @@
  */
 
 import {
+  Cobs,
   CommandResult,
   encodeFrame,
   ErrorCode,
@@ -20,6 +21,30 @@ import {
   WriteStatus,
   type Frame,
 } from '../wire';
+
+/** The group, sequence number and timestamp in front of the values of a sample. */
+export const SAMPLE_HEADER_SIZE = 7;
+
+/**
+ * Whether the robot charges a frame type to the credit window. It charges what it sends on its
+ * own initiative (`send_metered` in `link.cpp`); replies are bounded by the rate of the requests.
+ */
+export function isMetered(type: MessageType): boolean {
+  return (
+    type === MessageType.SAMPLE || type === MessageType.SCHEMA_PAGE || type === MessageType.LOG
+  );
+}
+
+/**
+ * How many bytes a frame took on the wire, delimiter included, which is what the robot charged
+ * for it. Exact for every frame the protocol allows: COBS adds one byte per 254, and a frame is
+ * at most 203 bytes before encoding.
+ *
+ * @param payloadLength The length of the payload, without the type and the frame check.
+ */
+export function wireSize(payloadLength: number): number {
+  return Cobs.encodedSize(payloadLength + 3) + 1;
+}
 
 /** What the robot answered to a command. */
 export interface CommandReply {

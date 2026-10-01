@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { ErrorCode } from '@/sources/micras-comm/wire';
 import { RobotError, TimeoutError } from '@/sources/micras-comm/link/errors';
 import { CommandResult } from '@/sources/micras-comm/wire';
-import { PendingRequests } from '@/sources/micras-comm/link/requests';
+import { AsyncMutex, PendingRequests } from '@/sources/micras-comm/link/requests';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -53,4 +53,62 @@ test('an ERROR fails the oldest request it answers, of any kind', async () => {
   await expect(read).rejects.toBeInstanceOf(RobotError);
   requests.resolve('write', 7, 0);
   await expect(write).resolves.toBe(0);
+});
+
+interface Deferred {
+  promise: Promise<void>;
+  resolve(): void;
+  reject(error: Error): void;
+}
+
+function deferred(): Deferred {
+  const settlers: Partial<Pick<Deferred, 'resolve' | 'reject'>> = {};
+  const promise = new Promise<void>((resolve, reject) => {
+    settlers.resolve = resolve;
+    settlers.reject = reject;
+  });
+
+  return {
+    promise,
+    resolve: () => settlers.resolve?.(),
+    reject: (error) => settlers.reject?.(error),
+  };
+}
+
+describe('AsyncMutex', () => {
+  test('starts a task at once when none runs, and the next one only once it settled', async () => {
+    const turns = new AsyncMutex();
+    const first = deferred();
+    const started: string[] = [];
+
+    const running = turns.run(() => {
+      started.push('first');
+      return first.promise;
+    });
+    const waiting = turns.run(() => {
+      started.push('second');
+      return Promise.resolve();
+    });
+
+    expect(started).toEqual(['first']);
+
+    first.resolve();
+    await running;
+    await waiting;
+
+    expect(started).toEqual(['first', 'second']);
+  });
+
+  test('a task that fails lets the next one run', async () => {
+    const turns = new AsyncMutex();
+    const first = deferred();
+
+    const failing = turns.run(() => first.promise);
+    const next = turns.run(() => Promise.resolve('ran'));
+
+    first.reject(new Error('refused'));
+
+    await expect(failing).rejects.toThrow('refused');
+    expect(await next).toBe('ran');
+  });
 });

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { decodeAccess, ErrorCode, TypeCode } from '@/sources/micras-comm/wire';
 import { Emitter } from '@/core/emitter';
 import { RobotError, LinkError } from '@/sources/micras-comm/link/errors';
-import type { Epoch, GroupRequest } from '@/sources/micras-comm/link/epochs';
+import type { Epoch } from '@/sources/micras-comm/link/epochs';
+import type { GroupRequest } from '@/sources/micras-comm/link/group-configurator';
 import type { SchemaEntry } from '@/sources/micras-comm/link/schema';
 import type {
   GroupsResult,

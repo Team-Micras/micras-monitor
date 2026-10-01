@@ -1,40 +1,9 @@
-import {
-  MAX_GROUP_VARIABLES,
-  MAX_GROUPS,
-  MAX_PAYLOAD_SIZE,
-  readValue,
-  TYPE_SIZE,
-  TypeCode,
-} from '../wire';
-import type { SchemaEntry } from './schema';
-
-/** The group, sequence number and timestamp in front of the values of a sample. */
-export const SAMPLE_HEADER_SIZE = 7;
+import { readValue, TYPE_SIZE, TypeCode } from '../wire';
+import type { GroupLayout } from './group-configurator';
 
 const SEQUENCE_HALF_RANGE = 0x8000;
 const U32_HALF_RANGE = 2 ** 31;
 const GAP_TOLERANCE = 0.05;
-
-/** A set of variables to stream together, sampled in the same loop iteration. */
-export interface GroupRequest {
-  /** The variables, in the order their values are packed. */
-  readonly variableIds: readonly number[];
-
-  /** How many loop iterations between two samples. */
-  readonly periodTicks: number;
-}
-
-/** A group request checked against the schema, ready to be sent. */
-export interface GroupLayout extends GroupRequest {
-  /** The slot on the robot, which is the position of the request. */
-  readonly group: number;
-
-  /** The type of each variable. */
-  readonly types: readonly TypeCode[];
-
-  /** The bytes of the values of one sample. */
-  readonly sampleSize: number;
-}
 
 /**
  * One definition of a group, from the robot enabling it until the group is defined again, turned
@@ -90,76 +59,6 @@ export interface EpochListener {
 
 /** A decoded value: booleans as 0 or 1, 64 bit integers as `bigint`. */
 export type SampleValue = number | bigint;
-
-/**
- * Check a set of group requests against the schema and the robot's limits.
- *
- * @param schema The robot's schema.
- * @param requests One request per group, at most `MAX_GROUPS`.
- * @returns The layouts to send.
- * @throws If a request cannot be streamed as asked.
- */
-export function toGroupLayouts(
-  schema: readonly SchemaEntry[],
-  requests: readonly GroupRequest[]
-): GroupLayout[] {
-  if (requests.length > MAX_GROUPS) {
-    throw new Error(`The robot holds ${MAX_GROUPS} groups, ${requests.length} were asked for`);
-  }
-
-  return requests.map((request, group) => planGroup(schema, request, group));
-}
-
-function planGroup(
-  schema: readonly SchemaEntry[],
-  request: GroupRequest,
-  group: number
-): GroupLayout {
-  const { variableIds, periodTicks } = request;
-
-  if (variableIds.length === 0 || variableIds.length > MAX_GROUP_VARIABLES) {
-    throw new Error(`Group ${group} must have 1 to ${MAX_GROUP_VARIABLES} variables`);
-  }
-
-  if (!Number.isInteger(periodTicks) || periodTicks < 1 || periodTicks > 0xffff) {
-    throw new Error(`Group ${group} period must be 1 to 65535 ticks, got ${periodTicks}`);
-  }
-
-  const types = variableIds.map((id) => streamableType(schema, id));
-  const sampleSize = types.reduce((total, type) => total + TYPE_SIZE[type], 0);
-
-  if (sampleSize + SAMPLE_HEADER_SIZE > MAX_PAYLOAD_SIZE) {
-    throw new Error(`Group ${group} samples would take ${sampleSize} bytes, too many for a frame`);
-  }
-
-  return { group, variableIds: [...variableIds], periodTicks, types, sampleSize };
-}
-
-function streamableType(schema: readonly SchemaEntry[], id: number): TypeCode {
-  const entry = schema[id] as SchemaEntry | undefined;
-
-  if (!entry) {
-    throw new Error(`No variable ${id} in the schema`);
-  }
-
-  if (!entry.access.stream || entry.type === TypeCode.BLOB) {
-    throw new Error(`${entry.name} cannot be streamed`);
-  }
-
-  return entry.type;
-}
-
-/**
- * Whether a layout is what an open epoch already streams.
- */
-export function sameLayout(layout: GroupLayout, epoch: Epoch): boolean {
-  return (
-    layout.group === epoch.group &&
-    layout.periodTicks === epoch.periodTicks &&
-    layout.variableIds.length === epoch.variableIds.length &&
-    layout.variableIds.every((id, index) => epoch.variableIds[index] === id)
-  );
-}
 
 /**
  * An epoch that samples are arriving for: it decodes them and counts the ones the robot dropped.

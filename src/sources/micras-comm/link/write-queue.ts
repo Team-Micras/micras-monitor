@@ -1,5 +1,5 @@
-import { asError } from '../transports/transport';
 import { ErrorCode, WriteStatus, type WireValue } from '../wire';
+import { asError } from './errors';
 import type { LinkTiming, WriteEvent, WriteResult } from './link-events';
 import { encodeWrite } from './messages';
 import type { PendingRequests } from './requests';
