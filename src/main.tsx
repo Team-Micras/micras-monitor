@@ -1,24 +1,24 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App } from '@/app/app';
-import { reservedChord } from '@/app/keymap/keymap';
-import { safeLocalStorage } from '@/app/layouts/layout-book';
-import type { AppMonitor } from '@/app/monitor-context';
-import { serviceWorkerUpdates } from '@/app/pwa/app-updates';
-import type { SessionManager } from '@/app/sessions/session-manager';
-import { startStorageWorker } from '@/app/sessions/storage-worker';
-import { PRELOAD_ERROR_EVENT } from '@/app/shell/update-notice';
-import '@/app/styles.css';
 import { Monitor } from '@/core/monitor';
 import { RobotRegistry } from '@/core/robot';
 import type { Source } from '@/core/source';
 import { HistoryStore, type Scheduler } from '@/history';
-import { importWhenIdle } from '@/lazy/idle';
+import type { SessionManager } from '@/recording/library/recording-manager';
+import { startStorageWorker } from '@/recording/library/storage-worker';
 import { micras } from '@/robots/micras';
 import type { BluetoothLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
+import { App } from '@/ui/app';
+import { reservedChord } from '@/ui/keyboard/keymap';
+import { safeLocalStorage } from '@/ui/layouts/saved-layouts';
+import { importWhenIdle } from '@/ui/lazy/idle';
+import type { AppMonitor } from '@/ui/monitor-context';
+import { serviceWorkerUpdates } from '@/ui/pwa/app-updates';
+import { PRELOAD_ERROR_EVENT } from '@/ui/shell/update-notice';
+import '@/ui/styles.css';
 import { registerSW } from 'virtual:pwa-register';
 
 const root = document.getElementById('root');
@@ -98,7 +98,7 @@ function render(sessions?: SessionManager): void {
 
 render();
 importWhenIdle(
-  () => import('@/app/sessions/browser-sessions'),
+  () => import('@/recording/library/browser-recordings'),
   ({ browserSessions }) =>
     render(browserSessions(monitor, FRAME_SCHEDULER, storageWorker, viewCapBytes)),
   () => window.dispatchEvent(new Event(PRELOAD_ERROR_EVENT))

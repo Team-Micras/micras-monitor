@@ -13,5 +13,5 @@
     }
   },
   "include": ["tests"],
-  "exclude": ["tests/**/*.tsx", "tests/support/app", "tests/support/axe-check.ts"]
+  "exclude": ["tests/**/*.tsx", "tests/support/ui", "tests/support/axe-check.ts"]
 }

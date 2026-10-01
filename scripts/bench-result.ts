@@ -1,6 +1,6 @@
 /**
  * What the performance tests hand `bun run bench`, and what the bench stores and compares. The
- * tests set a {@link BenchResult} on their meta (`tests/support/app/bench.ts`); the bench keeps
+ * tests set a {@link BenchResult} on their meta (`tests/support/ui/bench.ts`); the bench keeps
  * their timings as a {@link BenchRecord}, the stored baseline or the results of one run.
  *
  * @module

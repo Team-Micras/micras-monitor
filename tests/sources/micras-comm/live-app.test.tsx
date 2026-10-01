@@ -5,10 +5,10 @@ import { render } from 'vitest-browser-react';
 import { RobotRegistry, type RobotPackage } from '@/core/robot';
 import { mouse } from '@tests/support/core/robot/packages';
 
-import { App } from '@/app/app';
-import type { AppMonitor } from '@/app/monitor-context';
-import '@/app/styles.css';
-import { createShellStore } from '@/app/state/shell-store';
+import { App } from '@/ui/app';
+import type { AppMonitor } from '@/ui/monitor-context';
+import '@/ui/styles.css';
+import { createShellStore } from '@/ui/state/shell-store';
 import { Monitor } from '@/core/monitor';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { HistoryStore } from '@/history';

@@ -17,20 +17,20 @@ import {
 
 import { micras } from '@/robots/micras';
 
-import { App } from '@/app/app';
-import type { AppMonitor } from '@/app/monitor-context';
+import { App } from '@/ui/app';
+import type { AppMonitor } from '@/ui/monitor-context';
 import type { CommandOutcome } from '@/core/source';
 import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';
 import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
-import { describeRobot } from '@/app/sessions/browser-sessions';
-import { MemorySessionLibrary } from '@/app/sessions/memory-library';
-import { MemoryLocks } from '@/app/sessions/session-library';
-import { SessionManager } from '@/app/sessions/session-manager';
-import { createShellStore, type ShellStore } from '@/app/state/shell-store';
-import type { Theme } from '@/app/state/theme';
-import '@/app/styles.css';
-import type { AppUpdates } from '@/app/pwa/app-updates';
-import type { ShellWindow, WindowPayload } from '@/app/windows/types';
+import { describeRobot } from '@/recording/library/browser-recordings';
+import { MemorySessionLibrary } from '@/recording/library/memory-library';
+import { MemoryLocks } from '@/recording/library/recording-library';
+import { SessionManager } from '@/recording/library/recording-manager';
+import { createShellStore, type ShellStore } from '@/ui/state/shell-store';
+import type { Theme } from '@/ui/state/theme';
+import '@/ui/styles.css';
+import type { AppUpdates } from '@/ui/pwa/app-updates';
+import type { ShellWindow, WindowPayload } from '@/ui/windows/types';
 import { seriousViolations } from '@tests/support/axe-check';
 import { ManualScheduler } from '@/history';
 

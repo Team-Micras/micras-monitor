@@ -6,7 +6,7 @@
 
 import type { ReactNode } from 'react';
 
-import { PackageChooser, type AppMonitor, type MonitorScope } from '@/app/monitor-context';
+import { PackageChooser, type AppMonitor, type MonitorScope } from '@/ui/monitor-context';
 import { Monitor } from '@/core/monitor';
 import { RobotRegistry, type RobotPackage } from '@/core/robot';
 import { DEMO_ROBOT } from '@/sources/demo/demo-robot';

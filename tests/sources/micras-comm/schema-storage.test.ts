@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { SchemaEntry } from '@/sources/micras-comm/link';
 import { decodeAccess, TypeCode } from '@/sources/micras-comm/wire';
 
-import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
+import { MemoryStorage } from '@tests/support/ui/layouts/memory-storage';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
 
 const SCHEMA: readonly SchemaEntry[] = [

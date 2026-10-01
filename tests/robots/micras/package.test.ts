@@ -11,7 +11,7 @@ import {
   type PresetNode,
 } from '@/core/robot';
 
-import { reservedChord } from '@/app/keymap/keymap';
+import { reservedChord } from '@/ui/keyboard/keymap';
 import { Command, Reason } from '@/robots/micras/commands';
 import {
   COMMAND_NAMES,

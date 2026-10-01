@@ -12,5 +12,5 @@
       "@scripts/*": ["./scripts/*"]
     }
   },
-  "include": ["tests/**/*.tsx", "tests/support/app", "tests/support/axe-check.ts"]
+  "include": ["tests/**/*.tsx", "tests/support/ui", "tests/support/axe-check.ts"]
 }

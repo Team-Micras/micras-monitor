@@ -4,7 +4,7 @@ import { Monitor } from '@/core/monitor';
 import type { LinkBudgetOptions, WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { HistoryStore } from '@/history';
-import { percentile, reportBench } from '@tests/support/app/bench';
+import { percentile, reportBench } from '@tests/support/ui/bench';
 
 declare module 'vitest' {
   interface ProvidedContext {

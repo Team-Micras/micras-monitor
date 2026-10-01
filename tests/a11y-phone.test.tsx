@@ -5,11 +5,11 @@ import { render } from 'vitest-browser-react';
 import { RobotRegistry } from '@/core/robot';
 import { micras } from '@/robots/micras';
 
-import { App } from '@/app/app';
-import type { AppMonitor } from '@/app/monitor-context';
-import { createShellStore } from '@/app/state/shell-store';
-import type { Theme } from '@/app/state/theme';
-import '@/app/styles.css';
+import { App } from '@/ui/app';
+import type { AppMonitor } from '@/ui/monitor-context';
+import { createShellStore } from '@/ui/state/shell-store';
+import type { Theme } from '@/ui/state/theme';
+import '@/ui/styles.css';
 import { seriousViolations } from '@tests/support/axe-check';
 import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
 

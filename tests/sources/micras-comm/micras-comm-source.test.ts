@@ -5,7 +5,7 @@ import type { WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource, type MicrasCommOptions } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
 import { HistoryStore } from '@/history';
-import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
+import { MemoryStorage } from '@tests/support/ui/layouts/memory-storage';
 import {
   startInMemoryRobot,
   type InMemoryRobot,

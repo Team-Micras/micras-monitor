@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 
 import type { TypeViewProps } from '@/core/robot';
-import { lazyWithRetry } from '@/lazy/lazy-with-retry';
+import { lazyWithRetry } from '@/ui/lazy/lazy-with-retry';
 
 import type { Maze } from './maze';
 

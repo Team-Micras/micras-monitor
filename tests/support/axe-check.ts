@@ -1,6 +1,6 @@
 import axe from 'axe-core';
 
-import { settled } from '@tests/support/app/animations';
+import { settled } from '@tests/support/ui/animations';
 
 /**
  * Runs axe over the page once its transitions have ended, since colours in a fading dialog are

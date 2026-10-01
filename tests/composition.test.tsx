@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { App } from '@/app/app';
-import type { AppMonitor } from '@/app/monitor-context';
-import { createShellStore } from '@/app/state/shell-store';
-import '@/app/styles.css';
-import type { ShellWindow } from '@/app/windows/types';
+import { App } from '@/ui/app';
+import type { AppMonitor } from '@/ui/monitor-context';
+import { createShellStore } from '@/ui/state/shell-store';
+import '@/ui/styles.css';
+import type { ShellWindow } from '@/ui/windows/types';
 import { RobotRegistry } from '@/core/robot';
 import { createDesktop, createWorkspace, leaf } from '@/tiling';
 import { micras } from '@/robots/micras';

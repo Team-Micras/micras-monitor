@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
-import { App } from '@/app/app';
-import type { AppMonitor } from '@/app/monitor-context';
-import { createShellStore } from '@/app/state/shell-store';
-import '@/app/styles.css';
+import { App } from '@/ui/app';
+import type { AppMonitor } from '@/ui/monitor-context';
+import { createShellStore } from '@/ui/state/shell-store';
+import '@/ui/styles.css';
 import { RobotRegistry } from '@/core/robot';
-import type { AppUpdates } from '@/app/pwa/app-updates';
+import type { AppUpdates } from '@/ui/pwa/app-updates';
 
 import { micras } from '@/robots/micras';
 import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';

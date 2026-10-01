@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import type { ValueType, Variable } from '@/core/variables';
 import { mouse } from '@tests/support/core/robot/packages';
-import { phonePlan, planWindows } from '@/app/phone/phone-plan';
+import { phonePlan, planWindows } from '@/ui/phone/phone-plan';
 
 import { micras } from '@/robots/micras';
 
