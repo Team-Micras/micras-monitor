@@ -5,7 +5,8 @@ over Bluetooth LE or a WebSocket bridge to the simulation, learns the robot from
 shows live variables in a tiling workspace: plots, readouts, the maze, the robot's state, its
 commands, its log and the state of the link. It records sessions in the browser, works offline as
 a PWA, and has a single-column view for the phone. The team's guide, in Portuguese, is
-`docs/monitor-redesign/USER-GUIDE.md` at the root of the Micras workspace.
+`docs/monitor-redesign/USER-GUIDE.md` at the root of the Micras workspace. To understand the code, start
+with [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Requirements
 
@@ -153,39 +154,8 @@ the browser tests over the workspace, the phone view and the open dialogs.
 
 ## Architecture
 
-The app is a single package. Folders are layers, and `no-restricted-imports` rules in `.oxlintrc.json`
-keep their dependencies pointing one way; each rule's message says what it guards.
-
-| Path                  | What it holds                                                                                                              | May import                                        |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `src/core/`           | The monitor's own model and the `Monitor`: variables, values, the `Source` boundary, log, timeline, chords                 | nothing else in the monitor                       |
-| `src/core/robot/`     | The contract of robot packages, their registry and the helpers that read them                                              | the rest of `core`                                |
-| `src/history/`        | The history in memory: the store, its blocks and memory cap, decimation for the plots, gaps                                | `core`                                            |
-| `src/recording/`      | The recording format, its writer and reader; `library/` keeps the recordings in OPFS or memory and manages them            | `core`, `history`                                 |
-| `src/tiling/`         | Tiling window engine, no DOM                                                                                               | nothing else in the monitor                       |
-| `src/sources/<s>/`    | Where robot data comes from: `micras-comm` over the robot link, `demo` in memory                                           | `core` and its own folder; never another source   |
-| `src/robots/<robot>/` | Robot packages: types, views, commands, presets                                                                            | `core` and React; views load lazily by `loadView` |
-| `src/ui/`             | React: shell, windows, recordings, keyboard, tiling view, phone view, theme; `primitives/` holds the shadcn components     | `core`, `history`, `recording`, `tiling`          |
-| `src/main.tsx`        | The composition root                                                                                                       | everything                                        |
-| `scripts/`            | Simulated robot, live checks, bench and bundle size                                                                        | `core`, the sources; the history bench `history`  |
-| `tests/`              | Every test, mirroring `src/` and `scripts/`; `tests/support/` holds their fixtures and helpers, `tests/e2e/` the PWA check | everything                                        |
-
-`src/sources/micras-comm/` is the one place that speaks `micras_comm`: `wire/` (COBS, frames, constants
-and value codecs), `link/` (the `RobotLink` with its handshake, schema, epochs, requests, writes and
-credit), `streaming/` (the stream planner, `fitGroups` and the bandwidth estimator) and `transports/`
-(WebSocket and Bluetooth), with the `MicrasCommSource` at its root.
-
-Only `src/ui/`, the robot packages and the `src/main.tsx` entry point may import React. `src/main.tsx`
-is the composition root: it is the only file that imports the robot packages and the sources, and it
-hands them to the UI, so nothing else in `src/` depends on `src/robots/` or `src/sources/`. The alias
-`@/…` stands for `src/…`. Data flows one way: a source (`src/core/source.ts`) pushes status,
-variables, samples, values and log lines into the sink the `Monitor` (`src/core/monitor.ts`) gives
-it; the monitor feeds the history store and is what the UI reads, through `useLiveMonitor()` for
-what acts on the robot and `useShownMonitor()` for the windows, which show a recording when one is
-open. The UI only calls back into the monitor: connect, request streams, command, write, read.
-Above the link, everything speaks the model of `src/core/`; `src/sources/micras-comm/value-types.ts`
-is the one place that maps the wire's type codes and access flags onto it.
-File names are kebab-case throughout.
+[`ARCHITECTURE.md`](ARCHITECTURE.md) explains the flow, every folder and file, the import rules and
+how to add a source, a window or a robot package.
 
 The frame vectors in `tests/support/sources/micras-comm/` are the bytes the firmware's own codec produces
 (`tests/host/test_frame.cpp` in the firmware); a change to the wire format changes both together.
@@ -250,10 +220,7 @@ rejects a malformed package at registration.
 
 ## Tests and checks
 
-- Tests mirror the `src/` paths: `src/history/history-store.ts` is tested by `tests/history/history-store.test.ts`.
-- An integration test sits with the module it exercises, such as `tests/sources/micras-comm/link/robot-link-simulated.test.ts`.
-- `tests/support/` holds the fixtures and helpers, and their own tests; `tests/e2e/` holds the PWA check.
-- `tests/config/` tests the build and test configuration. Shipped code never imports `tests/` or `scripts/`; lint enforces it.
+Where the tests live is in [`ARCHITECTURE.md`](ARCHITECTURE.md#6-tests-and-scripts). Shipped code never imports `tests/` or `scripts/`; lint enforces it.
 
 | Command                   | What it does                                                                                                     |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
