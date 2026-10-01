@@ -16,12 +16,12 @@ export {
   type DecimationStats,
 } from './decimation';
 export type {
-  BlockPersistence,
+  BlockBacking,
   BlockRef,
-  PersistedBlock,
-  PersistedColumn,
+  BlockData,
+  ColumnData,
   StoredEpoch,
-  StoredSession,
+  StoredRecording,
 } from './block-backing';
 export { ManualScheduler, type Scheduler } from './scheduler';
 export {
@@ -36,9 +36,9 @@ export {
   DEFAULT_BLOCK_SIZE,
   DEFAULT_FLUSH_INTERVAL_MS,
   DEFAULT_MEMORY_CAP_BYTES,
-  TelemetryStore,
+  HistoryStore,
   type DecimateOptions,
-  type TelemetryStoreOptions,
+  type HistoryStoreOptions,
   type VariableInfo,
 } from './history-store';
 export type {
@@ -58,7 +58,7 @@ export type {
   SampleValue,
   HistoryVariable,
   StoreStatus,
-  TelemetryEvent,
+  StoreWarning,
   TimeRange,
   VariableRef,
   VariableSpec,

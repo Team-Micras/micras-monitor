@@ -1,7 +1,7 @@
 import type { Value, ValueType } from '@/core/variables';
 
-import type { Epoch } from './stream-run';
-import type { Channel } from './tick-notifier';
+import type { StreamRun } from './stream-run';
+import type { ChangeSignal } from './tick-notifier';
 import type { HistoryMark, LatestValue } from './types';
 
 /**
@@ -9,7 +9,7 @@ import type { HistoryMark, LatestValue } from './types';
  */
 export interface Segment {
   /** The epoch. */
-  readonly epoch: Epoch;
+  readonly epoch: StreamRun;
 
   /** The variable's numeric column in the epoch, or -1 for a blob. */
   readonly column: number;
@@ -22,11 +22,11 @@ export interface Segment {
  * samples keep their meaning; both share the name's channel, so readers subscribed by name hear
  * about either.
  */
-export class VariableRecord {
+export class VariableHistory {
   private static made = 0;
 
   /** Tells this history apart from any other, for its marks. */
-  readonly serial = ++VariableRecord.made;
+  readonly serial = ++VariableHistory.made;
 
   /** The epochs it was part of, in the order they opened. */
   readonly segments: Segment[] = [];
@@ -54,7 +54,7 @@ export class VariableRecord {
   constructor(
     readonly name: string,
     public type: ValueType | undefined,
-    readonly channel: Channel,
+    readonly channel: ChangeSignal,
     private readonly historyLength: number
   ) {}
 

@@ -2,10 +2,10 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { Block } from '@/history/block';
 import { referenceDecimation, type ReferenceSample } from '@tests/support/history/reference';
-import type { BlockPersistence, BlockRef, PersistedBlock } from '@/history/block-backing';
-import { TelemetryStore, type TelemetryStoreOptions } from '@/history/history-store';
-import type { TelemetryEvent, VariableSpec } from '@/history/types';
-import { MemoryBlockPersistence } from '@tests/support/history/memory-backing';
+import type { BlockBacking, BlockRef, BlockData } from '@/history/block-backing';
+import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store';
+import type { StoreWarning, VariableSpec } from '@/history/types';
+import { MemoryBlockBacking } from '@tests/support/history/memory-backing';
 import { ManualScheduler } from '@/history';
 
 const BLOCK_SIZE = 1024;
@@ -21,15 +21,15 @@ function settle(): Promise<void> {
   });
 }
 
-function cappedStore(blocks: number, options: Partial<TelemetryStoreOptions> = {}) {
+function cappedStore(blocks: number, options: Partial<HistoryStoreOptions> = {}) {
   const scheduler = new ManualScheduler();
-  const store = new TelemetryStore({
+  const store = new HistoryStore({
     scheduler,
     blockSize: BLOCK_SIZE,
     memoryCapBytes: blocks * BLOCK_BYTES,
     ...options,
   });
-  const events: TelemetryEvent[] = [];
+  const events: StoreWarning[] = [];
   store.onEvent((event) => events.push(event));
   store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
   return { scheduler, store, events };
@@ -39,13 +39,13 @@ function valueAt(index: number): number {
   return Math.fround(Math.sin(index / 97) * 10);
 }
 
-function appendRange(store: TelemetryStore, from: number, to: number): void {
+function appendRange(store: HistoryStore, from: number, to: number): void {
   for (let index = from; index < to; index++) {
     store.append(1, index * 1000, [valueAt(index), index]);
   }
 }
 
-async function streamBlocks(store: TelemetryStore, first: number, end: number): Promise<void> {
+async function streamBlocks(store: HistoryStore, first: number, end: number): Promise<void> {
   if (first >= end) {
     return;
   }
@@ -66,7 +66,7 @@ async function frames(count: number, frame: () => void, scheduler: ManualSchedul
   return frames(count - 1, frame, scheduler);
 }
 
-function types(events: readonly TelemetryEvent[]): string[] {
+function types(events: readonly StoreWarning[]): string[] {
   return events.map(({ type }) => type);
 }
 
@@ -137,7 +137,7 @@ describe('memory cap without recording', () => {
 describe('memory cap while recording', () => {
   test('evicts written blocks and keeps every sample', async () => {
     const { store, events } = cappedStore(4);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 12);
 
@@ -152,7 +152,7 @@ describe('memory cap while recording', () => {
 
   test('brings evicted blocks back once the tick ends, and tells subscribers', async () => {
     const { scheduler, store } = cappedStore(4);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 8);
     const callback = vi.fn<() => void>();
@@ -178,7 +178,7 @@ describe('memory cap while recording', () => {
 
   test('evicts the blocks no query read before those one did', async () => {
     const { scheduler, store } = cappedStore(4);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     const firstBlock = () => [...store.samples(1, 0, BLOCK_SIZE * 1000)];
     await streamBlocks(store, 0, 6);
@@ -198,7 +198,7 @@ describe('memory cap while recording', () => {
 
   test('settles when the blocks a view needs do not fit, instead of reading them over and over', async () => {
     const { scheduler, store } = cappedStore(5);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 16);
     const reads: number[] = [];
@@ -221,7 +221,7 @@ describe('memory cap while recording', () => {
 
   test('does not evict for a read back that would not fit even then', async () => {
     const { scheduler, store } = cappedStore(4);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 6);
     appendRange(store, 6 * BLOCK_SIZE, 6 * BLOCK_SIZE + 100);
@@ -240,7 +240,7 @@ describe('memory cap while recording', () => {
 
   test('answers coarse queries on evicted blocks from their pyramids alone', async () => {
     const { store } = cappedStore(3);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 10);
     const samples = Array.from({ length: 10 * BLOCK_SIZE }, (_, index) => ({
@@ -262,7 +262,7 @@ describe('memory cap while recording', () => {
 
   test('does not spill the leaf before a window into its first column', async () => {
     const { store } = cappedStore(3);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 6);
     const decimation = store.decimate(2, 320_000, 640_000, 4);
@@ -272,7 +272,7 @@ describe('memory cap while recording', () => {
 
   test('goes one block over the cap rather than lose samples to a pending write', async () => {
     const { store, events } = cappedStore(2);
-    store.startRecording(new MemoryBlockPersistence());
+    store.startRecording(new MemoryBlockBacking());
     appendRange(store, 0, 2 * BLOCK_SIZE + 1);
 
     expect(events).toEqual([]);
@@ -286,7 +286,7 @@ describe('memory cap while recording', () => {
 
   test('brings back a block for a window narrower than a pyramid leaf', async () => {
     const { scheduler, store } = cappedStore(3);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 6);
     const window = [20_000, 28_000] as const;
@@ -304,7 +304,7 @@ describe('memory cap while recording', () => {
 
   test('does not read a block back when there is no room for it', async () => {
     const { scheduler, store } = cappedStore(4);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await streamBlocks(store, 0, 6);
     await store.stopRecording();
@@ -319,7 +319,7 @@ describe('writing while recording', () => {
   test('seals and writes the block being filled every 5 s, and on stop', async () => {
     let clock = 0;
     const { store } = cappedStore(100, { now: () => clock });
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     appendRange(store, 0, 100);
     clock = 5000;
@@ -348,7 +348,7 @@ describe('writing while recording', () => {
   test('writes the whole session so far when recording starts, the block being filled too', async () => {
     const { store } = cappedStore(100);
     appendRange(store, 0, 3 * BLOCK_SIZE + 100);
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     store.startRecording(persistence);
     await settle();
     const back = await Promise.all(
@@ -372,12 +372,12 @@ describe('writing while recording', () => {
 
   test('writes the whole session so far when recording starts again', async () => {
     const { store } = cappedStore(4);
-    const first = new MemoryBlockPersistence();
+    const first = new MemoryBlockBacking();
     store.startRecording(first);
     await streamBlocks(store, 0, 8);
     appendRange(store, 8 * BLOCK_SIZE, 8 * BLOCK_SIZE + 10);
     await store.stopRecording();
-    const second = new MemoryBlockPersistence();
+    const second = new MemoryBlockBacking();
     const evicted = store.status().evictedBlocks;
     store.startRecording(second);
     await settle();
@@ -391,7 +391,7 @@ describe('writing while recording', () => {
 
   test('waits on stop for a block being read back for the new recording', async () => {
     const { store } = cappedStore(4);
-    const first = new MemoryBlockPersistence();
+    const first = new MemoryBlockBacking();
     store.startRecording(first);
     await streamBlocks(store, 0, 8);
     await store.stopRecording();
@@ -399,7 +399,7 @@ describe('writing while recording', () => {
     const read = first.read.bind(first);
     first.read = (ref) =>
       new Promise<void>((resolve) => release.push(resolve)).then(() => read(ref));
-    const second = new MemoryBlockPersistence();
+    const second = new MemoryBlockBacking();
     store.startRecording(second);
     await settle();
     let stopped = false;
@@ -419,7 +419,7 @@ describe('writing while recording', () => {
   });
 
   test('keeps counting dropped samples in what it says of a variable while history is stopped', async () => {
-    const stuck: BlockPersistence = {
+    const stuck: BlockBacking = {
       write: () => new Promise<void>(() => undefined),
       read: () => Promise.reject(new Error('never written')),
     };
@@ -439,9 +439,9 @@ describe('writing while recording', () => {
   test('tells about failing writes once, backs off, and recovers', async () => {
     let clock = 0;
     let failing = true;
-    const memory = new MemoryBlockPersistence();
-    const flaky: BlockPersistence = {
-      write: (block: PersistedBlock) =>
+    const memory = new MemoryBlockBacking();
+    const flaky: BlockBacking = {
+      write: (block: BlockData) =>
         failing ? Promise.reject(new Error('disk full')) : memory.write(block),
       read: (ref: BlockRef) => memory.read(ref),
     };
@@ -476,9 +476,9 @@ describe('writing while recording', () => {
   test('breaks the line of a view drawn while samples were not kept, once they are again', async () => {
     let clock = 0;
     let failing = true;
-    const memory = new MemoryBlockPersistence();
-    const flaky: BlockPersistence = {
-      write: (block: PersistedBlock) =>
+    const memory = new MemoryBlockBacking();
+    const flaky: BlockBacking = {
+      write: (block: BlockData) =>
         failing ? Promise.reject(new Error('disk full')) : memory.write(block),
       read: (ref: BlockRef) => memory.read(ref),
     };
@@ -531,7 +531,7 @@ describe('writing while recording', () => {
   });
 
   test('shows the samples an empty epoch could not keep as a gap', async () => {
-    const failing: BlockPersistence = {
+    const failing: BlockBacking = {
       write: () => Promise.reject(new Error('disk full')),
       read: () => Promise.reject(new Error('never written')),
     };
@@ -552,7 +552,7 @@ describe('writing while recording', () => {
 
 describe('short epochs', () => {
   test('take little memory, because an epoch starts with a small block', () => {
-    const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+    const store = new HistoryStore({ scheduler: new ManualScheduler() });
     const variables = Array.from({ length: 16 }, (_, id): VariableSpec => ({ id, type: 'f32' }));
     const row = Array.from({ length: 16 }, () => 1);
 

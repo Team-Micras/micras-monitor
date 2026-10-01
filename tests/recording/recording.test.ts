@@ -14,7 +14,7 @@ import {
   type RecordingHeader,
   type RecordingRecord,
 } from '@/recording/recording';
-import { MemoryBlockPersistence } from '@tests/support/history/memory-backing';
+import { MemoryBlockBacking } from '@tests/support/history/memory-backing';
 import {
   deserializeRecording,
   serializeRecording,
@@ -349,7 +349,7 @@ describe('recording format v2', () => {
       throw new Error('The second record is a block');
     }
 
-    const persistence = new MemoryBlockPersistence();
+    const persistence = new MemoryBlockBacking();
     await persistence.write(block.block);
     const back = await persistence.read(block.block.ref);
 

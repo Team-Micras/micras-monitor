@@ -1,7 +1,7 @@
 import type { Value, ValueType } from '@/core/variables';
 
 import type { Block } from './block';
-import type { BlockPersistence, PersistedBlock, StoredSession } from './block-backing';
+import type { BlockBacking, BlockData, StoredRecording } from './block-backing';
 import { type ColumnKind, columnKindOf, losesPrecision } from './columns';
 import {
   type Decimation,
@@ -12,11 +12,11 @@ import {
   lowerBound,
   upperBound,
 } from './decimation';
-import { BlockResidency } from './memory/block-memory';
+import { BlockMemory } from './memory/block-memory';
 import { LEAF_SIZE } from './min-max-pyramid';
 import type { Scheduler } from './scheduler';
-import { Epoch, type EpochHost, RECEIVED_BACKWARDS } from './stream-run';
-import { ChangeNotifier, Channel } from './tick-notifier';
+import { StreamRun, type StreamRunHost, RECEIVED_BACKWARDS } from './stream-run';
+import { TickNotifier, ChangeSignal } from './tick-notifier';
 import type {
   Boundary,
   BoundaryKind,
@@ -30,12 +30,12 @@ import type {
   SampleValue,
   HistoryVariable,
   StoreStatus,
-  TelemetryEvent,
+  StoreWarning,
   TimeRange,
   VariableRef,
 } from './types';
-import type { VariableRecord } from './variable-history';
-import { ChannelRegistry } from './variable-registry';
+import type { VariableHistory } from './variable-history';
+import { VariableRegistry } from './variable-registry';
 import { nextUp } from './window';
 
 /** How many samples a block holds at most unless told otherwise. */
@@ -50,7 +50,7 @@ export const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 /**
  * How to set up a store.
  */
-export interface TelemetryStoreOptions {
+export interface HistoryStoreOptions {
   /** When subscribers hear about changes and query ticks end: `requestAnimationFrame` in the app. */
   readonly scheduler: Scheduler;
 
@@ -120,8 +120,8 @@ export interface DecimateOptions {
 }
 
 interface OpenEpoch {
-  readonly epoch: Epoch;
-  readonly records: readonly VariableRecord[];
+  readonly epoch: StreamRun;
+  readonly records: readonly VariableHistory[];
 }
 
 interface Cached<T> {
@@ -171,21 +171,21 @@ function overlaps(startUs: number, endUs: number, fromUs: number, toUs: number):
  * {@link timeRange}, {@link historyMark}, {@link boundaries} and {@link status} return the same
  * value until something changes, so they can back `useSyncExternalStore` directly.
  */
-export class TelemetryStore {
+export class HistoryStore {
   private readonly blockSize: number;
-  private readonly registry: ChannelRegistry;
+  private readonly registry: VariableRegistry;
   private readonly epochs = new Map<number, OpenEpoch>();
-  private readonly openByGroup = new Map<number, Epoch>();
+  private readonly openByGroup = new Map<number, StreamRun>();
   private boundaryList: readonly Boundary[] = [];
-  private readonly listeners = new Set<(event: TelemetryEvent) => void>();
+  private readonly listeners = new Set<(event: StoreWarning) => void>();
   private readonly ingestionListeners = new Set<(event: IngestionEvent) => void>();
-  private readonly notifier: ChangeNotifier;
-  private readonly residency: BlockResidency;
-  private readonly host: EpochHost;
-  private readonly statusChannel = new Channel();
-  private readonly infoCache = new WeakMap<VariableRecord, Cached<VariableInfo>>();
-  private readonly rangeCache = new WeakMap<VariableRecord, Cached<TimeRange | undefined>>();
-  private readonly lastIds = new WeakMap<VariableRecord, number>();
+  private readonly notifier: TickNotifier;
+  private readonly residency: BlockMemory;
+  private readonly host: StreamRunHost;
+  private readonly statusChannel = new ChangeSignal();
+  private readonly infoCache = new WeakMap<VariableHistory, Cached<VariableInfo>>();
+  private readonly rangeCache = new WeakMap<VariableHistory, Cached<TimeRange | undefined>>();
+  private readonly lastIds = new WeakMap<VariableHistory, number>();
   private sessionRange: Cached<TimeRange | undefined> | undefined;
   private statusSnapshot: StoreStatus;
   private historyVersion = 0;
@@ -195,11 +195,11 @@ export class TelemetryStore {
   /**
    * @param options The scheduler, and the sizes and limits to use.
    */
-  constructor(options: TelemetryStoreOptions) {
+  constructor(options: HistoryStoreOptions) {
     this.blockSize = checkBlockSize(options.blockSize ?? DEFAULT_BLOCK_SIZE);
-    this.registry = new ChannelRegistry(options.historyLength ?? 32);
-    this.notifier = new ChangeNotifier(options.scheduler);
-    this.residency = new BlockResidency({
+    this.registry = new VariableRegistry(options.historyLength ?? 32);
+    this.notifier = new TickNotifier(options.scheduler);
+    this.residency = new BlockMemory({
       capBytes: options.memoryCapBytes ?? DEFAULT_MEMORY_CAP_BYTES,
       warningRatio: options.warningRatio ?? 0.8,
       scheduler: options.scheduler,
@@ -289,7 +289,7 @@ export class TelemetryStore {
       }
     }
 
-    const epoch = new Epoch(
+    const epoch = new StreamRun(
       { epochId: spec.epochId, groupId: spec.groupId, variables },
       this.blockSize,
       this.host
@@ -476,13 +476,13 @@ export class TelemetryStore {
    * @returns How many blocks did not fit under the cap and were left out.
    * @throws If the store already holds epochs, or a block does not fit its epoch.
    */
-  load(session: StoredSession, source: BlockPersistence): number {
+  load(session: StoredRecording, source: BlockBacking): number {
     if (this.epochs.size > 0) {
       throw new Error('Only an empty store can load a saved session');
     }
 
     this.registry.setSchema(session.schema);
-    const lastSamples = new Map<VariableRecord, SampleValue>();
+    const lastSamples = new Map<VariableHistory, SampleValue>();
     let skipped = 0;
 
     for (const stored of session.epochs) {
@@ -873,7 +873,7 @@ export class TelemetryStore {
    *
    * @returns A function that stops listening.
    */
-  onEvent(listener: (event: TelemetryEvent) => void): () => void {
+  onEvent(listener: (event: StoreWarning) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -937,7 +937,7 @@ export class TelemetryStore {
    * memory under the cap and come back when a query needs them. The records besides the blocks
    * come from {@link replayIngestion}, then {@link onIngestion}.
    */
-  startRecording(persistence: BlockPersistence): void {
+  startRecording(persistence: BlockBacking): void {
     this.residency.startRecording(persistence);
   }
 
@@ -965,7 +965,7 @@ export class TelemetryStore {
       throw new Error(`Epoch ${recorded.epochId} appears twice in the session`);
     }
 
-    const epoch = new Epoch(recorded, this.blockSize, this.host);
+    const epoch = new StreamRun(recorded, this.blockSize, this.host);
     const records = recorded.variables.map(({ id, name, type }) => {
       const record = this.registry.recordFor(name, type);
       this.lastIds.set(record, id);
@@ -980,10 +980,10 @@ export class TelemetryStore {
   }
 
   private noteLastSamples(
-    epoch: Epoch,
-    records: readonly VariableRecord[],
-    persisted: PersistedBlock,
-    lastSamples: Map<VariableRecord, SampleValue>
+    epoch: StreamRun,
+    records: readonly VariableHistory[],
+    persisted: BlockData,
+    lastSamples: Map<VariableHistory, SampleValue>
   ): void {
     const last = persisted.time.length - 1;
 
@@ -1017,7 +1017,7 @@ export class TelemetryStore {
     return open;
   }
 
-  private checkPrecision(record: VariableRecord, wide: boolean, value: Value): void {
+  private checkPrecision(record: VariableHistory, wide: boolean, value: Value): void {
     if (wide && !record.precisionLost && losesPrecision(value)) {
       record.precisionLost = true;
       this.emit({ type: 'precision-loss', name: record.name });
@@ -1043,7 +1043,7 @@ export class TelemetryStore {
     this.notifier.touch(this.statusChannel);
   }
 
-  private rangeOf(epochs: readonly Epoch[]): TimeRange | undefined {
+  private rangeOf(epochs: readonly StreamRun[]): TimeRange | undefined {
     let startUs = Number.POSITIVE_INFINITY;
     let lastUs = Number.NEGATIVE_INFINITY;
 
@@ -1096,7 +1096,7 @@ export class TelemetryStore {
   }
 
   private ingestValue(
-    record: VariableRecord,
+    record: VariableHistory,
     variableId: number,
     value: Value,
     timeUs: number
@@ -1117,7 +1117,7 @@ export class TelemetryStore {
     this.notifier.touch(this.statusChannel);
   }
 
-  private emit(event: TelemetryEvent): void {
+  private emit(event: StoreWarning): void {
     for (const listener of this.listeners) {
       listener(event);
     }

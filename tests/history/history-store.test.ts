@@ -4,32 +4,27 @@ import type { ValueType } from '@/core/variables';
 import { COLUMN_BREAKS, COLUMN_HAS_DATA } from '@/history/decimation';
 import { GAP_BYTES } from '@/history/stream-run';
 import { toLineSeries } from '@/history/series';
-import { TelemetryStore, type TelemetryStoreOptions } from '@/history/history-store';
-import type {
-  HistoryVariable,
-  IngestionEvent,
-  TelemetryEvent,
-  VariableSpec,
-} from '@/history/types';
+import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store';
+import type { HistoryVariable, IngestionEvent, StoreWarning, VariableSpec } from '@/history/types';
 import { ManualScheduler } from '@/history';
 
 const MS = 1000;
 const SECOND = 1_000_000;
 
-function makeStore(options: Partial<TelemetryStoreOptions> = {}): TelemetryStore {
-  return new TelemetryStore({ scheduler: new ManualScheduler(), blockSize: 256, ...options });
+function makeStore(options: Partial<HistoryStoreOptions> = {}): HistoryStore {
+  return new HistoryStore({ scheduler: new ManualScheduler(), blockSize: 256, ...options });
 }
 
 function mode(type: ValueType): HistoryVariable[] {
   return [{ id: 0, name: 'mode', type }];
 }
 
-function single(store: TelemetryStore, epochId: number, id = 1, groupId = 0): void {
+function single(store: HistoryStore, epochId: number, id = 1, groupId = 0): void {
   store.openEpoch({ epochId, groupId, variables: [{ id, type: 'f32' }] });
 }
 
 function streamSingle(
-  store: TelemetryStore,
+  store: HistoryStore,
   epochId: number,
   from: number,
   count: number,
@@ -41,7 +36,7 @@ function streamSingle(
   }
 }
 
-function threeEpochs(): TelemetryStore {
+function threeEpochs(): HistoryStore {
   const store = makeStore();
   single(store, 1, 7);
   streamSingle(store, 1, 0, 1000, (index) => index * MS);
@@ -55,13 +50,13 @@ function threeEpochs(): TelemetryStore {
   return store;
 }
 
-function stored(store: TelemetryStore, id: number) {
+function stored(store: HistoryStore, id: number) {
   const runs = [...store.samples(id, 0, SECOND)];
   expect(runs).toHaveLength(1);
   return runs[0].values;
 }
 
-function breaksOf(store: TelemetryStore, id: number, endUs: number, pixels: number): number[] {
+function breaksOf(store: HistoryStore, id: number, endUs: number, pixels: number): number[] {
   const decimation = store.decimate(id, 0, endUs, pixels);
   return Array.from({ length: pixels }, (_, column) => column).filter(
     (column) => (decimation.flags[column] & COLUMN_BREAKS) !== 0
@@ -94,7 +89,7 @@ describe('epochs and gaps', () => {
 
   test('leaves a repeated time out of the history, and a time going back too, with an event', () => {
     const store = makeStore();
-    const events: TelemetryEvent[] = [];
+    const events: StoreWarning[] = [];
     store.onEvent((event) => events.push(event));
     single(store, 1);
     store.append(1, 0, [1]);
@@ -171,7 +166,7 @@ describe('epoch lifecycle', () => {
   test('closes an open epoch sharing a variable with a new one, whatever the ack order', () => {
     const store = makeStore();
     const scheduler = new ManualScheduler();
-    const watched = new TelemetryStore({ scheduler, blockSize: 256 });
+    const watched = new HistoryStore({ scheduler, blockSize: 256 });
 
     for (const target of [store, watched]) {
       target.openEpoch({
@@ -276,7 +271,7 @@ describe('schema', () => {
 
   test('starts a new history when an epoch names a known variable with another type', () => {
     const scheduler = new ManualScheduler();
-    const store = new TelemetryStore({ scheduler, blockSize: 256 });
+    const store = new HistoryStore({ scheduler, blockSize: 256 });
     const callback = vi.fn<() => void>();
     store.setSchema([{ id: 0, name: 'mode', type: 'u8' }]);
     store.subscribe(['mode'], callback);
@@ -385,7 +380,7 @@ describe('numeric types', () => {
 
   test('flags 64 bit integers beyond 2^53 once, and keeps their latest value exact', () => {
     const store = makeStore();
-    const events: TelemetryEvent[] = [];
+    const events: StoreWarning[] = [];
     store.onEvent((event) => events.push(event));
     store.openEpoch({ epochId: 1, groupId: 0, variables: variables.slice(6, 8) });
     store.append(1, 0, [2n ** 53n + 1n, -(2n ** 60n) - 3n]);

@@ -10,9 +10,9 @@ import {
   RECORDING_FORMAT_VERSION,
   type RecordingHeader,
 } from '@/recording/recording';
-import { SavedRecording } from '@/recording/recording-reader';
-import { RecordingBlocks, SessionRecorder } from '@/recording/recording-writer';
-import { TelemetryStore, type TelemetryStoreOptions } from '@/history/history-store';
+import { RecordingReader } from '@/recording/recording-reader';
+import { RecordingBlocks, RecordingWriter } from '@/recording/recording-writer';
+import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store';
 import type { SampleValue, VariableSpec } from '@/history/types';
 import { serializeRecording } from '@tests/support/recording/recording-bytes';
 import { ManualScheduler } from '@/history';
@@ -51,10 +51,10 @@ async function each(count: number, step: (index: number) => Promise<void>, from 
   }
 }
 
-function makeStore(options: Partial<TelemetryStoreOptions> = {}) {
+function makeStore(options: Partial<HistoryStoreOptions> = {}) {
   let nowMs = 0;
   const scheduler = new ManualScheduler();
-  const store = new TelemetryStore({
+  const store = new HistoryStore({
     scheduler,
     blockSize: BLOCK_SIZE,
     now: () => nowMs,
@@ -74,13 +74,13 @@ function valueAt(index: number): number {
   return Math.fround(Math.sin(index / 37) * 3);
 }
 
-function appendRange(store: TelemetryStore, epochId: number, from: number, to: number): void {
+function appendRange(store: HistoryStore, epochId: number, from: number, to: number): void {
   for (let index = from; index < to; index++) {
     store.append(epochId, index * SAMPLE_US, [valueAt(index), index]);
   }
 }
 
-function everySample(store: TelemetryStore, name: string): SampleValue[] {
+function everySample(store: HistoryStore, name: string): SampleValue[] {
   const samples: SampleValue[] = [];
 
   for (const run of store.samples(name, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY)) {
@@ -92,8 +92,8 @@ function everySample(store: TelemetryStore, name: string): SampleValue[] {
   return samples;
 }
 
-async function reopen(file: RecordingFile, options: Partial<TelemetryStoreOptions> = {}) {
-  const saved = await SavedRecording.read(file);
+async function reopen(file: RecordingFile, options: Partial<HistoryStoreOptions> = {}) {
+  const saved = await RecordingReader.read(file);
   const { store, scheduler } = makeStore(options);
   const skipped = saved.loadInto(store);
   return { saved, store, scheduler, skipped };
@@ -146,7 +146,7 @@ describe('recording a session', () => {
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     appendRange(store, 1, 0, 1500);
     const file = new MemoryRecordingFile();
-    const recorder = await SessionRecorder.start(file, HEADER, store);
+    const recorder = await RecordingWriter.start(file, HEADER, store);
     appendRange(store, 1, 1500, 1600);
     store.append(1, 1610 * SAMPLE_US, [valueAt(1610), 1610], 10);
     advance(5000);
@@ -181,7 +181,7 @@ describe('recording a session', () => {
     const { store, advance } = makeStore();
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
-    const recorder = await SessionRecorder.start(file, HEADER, store);
+    const recorder = await RecordingWriter.start(file, HEADER, store);
 
     await each(23, async (second) => {
       appendRange(store, 1, second * 100, (second + 1) * 100);
@@ -205,7 +205,7 @@ describe('recording a session', () => {
     const { store, advance } = makeStore();
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
-    const recorder = await SessionRecorder.start(file, HEADER, store);
+    const recorder = await RecordingWriter.start(file, HEADER, store);
     appendRange(store, 1, 0, 500);
     advance(5000);
     appendRange(store, 1, 500, 501);
@@ -227,7 +227,7 @@ describe('recording a session', () => {
     const { store, advance } = makeStore();
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
-    const recorder = await SessionRecorder.start(file, HEADER, store);
+    const recorder = await RecordingWriter.start(file, HEADER, store);
     const marks: number[] = [];
 
     await each(3, async (part) => {
@@ -256,7 +256,7 @@ describe('recording a session', () => {
     const { store } = makeStore({ memoryCapBytes: 3 * blockBytes });
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     const first = new MemoryRecordingFile();
-    const recorder = await SessionRecorder.start(first, HEADER, store);
+    const recorder = await RecordingWriter.start(first, HEADER, store);
 
     await each(6, async (block) => {
       appendRange(store, 1, block * BLOCK_SIZE, (block + 1) * BLOCK_SIZE);
@@ -266,7 +266,7 @@ describe('recording a session', () => {
     await recorder.stop(store);
     expect(store.status().evictedBlocks).toBeGreaterThan(0);
     const second = new MemoryRecordingFile();
-    const again = await SessionRecorder.start(second, HEADER, store);
+    const again = await RecordingWriter.start(second, HEADER, store);
     await settle();
     await settle();
     await again.stop(store);
@@ -326,7 +326,7 @@ describe('recording a session', () => {
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     const file = new FlakyFile();
     const errors: unknown[] = [];
-    const recorder = await SessionRecorder.start(file, HEADER, store, (error) =>
+    const recorder = await RecordingWriter.start(file, HEADER, store, (error) =>
       errors.push(error)
     );
     file.failures = 1;
@@ -358,7 +358,7 @@ describe('a saved session under the memory cap', () => {
     const { store, advance } = makeStore();
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
-    const recorder = await SessionRecorder.start(file, HEADER, store);
+    const recorder = await RecordingWriter.start(file, HEADER, store);
 
     for (let block = 0; block < 8; block++) {
       appendRange(store, 1, block * BLOCK_SIZE, (block + 1) * BLOCK_SIZE);
@@ -408,9 +408,9 @@ describe('a saved session under the memory cap', () => {
     const { store } = makeStore();
     store.openEpoch({ epochId: 1, groupId: 0, variables: VARIABLES });
     const file = new MemoryRecordingFile();
-    const recorder = await SessionRecorder.start(file, HEADER, store);
+    const recorder = await RecordingWriter.start(file, HEADER, store);
     await recorder.stop(store);
-    const saved = await SavedRecording.read(file);
+    const saved = await RecordingReader.read(file);
 
     expect(() => saved.loadInto(store)).toThrow(/empty store/);
   });

@@ -21,7 +21,7 @@ export interface BlockRef {
 /**
  * The values of one variable in a persisted block.
  */
-export interface PersistedColumn {
+export interface ColumnData {
   /** The variable's id in the schema. */
   readonly variableId: number;
 
@@ -34,7 +34,7 @@ export interface PersistedColumn {
  *
  * The pyramid of a block never leaves memory, so it is not part of it.
  */
-export interface PersistedBlock {
+export interface BlockData {
   /** Which block this is. */
   readonly ref: BlockRef;
 
@@ -45,7 +45,7 @@ export interface PersistedBlock {
   readonly time: Float64Array;
 
   /** One column per numeric variable of the epoch. */
-  readonly columns: readonly PersistedColumn[];
+  readonly columns: readonly ColumnData[];
 }
 
 /**
@@ -54,12 +54,12 @@ export interface PersistedBlock {
  *
  * The application implements it over OPFS; an in-memory one stands in for tests.
  */
-export interface BlockPersistence {
+export interface BlockBacking {
   /**
    * Store a sealed block. The arrays may be views into the store's memory: copy what must outlive
    * the returned promise.
    */
-  write(block: PersistedBlock): Promise<void>;
+  write(block: BlockData): Promise<void>;
 
   /**
    * Bring back a block written before. The arrays must hold exactly the block's samples, no more:
@@ -67,11 +67,11 @@ export interface BlockPersistence {
    *
    * @throws If no block with that reference was written.
    */
-  read(ref: BlockRef): Promise<PersistedBlock>;
+  read(ref: BlockRef): Promise<BlockData>;
 }
 
 /**
- * An epoch of a saved session, as `TelemetryStore.load` takes it.
+ * An epoch of a saved session, as `HistoryStore.load` takes it.
  */
 export interface StoredEpoch {
   /** The epoch, with the names its variables had. */
@@ -81,13 +81,13 @@ export interface StoredEpoch {
   readonly gaps: readonly RecordedGap[];
 
   /** Its blocks, in index order; decoded one at a time as they are taken. */
-  readonly blocks: Iterable<PersistedBlock>;
+  readonly blocks: Iterable<BlockData>;
 }
 
 /**
- * A saved session, as `TelemetryStore.load` takes it.
+ * A saved session, as `HistoryStore.load` takes it.
  */
-export interface StoredSession {
+export interface StoredRecording {
   /** The robot's schema when the session was recorded. */
   readonly schema: readonly HistoryVariable[];
 

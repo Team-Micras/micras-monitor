@@ -11,11 +11,11 @@ import { createContext, use, useSyncExternalStore, type ReactNode } from 'react'
 import type { Monitor, MonitorState } from '@/core/monitor';
 import type { SourceStatus, WriteValue } from '@/core/source';
 import type { Variable } from '@/core/variables';
-import type { LatestValue, TelemetryStore } from '@/history';
+import type { LatestValue, HistoryStore } from '@/history';
 import type { PackageSelection, RobotPackage, RobotRegistry } from '@/robot-kit';
 
 /** A monitor as the app holds it, over a history store. */
-export type AppMonitor = Monitor<TelemetryStore>;
+export type AppMonitor = Monitor<HistoryStore>;
 
 /** The robot a window draws with, a React package. */
 export type ReactRobotPackage = RobotPackage<ReactNode>;
@@ -147,7 +147,7 @@ export function usePendingWrite(monitor: AppMonitor, name: string): WriteValue |
  * @returns The function that stops following it.
  */
 export function subscribeThrottled(
-  history: TelemetryStore,
+  history: HistoryStore,
   name: string,
   listener: () => void,
   intervalMs = LIVE_VALUE_INTERVAL_MS

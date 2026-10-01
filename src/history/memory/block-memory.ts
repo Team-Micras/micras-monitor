@@ -1,8 +1,8 @@
 import { Block, type BlockLayout } from '../block';
-import type { BlockPersistence, PersistedBlock } from '../block-backing';
+import type { BlockBacking, BlockData } from '../block-backing';
 import type { BlockAccess } from '../decimation';
 import type { Scheduler } from '../scheduler';
-import type { StoreStatus, TelemetryEvent } from '../types';
+import type { StoreStatus, StoreWarning } from '../types';
 
 const FIRST_BACKOFF_MS = 1000;
 const LAST_BACKOFF_MS = 60_000;
@@ -10,7 +10,7 @@ const LAST_BACKOFF_MS = 60_000;
 /**
  * What the residency needs from the store around it.
  */
-export interface ResidencyOptions {
+export interface BlockMemoryOptions {
   /** The most memory blocks and gap records may take. */
   readonly capBytes: number;
 
@@ -30,9 +30,9 @@ export interface ResidencyOptions {
   readonly maxConcurrentLoads: number;
 
   /** Tell the user about something. */
-  readonly emit: (event: TelemetryEvent) => void;
+  readonly emit: (event: StoreWarning) => void;
 
-  /** Something in {@link BlockResidency.status} changed. */
+  /** Something in {@link BlockMemory.status} changed. */
   readonly statusChanged: () => void;
 
   /** Seal the block every open epoch is filling. */
@@ -68,13 +68,13 @@ export interface ResidencyOptions {
  * The warning comes at a share of the cap: of all the memory while not recording, and of the
  * memory nothing can free, the pyramids, leaf times and gap records, while recording.
  */
-export class BlockResidency implements BlockAccess {
+export class BlockMemory implements BlockAccess {
   private blocks: Block[] = [];
   private usedBytes = 0;
   private fixedBytes = 0;
   private pendingWrites = 0;
   private readonly writes = new Set<Promise<void>>();
-  private recording: BlockPersistence | undefined;
+  private recording: BlockBacking | undefined;
   private historyStopped = false;
   private roomChanged = false;
   private warned = false;
@@ -91,7 +91,7 @@ export class BlockResidency implements BlockAccess {
   /**
    * @param options The cap, the clock and how to report.
    */
-  constructor(private readonly options: ResidencyOptions) {}
+  constructor(private readonly options: BlockMemoryOptions) {}
 
   /** The memory the blocks take and what is recording, for the status snapshot. */
   status(): StoreStatus {
@@ -161,7 +161,7 @@ export class BlockResidency implements BlockAccess {
    * A block restored from a recording already has a copy there: it can leave memory at once, and
    * comes back from the recording when a query needs it.
    */
-  adopt(block: Block, source: BlockPersistence): void {
+  adopt(block: Block, source: BlockBacking): void {
     block.copy = source;
     block.recordedBy = source;
     this.roomChanged = true;
@@ -199,7 +199,7 @@ export class BlockResidency implements BlockAccess {
    * being filled sealed and those evicted read back from where they live, then every block as
    * it seals.
    */
-  startRecording(persistence: BlockPersistence): void {
+  startRecording(persistence: BlockBacking): void {
     this.recording = persistence;
     this.failing = false;
     this.backoffMs = FIRST_BACKOFF_MS;
@@ -303,7 +303,7 @@ export class BlockResidency implements BlockAccess {
     void this.load(block, source, reserved);
   }
 
-  private async load(block: Block, source: BlockPersistence, reserved: number): Promise<void> {
+  private async load(block: Block, source: BlockBacking, reserved: number): Promise<void> {
     const generation = this.generation;
     let restored = false;
 
@@ -473,7 +473,7 @@ export class BlockResidency implements BlockAccess {
     }
   }
 
-  private async backfill(target: BlockPersistence): Promise<void> {
+  private async backfill(target: BlockBacking): Promise<void> {
     const evicted = this.blocks.filter((block) => !block.resident && block.recordedBy !== target);
 
     await evicted.reduce<Promise<void>>(async (previous, block) => {
@@ -497,8 +497,8 @@ export class BlockResidency implements BlockAccess {
 
   private async persist(
     block: Block,
-    target: BlockPersistence,
-    contents: () => Promise<PersistedBlock>
+    target: BlockBacking,
+    contents: () => Promise<BlockData>
   ): Promise<void> {
     const generation = this.generation;
     block.writing = true;

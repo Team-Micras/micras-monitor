@@ -1,11 +1,11 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { TelemetryStore } from '@/history/history-store';
+import { HistoryStore } from '@/history/history-store';
 import { ManualScheduler } from '@/history';
 
 function twoVariables() {
   const scheduler = new ManualScheduler();
-  const store = new TelemetryStore({ scheduler, blockSize: 256 });
+  const store = new HistoryStore({ scheduler, blockSize: 256 });
   store.openEpoch({
     epochId: 1,
     groupId: 0,
@@ -126,7 +126,7 @@ describe('subscriptions', () => {
 
   test('follow a name across a schema change', () => {
     const scheduler = new ManualScheduler();
-    const store = new TelemetryStore({ scheduler, blockSize: 256 });
+    const store = new HistoryStore({ scheduler, blockSize: 256 });
     const callback = vi.fn<() => void>();
     store.setSchema([{ id: 3, name: 'battery', type: 'f32' }]);
     store.subscribe(['battery'], callback);

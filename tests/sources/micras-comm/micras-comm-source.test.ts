@@ -4,7 +4,7 @@ import { Monitor, type VariableDemand } from '@/core/monitor';
 import type { WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource, type MicrasCommOptions } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
-import { TelemetryStore } from '@/history';
+import { HistoryStore } from '@/history';
 import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
 import {
   startInMemoryRobot,
@@ -40,15 +40,15 @@ const PINNED: readonly VariableDemand[] = [
 interface Setup {
   readonly sim: InMemoryRobot;
   readonly source: MicrasCommSource;
-  readonly monitor: Monitor<TelemetryStore>;
+  readonly monitor: Monitor<HistoryStore>;
   readonly sockets: WebSocketLike[];
 }
 
 let running: Setup[] = [];
 
-function monitorOver(source: MicrasCommSource): Monitor<TelemetryStore> {
+function monitorOver(source: MicrasCommSource): Monitor<HistoryStore> {
   return new Monitor({
-    history: new TelemetryStore({ scheduler: { schedule: (task) => setTimeout(task, 0) } }),
+    history: new HistoryStore({ scheduler: { schedule: (task) => setTimeout(task, 0) } }),
     source,
   });
 }
@@ -80,7 +80,7 @@ function sessionState(source: MicrasCommSource): string | undefined {
   return source.session?.state.kind;
 }
 
-function pagedLoads(monitor: Monitor<TelemetryStore>): number {
+function pagedLoads(monitor: Monitor<HistoryStore>): number {
   return monitor.state.log.filter((entry) => entry.text.startsWith('loading a schema')).length;
 }
 
@@ -88,7 +88,7 @@ async function streaming(source: MicrasCommSource, what = 'the link to stream'):
   await waitFor(() => sessionState(source) === 'streaming', 5000, what);
 }
 
-function gauge(monitor: Monitor<TelemetryStore>, label: string) {
+function gauge(monitor: Monitor<HistoryStore>, label: string) {
   return monitor.state.stats.gauges.find((entry) => entry.label === label);
 }
 

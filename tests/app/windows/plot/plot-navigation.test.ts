@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { TelemetryStore, ManualScheduler } from '@/history';
+import { HistoryStore, ManualScheduler } from '@/history';
 
 import {
   clampWindow,
@@ -52,7 +52,7 @@ describe('moving a paused plot through the history', () => {
   });
 
   test('bounds the history by the variables that have samples', () => {
-    const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+    const store = new HistoryStore({ scheduler: new ManualScheduler() });
     store.setSchema([
       { id: 0, name: 'a', type: 'f32' },
       { id: 1, name: 'b', type: 'f32' },

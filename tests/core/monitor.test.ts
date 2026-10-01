@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { Monitor } from '@/core/monitor';
 import type { SourceStats } from '@/core/source';
 import type { Variable } from '@/core/variables';
-import { ManualScheduler, TelemetryStore } from '@/history';
+import { ManualScheduler, HistoryStore } from '@/history';
 import { ScriptedSource } from '@tests/support/sources/scripted-source';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
@@ -19,7 +19,7 @@ function setup() {
   let hostMs = 0;
   const source = new ScriptedSource();
   const monitor = new Monitor({
-    history: new TelemetryStore({ scheduler: new ManualScheduler() }),
+    history: new HistoryStore({ scheduler: new ManualScheduler() }),
     source,
     now: () => hostMs,
   });
@@ -234,7 +234,7 @@ describe('Monitor driving a source', () => {
 
 describe('Monitor over a recording', () => {
   test('shows what was recorded and never connects', async () => {
-    const history = new TelemetryStore({ scheduler: new ManualScheduler() });
+    const history = new HistoryStore({ scheduler: new ManualScheduler() });
     const monitor = Monitor.ofRecording(history, IDENTITY, VARIABLES);
     monitor.connect(URL);
 

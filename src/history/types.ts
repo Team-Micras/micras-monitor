@@ -228,7 +228,7 @@ export type IngestionEvent =
 /**
  * Something the application should tell the user about.
  */
-export type TelemetryEvent =
+export type StoreWarning =
   | { readonly type: 'memory-warning'; readonly usedBytes: number; readonly capBytes: number }
   | {
       readonly type: 'history-dropped';

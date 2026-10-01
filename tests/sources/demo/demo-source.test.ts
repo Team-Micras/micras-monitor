@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Monitor } from '@/core/monitor';
 import { DEMO_ROBOT } from '@/sources/demo/demo-robot';
 import { DemoSource, type DemoOptions, type DemoRobot } from '@/sources/demo/demo-source';
-import { ManualScheduler, TelemetryStore } from '@/history';
+import { ManualScheduler, HistoryStore } from '@/history';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
 const STOP = 5;
@@ -12,7 +12,7 @@ const EXPLORE = 0;
 function demo(robot: DemoRobot = DEMO_ROBOT, options: DemoOptions = { answerMs: 10 }) {
   const scheduler = new ManualScheduler();
   const monitor = new Monitor({
-    history: new TelemetryStore({ scheduler }),
+    history: new HistoryStore({ scheduler }),
     source: new DemoSource(robot, options),
   });
   return { monitor, scheduler };

@@ -11,7 +11,7 @@ import '@/app/styles.css';
 import { createShellStore } from '@/app/state/shell-store';
 import { Monitor } from '@/core/monitor';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
-import { TelemetryStore } from '@/history';
+import { HistoryStore } from '@/history';
 
 declare module 'vitest' {
   interface ProvidedContext {
@@ -25,7 +25,7 @@ let monitor: AppMonitor | undefined;
 
 function liveMonitor(source: MicrasCommSource): AppMonitor {
   return new Monitor({
-    history: new TelemetryStore({
+    history: new HistoryStore({
       scheduler: { schedule: (task) => requestAnimationFrame(() => task()) },
     }),
     source,

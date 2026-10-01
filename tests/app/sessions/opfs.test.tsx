@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import type { Variable } from '@/core/variables';
-import { TelemetryStore, ManualScheduler } from '@/history';
+import { HistoryStore, ManualScheduler } from '@/history';
 
 import { MessageTransport, OpfsSessionLibrary } from '@/app/sessions/opfs-library';
 import { MemoryLocks, WebLocks } from '@/app/sessions/session-library';
@@ -30,7 +30,7 @@ function storageWorker(): Worker {
 function tab(clock: { ms: number }) {
   const worker = storageWorker();
   const scheduler = new ManualScheduler();
-  const store = new TelemetryStore({ scheduler, now: () => clock.ms });
+  const store = new HistoryStore({ scheduler, now: () => clock.ms });
   store.setSchema(VARIABLES);
   store.openEpoch({
     epochId: 1,
@@ -59,7 +59,7 @@ function pause(ms: number): Promise<void> {
 }
 
 async function stream(
-  store: TelemetryStore,
+  store: HistoryStore,
   clock: { ms: number },
   from: number,
   to: number

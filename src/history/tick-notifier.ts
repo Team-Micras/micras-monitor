@@ -8,7 +8,7 @@ interface Subscription {
 /**
  * Something readers can subscribe to, with a version that grows on every change.
  */
-export class Channel {
+export class ChangeSignal {
   /** Grows by one on every change. */
   version = 0;
 
@@ -25,8 +25,8 @@ export class Channel {
  * others from hearing; its error is thrown again once all were called. A subscription ended
  * during a tick is not called in it.
  */
-export class ChangeNotifier {
-  private dirty: Channel[] = [];
+export class TickNotifier {
+  private dirty: ChangeSignal[] = [];
   private scheduled = false;
 
   /**
@@ -37,7 +37,7 @@ export class ChangeNotifier {
   /**
    * Record a change of a channel; its subscribers hear about it on the next tick.
    */
-  touch(channel: Channel): void {
+  touch(channel: ChangeSignal): void {
     channel.version++;
 
     if (channel.dirty) {
@@ -60,7 +60,7 @@ export class ChangeNotifier {
    * @param callback What to call.
    * @returns A function that ends the subscription.
    */
-  subscribe(channels: readonly Channel[], callback: () => void): () => void {
+  subscribe(channels: readonly ChangeSignal[], callback: () => void): () => void {
     const subscription: Subscription = { callback, active: true };
 
     for (const channel of channels) {

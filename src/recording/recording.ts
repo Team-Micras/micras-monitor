@@ -1,5 +1,5 @@
 import { isValueType, type Access, type Value, type Variable } from '@/core/variables';
-import type { BlockRef, PersistedBlock, PersistedColumn } from '@/history/block-backing';
+import type { BlockRef, BlockData, ColumnData } from '@/history/block-backing';
 import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from '@/history/columns';
 import type {
   Boundary,
@@ -113,7 +113,7 @@ export interface RecordingHeader {
 export type RecordingRecord =
   | { readonly kind: 'epoch'; readonly epoch: RecordedEpoch }
   | { readonly kind: 'epoch-closed'; readonly epochId: number }
-  | { readonly kind: 'block'; readonly block: PersistedBlock }
+  | { readonly kind: 'block'; readonly block: BlockData }
   | { readonly kind: 'gap'; readonly gap: RecordedGap }
   | { readonly kind: 'boundary'; readonly boundary: Boundary }
   | { readonly kind: 'value'; readonly value: RecordedValue };
@@ -362,7 +362,7 @@ function parseHeader(json: string): RecordingHeader {
 /**
  * Lay out the samples of a block, as the payload of a block record.
  */
-export function encodeBlock(block: PersistedBlock): Uint8Array {
+export function encodeBlock(block: BlockData): Uint8Array {
   const length = block.time.length;
   let size = 20 + 8 * block.columns.length + 8 * length;
 
@@ -458,7 +458,7 @@ function checkLayout(
  *
  * @throws If the payload is truncated, too long or names an unknown column kind.
  */
-export function decodeBlock(bytes: Uint8Array): PersistedBlock {
+export function decodeBlock(bytes: Uint8Array): BlockData {
   const reader = new ByteReader(bytes);
   const ref = { epochId: reader.u32(), index: reader.u32() };
   const startSample = reader.u32();
@@ -470,7 +470,7 @@ export function decodeBlock(bytes: Uint8Array): PersistedBlock {
     time[index] = reader.f64();
   }
 
-  const columns: PersistedColumn[] = layout.map(({ variableId, kind }) => {
+  const columns: ColumnData[] = layout.map(({ variableId, kind }) => {
     const values = allocateColumn(kind, length);
 
     for (let index = 0; index < length; index++) {

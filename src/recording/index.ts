@@ -9,12 +9,12 @@
 
 export {
   RecordingBlocks,
-  SessionRecorder,
+  RecordingWriter,
   type BlockLocation,
-  type RecorderStats,
+  type RecordingWriterStats,
 } from './recording-writer';
 export { MemoryRecordingFile, type RecordingFile } from './recording-file';
-export { SavedRecording, type RecordingSummary } from './recording-reader';
+export { RecordingReader, type RecordingSummary } from './recording-reader';
 export {
   decodeBlock,
   decodeRecordingHeader,

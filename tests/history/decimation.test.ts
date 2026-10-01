@@ -16,19 +16,19 @@ import {
 } from '@tests/support/history/reference';
 import { FANOUT, LEAF_SIZE } from '@/history/min-max-pyramid';
 import { toBandSeries, toLineSeries } from '@/history/series';
-import { TelemetryStore } from '@/history/history-store';
+import { HistoryStore } from '@/history/history-store';
 import { historyWindow, liveWindow } from '@/history/window';
 import { ManualScheduler } from '@/history';
 
 const MS = 1000;
 
 interface Fixture {
-  readonly store: TelemetryStore;
+  readonly store: HistoryStore;
   readonly samples: ReferenceSample[];
 }
 
-function newStore(blockSize: number): TelemetryStore {
-  const store = new TelemetryStore({ scheduler: new ManualScheduler(), blockSize });
+function newStore(blockSize: number): HistoryStore {
+  const store = new HistoryStore({ scheduler: new ManualScheduler(), blockSize });
   store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 1, type: 'f32' }] });
   return store;
 }

@@ -1,7 +1,7 @@
 import { isWide, type Value } from '@/core/variables';
 
 import type { Block, BlockLayout } from './block';
-import type { PersistedBlock } from './block-backing';
+import type { BlockData } from './block-backing';
 import { type ColumnKind, columnKindOf, kindOfColumn, toNumber } from './columns';
 import { LEAF_SIZE } from './min-max-pyramid';
 import type { RecordedEpoch, RecordedGap, HistoryVariable } from './types';
@@ -16,10 +16,10 @@ export const FIRST_BLOCK_SIZE = 1024;
 /** What one gap record is counted as against the memory cap. */
 export const GAP_BYTES = 64;
 
-/** {@link Epoch.receive}: the sample's time is before the previous one's. */
+/** {@link StreamRun.receive}: the sample's time is before the previous one's. */
 export const RECEIVED_BACKWARDS = -2;
 
-/** {@link Epoch.receive}: the sample has the previous one's time, so it is the same sample. */
+/** {@link StreamRun.receive}: the sample has the previous one's time, so it is the same sample. */
 export const RECEIVED_DUPLICATE = -1;
 
 /**
@@ -48,7 +48,7 @@ export interface EpochGap {
 /**
  * What an epoch needs from the store around it.
  */
-export interface EpochHost {
+export interface StreamRunHost {
   /** A new block, or undefined if the memory cap does not allow one. */
   allocate(layout: BlockLayout): Block | undefined;
 
@@ -56,7 +56,7 @@ export interface EpochHost {
   seal(block: Block): void;
 
   /** A gap will not change any more. */
-  gapFinal(epoch: Epoch, gap: EpochGap): void;
+  gapFinal(epoch: StreamRun, gap: EpochGap): void;
 
   /** Memory outside the blocks was taken, or given back when negative. */
   account(bytes: number): void;
@@ -69,7 +69,7 @@ export interface EpochHost {
  * dropped samples, different from the time outside any epoch, when the variable was not streamed
  * at all. Time never goes back inside an epoch, so a sample is a duplicate when its time repeats.
  */
-export class Epoch {
+export class StreamRun {
   /** The session's id for the epoch. */
   readonly id: number;
 
@@ -125,7 +125,7 @@ export class Epoch {
   constructor(
     spec: RecordedEpoch,
     private readonly blockSize: number,
-    private readonly host: EpochHost
+    private readonly host: StreamRunHost
   ) {
     this.id = spec.epochId;
     this.groupId = spec.groupId;
@@ -359,7 +359,7 @@ export class Epoch {
    * @returns The block, or undefined if the memory cap left no room for it.
    * @throws If the block's columns are not the epoch's, or its index is not past the last one.
    */
-  restoreBlock(persisted: PersistedBlock): Block | undefined {
+  restoreBlock(persisted: BlockData): Block | undefined {
     const length = persisted.time.length;
     const matches =
       persisted.columns.length === this.numericIds.length &&

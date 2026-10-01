@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
-import { TelemetryStore, ManualScheduler } from '@/history';
+import { HistoryStore, ManualScheduler } from '@/history';
 
 import { TransitionTracker } from '@/app/windows/robot/transitions';
 
 describe('TransitionTracker', () => {
   test('finds each change once, across scans and epochs', () => {
-    const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+    const store = new HistoryStore({ scheduler: new ManualScheduler() });
     store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
     store.openEpoch({
       epochId: 1,
@@ -35,7 +35,7 @@ describe('TransitionTracker', () => {
   });
 
   test('starts over when the store is reset and the timeline restarts', () => {
-    const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+    const store = new HistoryStore({ scheduler: new ManualScheduler() });
     store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
     store.openEpoch({
       epochId: 1,
@@ -62,7 +62,7 @@ describe('TransitionTracker', () => {
   });
 
   test('starts over when the store is reset and appended to before the next scan', () => {
-    const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+    const store = new HistoryStore({ scheduler: new ManualScheduler() });
     store.setSchema([{ id: 0, name: 'state', type: 'u8' }]);
     store.openEpoch({
       epochId: 1,

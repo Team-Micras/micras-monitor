@@ -14,7 +14,7 @@
 import {
   type Decimation,
   historyWindow,
-  TelemetryStore,
+  HistoryStore,
   type VariableSpec,
   ManualScheduler,
 } from '../src/history';
@@ -27,7 +27,7 @@ function variables(first: number, count: number): VariableSpec[] {
 }
 
 function fill(
-  store: TelemetryStore,
+  store: HistoryStore,
   epochId: number,
   count: number,
   rateHz: number,
@@ -87,7 +87,7 @@ function syntheticHour(): HourResult {
   const signals = 16;
   const count = rateHz * 3600;
   const heapBefore = process.memoryUsage();
-  const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+  const store = new HistoryStore({ scheduler: new ManualScheduler() });
   store.openEpoch({ epochId: 1, groupId: 0, variables: variables(0, signals) });
   const start = performance.now();
   fill(store, 1, count, rateHz, signals, 1);
@@ -150,7 +150,7 @@ function syntheticHour(): HourResult {
 function longHistory(): number {
   const rateHz = 1000;
   const count = 600_000;
-  const store = new TelemetryStore({ scheduler: new ManualScheduler() });
+  const store = new HistoryStore({ scheduler: new ManualScheduler() });
   store.openEpoch({ epochId: 1, groupId: 0, variables: variables(0, 16) });
   store.openEpoch({ epochId: 2, groupId: 1, variables: variables(16, 16) });
   const start = performance.now();

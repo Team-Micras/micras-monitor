@@ -2,7 +2,7 @@ import { BatteryMediumIcon } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 
 import type { LogEntry } from '@/core/log';
-import type { TelemetryStore } from '@/history';
+import type { HistoryStore } from '@/history';
 import { enumLabel, roleVariable, type EnumType } from '@/robot-kit';
 
 import { formatClock, formatValue } from '../../lib/format';
@@ -25,9 +25,9 @@ import { TransitionTracker, type Transition } from './transitions';
 
 const SHOWN_TRANSITIONS = 5;
 const NO_TRANSITIONS: readonly Transition[] = [];
-const trackers = new WeakMap<TelemetryStore, Map<string, TransitionTracker>>();
+const trackers = new WeakMap<HistoryStore, Map<string, TransitionTracker>>();
 
-function trackerFor(history: TelemetryStore, name: string): TransitionTracker {
+function trackerFor(history: HistoryStore, name: string): TransitionTracker {
   let byName = trackers.get(history);
 
   if (byName === undefined) {

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { PackageChooser, subscribeThrottled } from '@/app/monitor-context';
 import type { Variable } from '@/core/variables';
 import { RobotRegistry } from '@/robot-kit';
-import { ManualScheduler, TelemetryStore } from '@/history';
+import { ManualScheduler, HistoryStore } from '@/history';
 import { mouse } from '@tests/support/robot-kit/packages';
 
 const ACCESS = { stream: true, write: false, writeNeedsIdle: false, persists: false };
@@ -23,7 +23,7 @@ afterEach(() => {
 describe('subscribeThrottled', () => {
   test('calls at most once per interval and delivers the last change at its end', () => {
     const scheduler = new ManualScheduler();
-    const history = new TelemetryStore({ scheduler });
+    const history = new HistoryStore({ scheduler });
     history.setSchema(VARIABLES);
     const listener = vi.fn<() => void>();
     const stop = subscribeThrottled(history, 'battery_voltage', listener, 100);

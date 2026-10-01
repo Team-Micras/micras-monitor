@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Variable } from '@/core/variables';
-import { ManualScheduler, TelemetryStore } from '@/history';
+import { ManualScheduler, HistoryStore } from '@/history';
 import {
   encodeRecordingHeader,
   MemoryRecordingFile,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
-  SavedRecording,
+  RecordingReader,
 } from '@/recording';
 
 import { DirectTransport, FakeDirectory, FakeFile } from '@tests/support/app/sessions/fake-opfs';
@@ -51,7 +51,7 @@ function rig(
 ) {
   const clock = { ms: Date.UTC(2026, 8, 29, 10, 42) };
   const scheduler = new ManualScheduler();
-  const store = new TelemetryStore({ scheduler, now: () => clock.ms });
+  const store = new HistoryStore({ scheduler, now: () => clock.ms });
   store.setSchema(VARIABLES);
   store.openEpoch({
     epochId: 1,
@@ -468,7 +468,7 @@ describe('recovering after the tab died', () => {
 
     expect(after.manager.state.recovered[0].recovery.truncatedBytes).toBe(30);
     expect(file.bytes.byteLength).toBe(whole);
-    const saved = await SavedRecording.read(new MemoryRecordingFile(file.bytes));
+    const saved = await RecordingReader.read(new MemoryRecordingFile(file.bytes));
     expect(saved.summary.truncatedAt).toBeUndefined();
   });
 
@@ -552,7 +552,7 @@ describe('recovering after the tab died', () => {
 
 test('tells about the memory cap nearing, dropping the oldest history, and pausing it', () => {
   const scheduler = new ManualScheduler();
-  const store = new TelemetryStore({ scheduler, blockSize: 1024, memoryCapBytes: 200_000 });
+  const store = new HistoryStore({ scheduler, blockSize: 1024, memoryCapBytes: 200_000 });
   store.setSchema(VARIABLES);
   store.openEpoch({ epochId: 1, groupId: 0, variables: [{ id: 0, type: 'f32' }] });
   const manager = new SessionManager({

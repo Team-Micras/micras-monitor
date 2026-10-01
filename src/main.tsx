@@ -12,7 +12,7 @@ import { PRELOAD_ERROR_EVENT } from '@/app/shell/update-notice';
 import '@/app/styles.css';
 import { Monitor } from '@/core/monitor';
 import type { Source } from '@/core/source';
-import { TelemetryStore, type Scheduler } from '@/history';
+import { HistoryStore, type Scheduler } from '@/history';
 import { importWhenIdle } from '@/lazy/idle';
 import { RobotRegistry } from '@/robot-kit';
 import type { BluetoothLike } from '@/sources/micras-comm/link';
@@ -65,7 +65,7 @@ const synthetic = query.has('fake');
 const connectTo = query.get('connect');
 const viewCapBytes = memoryCap(query, 'view-cap-mb');
 const monitor: AppMonitor = new Monitor({
-  history: new TelemetryStore({
+  history: new HistoryStore({
     scheduler: FRAME_SCHEDULER,
     memoryCapBytes: memoryCap(query, 'memory-cap-mb'),
   }),

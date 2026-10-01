@@ -11,7 +11,7 @@ import { Monitor } from '@/core/monitor';
 import { RobotRegistry, type RobotPackage } from '@/robot-kit';
 import { DEMO_ROBOT } from '@/sources/demo/demo-robot';
 import { DemoSource, type DemoOptions, type DemoRobot } from '@/sources/demo/demo-source';
-import { TelemetryStore, type Scheduler } from '@/history';
+import { HistoryStore, type Scheduler } from '@/history';
 
 import { scripted, type Script } from './scripted-source';
 
@@ -44,7 +44,7 @@ export function demoMonitor(options: DemoMonitorOptions = {}): AppMonitor {
   const { robot, scheduler, answerMs = 5, sampleRateHz, now, ...script } = options;
   const source = new DemoSource({ ...DEMO_ROBOT, ...robot }, { answerMs, sampleRateHz, now });
   return new Monitor({
-    history: new TelemetryStore({ scheduler: scheduler ?? FRAME_SCHEDULER }),
+    history: new HistoryStore({ scheduler: scheduler ?? FRAME_SCHEDULER }),
     source: scripted(source, script),
   });
 }

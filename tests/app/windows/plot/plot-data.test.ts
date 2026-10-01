@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { TelemetryStore, ManualScheduler } from '@/history';
+import { HistoryStore, ManualScheduler } from '@/history';
 
 import {
   followWindow,
@@ -15,8 +15,8 @@ import {
 const SPEED = 'pose/linear_speed';
 const REFERENCE = 'reference/linear_speed';
 
-function store(): TelemetryStore {
-  const telemetry = new TelemetryStore({ scheduler: new ManualScheduler() });
+function store(): HistoryStore {
+  const telemetry = new HistoryStore({ scheduler: new ManualScheduler() });
   telemetry.setSchema([
     { id: 0, name: SPEED, type: 'f32' },
     { id: 1, name: REFERENCE, type: 'f32' },
@@ -32,12 +32,7 @@ function store(): TelemetryStore {
   return telemetry;
 }
 
-function fill(
-  telemetry: TelemetryStore,
-  samples: number,
-  stepUs: number,
-  skip = new Set<number>()
-) {
+function fill(telemetry: HistoryStore, samples: number, stepUs: number, skip = new Set<number>()) {
   let missed = 0;
 
   for (let index = 0; index < samples; index++) {

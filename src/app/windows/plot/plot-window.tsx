@@ -2,7 +2,7 @@ import { ChevronDownIcon, Undo2Icon } from 'lucide-react';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import 'uplot/dist/uPlot.min.css';
 
-import type { TelemetryStore } from '@/history';
+import type { HistoryStore } from '@/history';
 
 import { Button } from '../../components/ui/button';
 import {
@@ -67,7 +67,7 @@ export function PlotWindow({ window, paused, visible }: WindowViewProps) {
     '\n'
   );
 
-  const create = useEffectEvent((element: HTMLElement, source: TelemetryStore) => {
+  const create = useEffectEvent((element: HTMLElement, source: HistoryStore) => {
     const plot = new PlotController(element, {
       history: source,
       variables,

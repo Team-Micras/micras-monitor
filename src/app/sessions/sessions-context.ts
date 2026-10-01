@@ -6,7 +6,7 @@
 
 import { createContext, use, useSyncExternalStore } from 'react';
 
-import type { StoreStatus, TelemetryStore } from '@/history';
+import type { StoreStatus, HistoryStore } from '@/history';
 
 import type { SessionManager, SessionsState } from './session-manager';
 
@@ -31,7 +31,7 @@ export function useSessions(): SessionsState | null {
 }
 
 /** The memory and recording state of a store, rendering again when it changes. */
-export function useStoreStatus(store: TelemetryStore): StoreStatus {
+export function useStoreStatus(store: HistoryStore): StoreStatus {
   return useSyncExternalStore(
     (listener) => store.subscribeStatus(listener),
     () => store.status()

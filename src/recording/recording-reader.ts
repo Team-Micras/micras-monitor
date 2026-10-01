@@ -1,6 +1,6 @@
 import type { Access, Variable } from '@/core/variables';
-import type { PersistedBlock, StoredEpoch, StoredSession } from '@/history/block-backing';
-import type { TelemetryStore } from '@/history/history-store';
+import type { BlockData, StoredEpoch, StoredRecording } from '@/history/block-backing';
+import type { HistoryStore } from '@/history/history-store';
 import type {
   Boundary,
   RecordedEpoch,
@@ -71,7 +71,7 @@ interface EpochParts {
  * A recording file read once from end to end: what it holds, ready to fill a store, whose blocks
  * are then read back from the file as needed.
  */
-export class SavedRecording {
+export class RecordingReader {
   /**
    * @param summary What the file holds.
    * @param blocks Where its blocks are.
@@ -80,7 +80,7 @@ export class SavedRecording {
   private constructor(
     readonly summary: RecordingSummary,
     readonly blocks: RecordingBlocks,
-    private session: StoredSession | undefined
+    private session: StoredRecording | undefined
   ) {}
 
   /**
@@ -89,7 +89,7 @@ export class SavedRecording {
    *
    * @throws If the file is not a recording, or its version is not supported.
    */
-  static async read(file: RecordingFile): Promise<SavedRecording> {
+  static async read(file: RecordingFile): Promise<RecordingReader> {
     const size = await file.size();
     const bytes = await file.read(0, size);
     const scan = scanRecording(bytes);
@@ -168,13 +168,13 @@ export class SavedRecording {
       range: firstUs <= lastUs ? { startUs: firstUs, endUs: nextUp(lastUs) } : undefined,
       schema: mergedSchema(scan.header.schema, epochs, values),
     };
-    const session: StoredSession = {
+    const session: StoredRecording = {
       schema: scan.header.schema.map(({ id, name, type }) => ({ id, name, type })),
       epochs: [...epochs.values()].map((parts) => storedEpoch(parts)),
       boundaries,
       values,
     };
-    return new SavedRecording(summary, blocks, session);
+    return new RecordingReader(summary, blocks, session);
   }
 
   /**
@@ -184,7 +184,7 @@ export class SavedRecording {
    * @returns How many blocks did not fit under the store's memory cap.
    * @throws If it was done before.
    */
-  loadInto(store: TelemetryStore): number {
+  loadInto(store: HistoryStore): number {
     const session = this.session;
 
     if (!session) {
@@ -238,7 +238,7 @@ function storedEpoch(parts: EpochParts): StoredEpoch {
 function* decodeInOrder(
   blocks: ReadonlyMap<number, LocatedRecord>,
   indices: readonly number[]
-): Generator<PersistedBlock> {
+): Generator<BlockData> {
   for (const index of indices) {
     const located = blocks.get(index);
 

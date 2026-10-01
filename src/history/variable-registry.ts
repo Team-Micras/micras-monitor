@@ -1,8 +1,8 @@
 import type { ValueType } from '@/core/variables';
 
-import { Channel } from './tick-notifier';
+import { ChangeSignal } from './tick-notifier';
 import type { HistoryVariable, VariableRef } from './types';
-import { VariableRecord } from './variable-history';
+import { VariableHistory } from './variable-history';
 
 /**
  * The records of every variable, keyed by name and type, and the current schema that maps the
@@ -12,10 +12,10 @@ import { VariableRecord } from './variable-history';
  * query by name finds the same history across a schema change. Without a schema, a variable is
  * named after its id.
  */
-export class ChannelRegistry {
-  private readonly records = new Map<string, VariableRecord>();
-  private readonly latestByName = new Map<string, VariableRecord>();
-  private readonly channels = new Map<string, Channel>();
+export class VariableRegistry {
+  private readonly records = new Map<string, VariableHistory>();
+  private readonly latestByName = new Map<string, VariableHistory>();
+  private readonly channels = new Map<string, ChangeSignal>();
   private schema = new Map<number, HistoryVariable>();
 
   /**
@@ -24,7 +24,7 @@ export class ChannelRegistry {
   constructor(private readonly historyLength: number) {}
 
   /** Every record, one per name and type. */
-  all(): IterableIterator<VariableRecord> {
+  all(): IterableIterator<VariableHistory> {
     return this.records.values();
   }
 
@@ -64,7 +64,7 @@ export class ChannelRegistry {
    * The record of a name and type, made if needed. A record whose type was not known yet takes
    * the type; a different known type goes back to the record of that type, or starts one.
    */
-  recordFor(name: string, type: ValueType | undefined): VariableRecord {
+  recordFor(name: string, type: ValueType | undefined): VariableHistory {
     const current = this.latestByName.get(name);
 
     if (current && (type === undefined || current.type === type)) {
@@ -81,7 +81,7 @@ export class ChannelRegistry {
     let record = this.records.get(keyOf(name, type));
 
     if (!record) {
-      record = new VariableRecord(name, type, this.channelOf(name), this.historyLength);
+      record = new VariableHistory(name, type, this.channelOf(name), this.historyLength);
       this.records.set(keyOf(name, type), record);
     }
 
@@ -93,7 +93,7 @@ export class ChannelRegistry {
    * The record a reference points at, if there is one: the current one of a name or id, or the
    * one of a name and type.
    */
-  resolve(ref: VariableRef): VariableRecord | undefined {
+  resolve(ref: VariableRef): VariableHistory | undefined {
     if (typeof ref === 'object') {
       return this.records.get(keyOf(ref.name, ref.type));
     }
@@ -102,7 +102,7 @@ export class ChannelRegistry {
   }
 
   /** The change channel of the name a reference points at, made if needed. */
-  channelFor(ref: VariableRef): Channel {
+  channelFor(ref: VariableRef): ChangeSignal {
     if (typeof ref === 'object') {
       return this.channelOf(ref.name);
     }
@@ -110,11 +110,11 @@ export class ChannelRegistry {
     return this.channelOf(typeof ref === 'number' ? this.nameOf(ref) : ref);
   }
 
-  private channelOf(name: string): Channel {
+  private channelOf(name: string): ChangeSignal {
     let channel = this.channels.get(name);
 
     if (!channel) {
-      channel = new Channel();
+      channel = new ChangeSignal();
       this.channels.set(name, channel);
     }
 

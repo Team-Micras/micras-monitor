@@ -12,15 +12,15 @@
  */
 
 import type { Variable } from '@/core/variables';
-import { TelemetryStore, type Scheduler, type TelemetryEvent } from '@/history';
+import { HistoryStore, type Scheduler, type StoreWarning } from '@/history';
 import {
   decodeRecordingHeader,
   encodeRecordingHeader,
   RECORDING_FORMAT,
   RECORDING_FORMAT_VERSION,
-  SavedRecording,
-  SessionRecorder,
-  type RecorderStats,
+  RecordingReader,
+  RecordingWriter,
+  type RecordingWriterStats,
   type RecordingBlocks,
   type RecordingFile,
   type RecordingHeader,
@@ -49,7 +49,7 @@ export interface RobotDescription {
 /** How to set up the sessions. */
 export interface SessionManagerOptions {
   /** The live store, which REC records. */
-  readonly store: TelemetryStore;
+  readonly store: HistoryStore;
   readonly library: SessionLibrary;
   readonly locks: SessionLocks;
   /** The robot as it is now, for the header of a new recording. */
@@ -72,14 +72,14 @@ export interface LiveRecording {
   readonly session: SessionInfo;
   /** When it started, in `Date.now()` milliseconds. */
   readonly startedAtMs: number;
-  readonly stats: RecorderStats;
+  readonly stats: RecordingWriterStats;
 }
 
 /** A saved session opened to look at. */
 export interface OpenedSession {
   readonly session: SessionInfo;
   /** Its samples, read only. */
-  readonly store: TelemetryStore;
+  readonly store: HistoryStore;
   /** Its variables, as the schema port gives them. */
   readonly variables: readonly Variable[];
   /** The robot it was recorded from, if it said its name. */
@@ -145,7 +145,7 @@ export const RECORDING_MEDIA_TYPE = 'application/vnd.micras-monitor.recording';
 interface ActiveRecording {
   readonly session: SessionInfo;
   readonly startedAtMs: number;
-  readonly recorder: SessionRecorder;
+  readonly recorder: RecordingWriter;
   readonly release: () => void;
   readonly unsubscribe: () => void;
   readonly timer: ReturnType<typeof setInterval>;
@@ -246,7 +246,7 @@ export class SessionManager {
   }
 
   /** The live store, which REC records. */
-  get live(): TelemetryStore {
+  get live(): HistoryStore {
     return this.#options.store;
   }
 
@@ -345,7 +345,7 @@ export class SessionManager {
         schema: description.schema,
         name: info.name,
       };
-      const recorder = await SessionRecorder.start(file, header, store, (error) =>
+      const recorder = await RecordingWriter.start(file, header, store, (error) =>
         this.#set({ error: `Recording could not write: ${messageOf(error)}` })
       );
       this.#sources = [...this.#sources, { id: info.id, file }];
@@ -428,8 +428,8 @@ export class SessionManager {
 
     try {
       file = await this.#options.library.open(id);
-      const saved = await SavedRecording.read(file);
-      const store = new TelemetryStore({
+      const saved = await RecordingReader.read(file);
+      const store = new HistoryStore({
         scheduler: this.#options.scheduler,
         memoryCapBytes: this.#options.viewCapBytes ?? this.#sharedCap(),
       });
@@ -575,7 +575,7 @@ export class SessionManager {
     this.#set({ memory: null });
   }
 
-  #onStoreEvent(event: TelemetryEvent): void {
+  #onStoreEvent(event: StoreWarning): void {
     switch (event.type) {
       case 'memory-warning':
         this.#set({ memory: { kind: 'warning', ...pick(event) } });
@@ -616,7 +616,7 @@ export class SessionManager {
         return null;
       }
 
-      const saved = await SavedRecording.read(file);
+      const saved = await RecordingReader.read(file);
       const { summary } = saved;
 
       if (summary.validEnd < size) {

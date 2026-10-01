@@ -1,4 +1,4 @@
-import type { BlockPersistence, BlockRef, PersistedBlock } from './block-backing';
+import type { BlockBacking, BlockRef, BlockData } from './block-backing';
 import { allocateColumn, bytesPerValue, type ColumnKind, kindOfColumn } from './columns';
 import { LEAF_SIZE, MinMaxPyramid } from './min-max-pyramid';
 import type { NumericColumn } from './types';
@@ -60,10 +60,10 @@ export class Block {
   lastTimeUs = Number.NaN;
 
   /** Where a whole copy of the block can be read back from, once a write finished. */
-  copy: BlockPersistence | undefined;
+  copy: BlockBacking | undefined;
 
   /** The persistence layer the block was last written to. */
-  recordedBy: BlockPersistence | undefined;
+  recordedBy: BlockBacking | undefined;
 
   /** Whether a write to a persistence layer is under way. */
   writing = false;
@@ -255,7 +255,7 @@ export class Block {
   /**
    * The raw samples, as views, for a persistence layer.
    */
-  toPersisted(): PersistedBlock {
+  toPersisted(): BlockData {
     const time = this.timeColumn;
     const columns = this.valueColumns;
 
@@ -294,7 +294,7 @@ export class Block {
    * @returns The bytes taken.
    * @throws If the copy does not match the block.
    */
-  restore(persisted: PersistedBlock): number {
+  restore(persisted: BlockData): number {
     const matches =
       persisted.ref.epochId === this.ref.epochId &&
       persisted.ref.index === this.ref.index &&

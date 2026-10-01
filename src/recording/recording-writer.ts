@@ -1,5 +1,5 @@
-import type { BlockPersistence, BlockRef, PersistedBlock } from '@/history/block-backing';
-import type { TelemetryStore } from '@/history/history-store';
+import type { BlockBacking, BlockRef, BlockData } from '@/history/block-backing';
+import type { HistoryStore } from '@/history/history-store';
 
 import {
   decodeBlock,
@@ -26,7 +26,7 @@ export interface BlockLocation {
 /**
  * How far a recorder got, for the recording indicator.
  */
-export interface RecorderStats {
+export interface RecordingWriterStats {
   /** Bytes known to be in the file. */
   readonly bytes: number;
 
@@ -61,7 +61,7 @@ export function blockKey(ref: BlockRef): string {
  * The blocks of a recording file, read back by where their records are: the persistence layer
  * of a store loaded from the file, and of a store recording into it.
  */
-export class RecordingBlocks implements BlockPersistence {
+export class RecordingBlocks implements BlockBacking {
   private readonly locations = new Map<string, BlockLocation>();
   private readCount = 0;
 
@@ -85,15 +85,15 @@ export class RecordingBlocks implements BlockPersistence {
     return this.locations.has(blockKey(ref));
   }
 
-  /** {@inheritDoc BlockPersistence.write} */
-  write(block: PersistedBlock): Promise<void> {
+  /** {@inheritDoc BlockBacking.write} */
+  write(block: BlockData): Promise<void> {
     return Promise.reject(
       new Error(`Block ${block.ref.index} of epoch ${block.ref.epochId}: the file is read only`)
     );
   }
 
-  /** {@inheritDoc BlockPersistence.read} */
-  async read(ref: BlockRef): Promise<PersistedBlock> {
+  /** {@inheritDoc BlockBacking.read} */
+  async read(ref: BlockRef): Promise<BlockData> {
     const location = this.locations.get(blockKey(ref));
 
     if (!location) {
@@ -116,7 +116,7 @@ export class RecordingBlocks implements BlockPersistence {
  * store writes its blocks again after a backoff. Records go at the end of what is known to be in
  * the file, so a write cut short is overwritten by the next one.
  */
-export class SessionRecorder implements BlockPersistence {
+export class RecordingWriter implements BlockBacking {
   private readonly blocks: RecordingBlocks;
   private readonly listeners = new Set<() => void>();
   private queue: Pending[] = [];
@@ -127,7 +127,7 @@ export class SessionRecorder implements BlockPersistence {
   private failing = false;
   private stopped = false;
   private detach: (() => void) | undefined;
-  private snapshot: RecorderStats;
+  private snapshot: RecordingWriterStats;
 
   private constructor(
     private readonly file: RecordingFile,
@@ -151,13 +151,13 @@ export class SessionRecorder implements BlockPersistence {
   static async start(
     file: RecordingFile,
     header: RecordingHeader,
-    store: TelemetryStore,
+    store: HistoryStore,
     onError: (error: unknown) => void = () => undefined
-  ): Promise<SessionRecorder> {
+  ): Promise<RecordingWriter> {
     const head = encodeRecordingHeader(header);
     await file.truncate(0);
     await file.write(0, head);
-    const recorder = new SessionRecorder(file, head.byteLength, onError);
+    const recorder = new RecordingWriter(file, head.byteLength, onError);
     const take = (record: RecordingRecord) => void recorder.enqueue(record).catch(() => undefined);
     store.replayIngestion((event) => take(recordOf(event)));
     recorder.detach = store.onIngestion((event) => take(recordOf(event)));
@@ -166,7 +166,7 @@ export class SessionRecorder implements BlockPersistence {
   }
 
   /** How far the recorder got; the same object until it changes. */
-  get status(): RecorderStats {
+  get status(): RecordingWriterStats {
     return this.snapshot;
   }
 
@@ -176,13 +176,13 @@ export class SessionRecorder implements BlockPersistence {
     return () => this.listeners.delete(listener);
   }
 
-  /** {@inheritDoc BlockPersistence.write} */
-  write(block: PersistedBlock): Promise<void> {
+  /** {@inheritDoc BlockBacking.write} */
+  write(block: BlockData): Promise<void> {
     return this.enqueue({ kind: 'block', block }, { ref: block.ref, length: block.time.length });
   }
 
-  /** {@inheritDoc BlockPersistence.read} */
-  read(ref: BlockRef): Promise<PersistedBlock> {
+  /** {@inheritDoc BlockBacking.read} */
+  read(ref: BlockRef): Promise<BlockData> {
     return this.blocks.read(ref);
   }
 
@@ -192,7 +192,7 @@ export class SessionRecorder implements BlockPersistence {
    *
    * @param store The store recording, which stops recording.
    */
-  async stop(store: TelemetryStore): Promise<void> {
+  async stop(store: HistoryStore): Promise<void> {
     if (this.stopped) {
       return;
     }
@@ -283,7 +283,7 @@ export class SessionRecorder implements BlockPersistence {
     return true;
   }
 
-  private stats(): RecorderStats {
+  private stats(): RecordingWriterStats {
     return {
       bytes: this.committed,
       blocks: this.writtenBlocks,

@@ -3,7 +3,7 @@ import { expect, inject, test } from 'vitest';
 import { Monitor } from '@/core/monitor';
 import type { LinkBudgetOptions, WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
-import { TelemetryStore } from '@/history';
+import { HistoryStore } from '@/history';
 import { percentile, reportBench } from '@tests/support/app/bench';
 
 declare module 'vitest' {
@@ -75,7 +75,7 @@ function benchLink(link: string, budget: Partial<LinkBudgetOptions>): void {
       createSocket: (url) => timedSocket(url, busy),
     });
     const monitor = new Monitor({
-      history: new TelemetryStore({
+      history: new HistoryStore({
         scheduler: { schedule: (task) => requestAnimationFrame(() => task()) },
       }),
       source,
