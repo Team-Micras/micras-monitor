@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 
-import { AnnounceContext, type Announce, type Politeness } from './announce';
+import { AnnounceContext, type Announce, type Politeness } from './shell-contexts';
 
 interface Message {
   readonly id: number;

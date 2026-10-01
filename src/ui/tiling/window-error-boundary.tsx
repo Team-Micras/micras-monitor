@@ -10,7 +10,7 @@ import {
 import { retryFailedLoads } from '../lazy/lazy-with-retry';
 
 import { Button } from '../primitives/button';
-import { AnnounceContext } from '../shell/announce';
+import { AnnounceContext } from '../shell/shell-contexts';
 
 interface WindowErrorBoundaryProps {
   readonly children: ReactNode;

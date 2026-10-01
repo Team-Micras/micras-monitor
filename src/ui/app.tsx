@@ -42,7 +42,11 @@ import {
   LazyVariableDrawer,
 } from './shell/lazy-shell';
 import { useReloadBlocked } from './shell/reload-guard';
-import { SendCommandContext, type SendCommand } from './shell/send-command';
+import {
+  CommandTrackerContext,
+  SendCommandContext,
+  type SendCommand,
+} from './shell/shell-contexts';
 import { StatusBar } from './shell/status-bar';
 import { TopBar } from './shell/top-bar';
 import { UpdateNotice } from './shell/update-notice';
@@ -58,7 +62,6 @@ import { useStreamDemand } from './stream-demand';
 import { DragGhost } from './tiling/drag-ghost';
 import { TilingView } from './tiling/tiling-view';
 import { LazyCommandConfirm } from './windows/commands/lazy-command-confirm';
-import { CommandTrackerContext } from './windows/shared/command-tracker';
 import type { WindowPayload } from './windows/types';
 
 /** What the composition root gives the app. */

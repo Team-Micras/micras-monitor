@@ -7,7 +7,7 @@ import type { CommandNotice, CommandTone } from '../lib/command-outcome';
 import { useLiveMonitor, useRobotPackage, useStatus } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 import { commandIcon } from '../windows/commands/command-icons';
-import { useSendCommand } from './send-command';
+import { useSendCommand } from './shell-contexts';
 
 import { commandAction } from '../keyboard/keymap';
 import { Kbd } from '../primitives/kbd';

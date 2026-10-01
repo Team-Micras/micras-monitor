@@ -8,7 +8,7 @@ import { useLiveMonitor, useLiveValue, useRobotPackage, useStatus } from '../mon
 import { useRecordings } from '../recordings/recordings-context';
 import { useShell } from '../state/shell-store';
 import { usePresentedVariables } from '../windows/shared/presented-variables';
-import { useAnnounce } from './announce';
+import { useAnnounce } from './shell-contexts';
 
 function connectionText(status: SourceStatus): string | null {
   switch (status.kind) {

@@ -14,9 +14,7 @@ import { useLiveValue, useRobotPackage, useShownMonitor, useStatus } from '../..
 import { Button } from '../../primitives/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../primitives/tooltip';
 import { cn } from '../../primitives/utils';
-import { useAnnounce } from '../../shell/announce';
-import { useSendCommand } from '../../shell/send-command';
-import { useCommandTracker } from '../shared/command-tracker';
+import { useAnnounce, useCommandTracker, useSendCommand } from '../../shell/shell-contexts';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
 import { commandIcon } from './command-icons';
