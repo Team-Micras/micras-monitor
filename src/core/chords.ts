@@ -39,7 +39,7 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
  * `Alt+Shift+1`. Letters are case-insensitive; `Space` names the space bar.
  *
  * @throws {Error} When the text has no key, an unknown or repeated modifier, or a key name that
- *   no keyboard event produces.
+ *   is not shaped like one a keyboard event gives (see `isProducibleKey`).
  */
 export function parseChord(text: string): Chord {
   const parts = (text === ' ' ? 'Space' : text.trim()).split('+');
@@ -74,6 +74,12 @@ export function parseChord(text: string): Chord {
   };
 }
 
+/**
+ * Whether a key is shaped like one `keyOf` can give: a printable character, or a name in the
+ * PascalCase of `KeyboardEvent.key`, such as `PageUp` or `F5`, that is not a modifier. It checks
+ * the shape only, not the list of names the UI Events standard defines, which grows with new
+ * keyboards: a misspelt name such as `PgUp` parses, and the chord never matches.
+ */
 function isProducibleKey(key: string): boolean {
   if (key.length === 1) {
     return key.trim() !== '';

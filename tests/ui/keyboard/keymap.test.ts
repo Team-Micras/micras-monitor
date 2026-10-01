@@ -100,6 +100,13 @@ describe('resolveBindings', () => {
     expect(actionFor(shared, press(' ', { shiftKey: true }, 'Space'))).toBe('command.STOP');
   });
 
+  test("gives a command's chord to the command over an action of the app rebound to it", () => {
+    const bindings = resolveBindings({ 'window.pause': ['Space'], launcher: ['G'] }, COMMANDS);
+    expect(actionFor(bindings, press(' ', {}, 'Space'))).toBe('command.STOP');
+    expect(actionFor(bindings, press(' ', { shiftKey: true }, 'Space'))).toBe('command.STOP');
+    expect(actionFor(bindings, press('g', {}, 'KeyG'))).toBe('command.GO');
+  });
+
   test('keeps the defaults of an override that no longer parses', () => {
     const bindings = resolveBindings({ drawer: ['Hyper+/'] });
     expect(actionFor(bindings, press('/'))).toBe('drawer');

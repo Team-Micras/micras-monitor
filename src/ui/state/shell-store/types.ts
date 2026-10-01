@@ -255,7 +255,11 @@ export interface CommandsSlice {
    * @returns Why it was refused, or null when it was applied.
    */
   readonly setKeyOverrides: (overrides: KeyOverrides) => string | null;
-  /** Binds the keys of a robot package's commands, replacing those of the package before. */
+  /**
+   * Binds the keys of a robot package's commands, replacing those of the package before. The
+   * user's overrides are kept as they are, even one that gives an action of the app a command's
+   * chord: the command wins that chord when it is pressed.
+   */
   readonly setCommands: (commands: readonly CommandSpec[]) => void;
   /** Shows a notice about a command, unless a newer press already has one. */
   readonly showCommandNotice: (notice: CommandNotice) => void;
