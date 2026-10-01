@@ -200,33 +200,29 @@ function cellOf(cell: string | null): readonly [number, number] | null {
   return Number.isInteger(x) && Number.isInteger(y) ? [x, y] : null;
 }
 
-/** How many changes of the revision a stretch without changes of the map keeps for later ones. */
+/** How many revisions a stretch without changes of the map keeps for later ones. */
 const MAX_UNUSED_REVISIONS = 2;
 
 /**
- * Counts the changes of the map in a stretch of snapshots, and those no change of the revision
- * accounts for. Every change of the revision is a credit for one change of the map, since the map
- * is read again once the revision moves; a change of the map takes a credit left from before, or
- * the change of the revision in the next snapshot (both are sampled ten times a second, and a read
- * can answer before the revision shown moves), and is unannounced when there is none. At most
- * {@link MAX_UNUSED_REVISIONS} credits wait unused, so that revisions with no change of the map
- * cannot hide later changes no revision announced.
+ * Counts the changes of the map in a stretch of snapshots, and those no revision accounts for.
+ * Every revision the shown one moves by is a credit for one change of the map, since the map is
+ * read again once the revision moves, and two revisions may land between two snapshots. A change
+ * of the map takes a credit left from before, or one credit of the next snapshot (both are sampled
+ * ten times a second, and a read can answer before the revision shown moves), and is unannounced
+ * when there is none. At most {@link MAX_UNUSED_REVISIONS} credits wait unused, so that revisions
+ * with no change of the map cannot hide later changes no revision announced.
  */
 function mapChanges(stretch: readonly Snapshot[]): { total: number; unannounced: number } {
-  const revised = stretch.map(
-    (latest, index) => index > 0 && latest.revision !== stretch[index - 1].revision
-  );
+  const increases = stretch.map((latest, index) => revisionIncrease(stretch[index - 1], latest));
   let unused = 0;
-  let borrowed = false;
+  let borrowed = 0;
   let total = 0;
   let unannounced = 0;
 
   stretch.forEach((latest, index) => {
-    if (revised[index] && borrowed) {
-      borrowed = false;
-    } else if (revised[index]) {
-      unused = Math.min(MAX_UNUSED_REVISIONS, unused + 1);
-    }
+    const repaid = Math.min(borrowed, increases[index]);
+    borrowed -= repaid;
+    unused = Math.min(MAX_UNUSED_REVISIONS, unused + increases[index] - repaid);
 
     const previous = stretch[index - 1];
 
@@ -242,14 +238,23 @@ function mapChanges(stretch: readonly Snapshot[]): { total: number; unannounced:
 
     if (unused > 0) {
       unused--;
-    } else if (revised.at(index + 1) && !borrowed) {
-      borrowed = true;
+    } else if (borrowed === 0 && (increases.at(index + 1) ?? 0) > 0) {
+      borrowed = 1;
     } else {
       unannounced++;
     }
   });
 
   return { total, unannounced };
+}
+
+/** How many revisions the shown one moved by from one snapshot to the next. */
+function revisionIncrease(previous: Snapshot | undefined, latest: Snapshot): number {
+  if (previous === undefined || previous.revision === null || latest.revision === null) {
+    return 0;
+  }
+
+  return Math.max(0, latest.revision - previous.revision);
 }
 
 async function main(): Promise<void> {
@@ -340,6 +345,7 @@ async function main(): Promise<void> {
     await page.waitForTimeout(4000);
     const beforeStop = await follow(page, () => true, 'the run');
     await page.keyboard.press('Space');
+    const pressedAt = snapshots.length;
     const stopped = await follow(
       page,
       (latest) =>
@@ -348,6 +354,7 @@ async function main(): Promise<void> {
       'IDLE after STOP'
     );
     const stopLog = stopped.logStates.slice(beforeStop.logStates.length);
+    const braking = snapshots.slice(pressedAt).find((entry) => entry.state === 'BRAKE');
     check(
       'STOP brakes the robot through BRAKE to IDLE',
       stopLog.join(' ') === 'BRAKE IDLE',
@@ -385,14 +392,14 @@ async function main(): Promise<void> {
         Math.abs(later.speed) < REST_SPEED_M_S,
       `moved ${(moved * 1000).toFixed(2)} mm in 2 s at rest, speed ${later.speed} m/s ${sampledAfter}`
     );
-    const stopCell = cellOf(beforeStop.robotCell);
+    const brakeCell = cellOf(braking?.robotCell ?? null);
     const restCell = cellOf(later.robotCell);
     check(
-      'the robot rests in the cell it was stopped in or the next one',
-      stopCell !== null &&
+      'the robot rests in the cell it braked in or the next one',
+      brakeCell !== null &&
         restCell !== null &&
-        Math.abs(stopCell[0] - restCell[0]) + Math.abs(stopCell[1] - restCell[1]) <= 1,
-      `cell ${beforeStop.robotCell} when Space was pressed, ${later.robotCell} at rest`
+        Math.abs(brakeCell[0] - restCell[0]) + Math.abs(brakeCell[1] - restCell[1]) <= 1,
+      `cell ${braking?.robotCell ?? '-'} when it began to brake, ${later.robotCell} at rest`
     );
     check(
       'the map does not change while the robot is at rest',
