@@ -48,19 +48,38 @@ describe('BoundedLog', () => {
     expect(log.entries.every((entry) => entry.count === undefined)).toBe(true);
   });
 
-  test('a flood of the same warnings never pushes the robot lines out', () => {
+  test('a warning repeated between robot lines takes one entry, so it never pushes them out', () => {
     const log = new BoundedLog(10);
 
-    log.add(line('state RUN', 'robot', 'info'));
-
     for (let index = 0; index < 1000; index++) {
-      log.add(line(`group ${index % 2} is out of step`));
+      log.add(line('group 0 is out of step'));
+      log.add(line(`tick ${index}`, 'robot', 'debug'));
     }
 
-    expect(log.entries.map((entry) => [entry.text, entry.count])).toEqual([
-      ['state RUN', undefined],
-      ['group 0 is out of step', 500],
-      ['group 1 is out of step', 500],
+    expect(log.entries.filter((entry) => entry.source === 'link')).toEqual([
+      { ...line('group 0 is out of step'), count: 1000 },
+    ]);
+    expect(log.entries.map((entry) => entry.text).slice(-2)).toEqual([
+      'group 0 is out of step',
+      'tick 999',
+    ]);
+  });
+
+  test('a warning that comes back after another link line starts a new entry, keeping the order', () => {
+    const log = new BoundedLog();
+
+    log.add(line('bad sample', 'link', 'warning', 1));
+    log.add(line('disconnected', 'link', 'info', 2));
+    log.add(line('bad sample', 'link', 'warning', 3));
+    log.add(line('other fault', 'link', 'warning', 4));
+    log.add(line('bad sample', 'link', 'warning', 5));
+
+    expect(log.entries.map((entry) => [entry.text, entry.hostTime, entry.count])).toEqual([
+      ['bad sample', 1, undefined],
+      ['disconnected', 2, undefined],
+      ['bad sample', 3, undefined],
+      ['other fault', 4, undefined],
+      ['bad sample', 5, undefined],
     ]);
   });
 });

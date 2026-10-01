@@ -29,7 +29,9 @@ export const DEFAULT_LOG_LIMIT = 1000;
 
 /**
  * The newest entries of a log, oldest first, as an array that is replaced on every change. A link
- * warning with the text of one already kept replaces it at the end, counting both.
+ * warning with the text of the newest link entry replaces it at the end, counting both, so a fault
+ * that repeats takes one line however many robot lines come between; any other link line in
+ * between keeps the order of the link's history, and the warning starts a new entry.
  */
 export class BoundedLog {
   readonly #limit: number;
@@ -49,11 +51,9 @@ export class BoundedLog {
 
   /** Adds an entry, letting go of the oldest one when the log is full. */
   add(entry: LogEntry): void {
-    const repeated = foldable(entry)
-      ? this.#entries.findLastIndex((kept) => sameLine(kept, entry))
-      : -1;
+    const repeated = foldable(entry) ? this.#newestLinkEntry() : -1;
 
-    if (repeated >= 0) {
+    if (repeated >= 0 && sameLine(this.#entries[repeated], entry)) {
       const count = (this.#entries[repeated].count ?? 1) + 1;
       this.#entries = [...this.#entries.toSpliced(repeated, 1), { ...entry, count }];
       return;
@@ -61,6 +61,10 @@ export class BoundedLog {
 
     const kept = this.#entries.length < this.#limit ? this.#entries : this.#entries.slice(1);
     this.#entries = [...kept, entry];
+  }
+
+  #newestLinkEntry(): number {
+    return this.#entries.findLastIndex((kept) => kept.source === 'link');
   }
 }
 
