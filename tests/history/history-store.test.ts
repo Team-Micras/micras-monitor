@@ -7,6 +7,11 @@ import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store'
 import type { HistoryVariable, RecordingRecord, StoreWarning, VariableSpec } from '@/history/types';
 import { ManualScheduler } from '@/history';
 import { toLineSeries } from '@/ui/windows/plot/plot-data';
+import {
+  droppedSamples,
+  runsWithSamples,
+  storedSamples,
+} from '@tests/support/history/sample-counts';
 
 const MS = 1000;
 const SECOND = 1_000_000;
@@ -73,7 +78,9 @@ describe('runs and gaps', () => {
       { kind: 'not-streamed', startUs: 2 * SECOND + 999 * MS, endUs: 4 * SECOND },
     ]);
     expect(store.boundaries()).toEqual([{ kind: 'reconnect', timeUs: 3.5 * SECOND }]);
-    expect(store.variable(7)).toMatchObject({ storedSamples: 2490, droppedSamples: 10, runs: 3 });
+    expect(storedSamples(store, 7)).toBe(2490);
+    expect(droppedSamples(store, 7)).toBe(10);
+    expect(runsWithSamples(store, 7)).toBe(3);
   });
 
   test('counts the samples the source lost before one, even the first of a run', () => {
@@ -83,8 +90,8 @@ describe('runs and gaps', () => {
     single(store, 2, 2, 1);
     store.append(2, 0, [1], 3);
 
-    expect(store.variable(1)?.droppedSamples).toBe(0);
-    expect(store.variable(2)?.droppedSamples).toBe(3);
+    expect(droppedSamples(store, 1)).toBe(0);
+    expect(droppedSamples(store, 2)).toBe(3);
   });
 
   test('leaves a repeated time out of the history, and a time going back too, with an event', () => {
@@ -101,7 +108,8 @@ describe('runs and gaps', () => {
     store.append(1, 0.5 * MS, [4]);
     store.append(1, 2 * MS, [5]);
 
-    expect(store.variable(1)).toMatchObject({ storedSamples: 3, droppedSamples: 0 });
+    expect(storedSamples(store, 1)).toBe(3);
+    expect(droppedSamples(store, 1)).toBe(0);
     expect(store.latest(1)?.value).toBe(5);
     expect(events).toEqual([{ type: 'time-backwards', runId: 1, timeUs: 0.5 * MS, lastUs: MS }]);
   });
@@ -113,7 +121,8 @@ describe('runs and gaps', () => {
     store.append(1, 3 * MS, [3], 5);
     store.append(1, 11 * MS, [11]);
 
-    expect(store.variable(1)).toMatchObject({ storedSamples: 12, droppedSamples: 0 });
+    expect(storedSamples(store, 1)).toBe(12);
+    expect(droppedSamples(store, 1)).toBe(0);
   });
 
   test('counts the gap records against the memory cap', () => {
@@ -244,9 +253,10 @@ describe('schema', () => {
       () => 7.25
     );
 
-    expect(store.variable('battery')).toMatchObject({ storedSamples: 20, runs: 2 });
+    expect(storedSamples(store, 'battery')).toBe(20);
+    expect(runsWithSamples(store, 'battery')).toBe(2);
     expect(store.historyMark(9)).toBe(store.historyMark('battery'));
-    expect(store.variable(4)).toBeUndefined();
+    expect(store.historyMark(4)).toBeUndefined();
     expect([...store.samples('battery', 0, SECOND)].map((run) => run.values[0])).toEqual([
       7.5, 7.25,
     ]);
@@ -261,7 +271,8 @@ describe('schema', () => {
     store.openRun({ runId: 2, slot: 0, variables: [{ id: 0, type: 'u16' }] });
     store.append(2, 50 * MS, [3]);
 
-    expect(store.variable('mode')).toMatchObject({ type: 'u16', storedSamples: 1 });
+    expect(store.historyMark('mode')).toBe(store.historyMark({ name: 'mode', type: 'u16' }));
+    expect(storedSamples(store, 'mode')).toBe(1);
     expect(store.boundaries()).toEqual([{ kind: 'schema', timeUs: 9 * MS }]);
     expect([...store.samples('mode', 0, SECOND)].map((run) => Array.from(run.values))).toEqual([
       [3],
@@ -282,7 +293,8 @@ describe('schema', () => {
     store.append(2, 50 * MS, [-3]);
     scheduler.flush();
 
-    expect(store.variable('mode')).toMatchObject({ type: 'i32', storedSamples: 1 });
+    expect(store.historyMark('mode')).toBe(store.historyMark({ name: 'mode', type: 'i32' }));
+    expect(storedSamples(store, 'mode')).toBe(1);
     expect(store.historyMark('mode')?.source).not.toBe(before?.source);
     expect(store.boundaries()).toEqual([{ kind: 'schema', timeUs: 9 * MS }]);
     expect(callback).toHaveBeenCalledTimes(1);
@@ -300,21 +312,16 @@ describe('schema', () => {
     single(store, 3, 0);
     store.append(3, 30 * MS, [1.5]);
 
-    expect(store.variable('mode')).toMatchObject({
-      type: 'f32',
-      storedSamples: 11,
-      runs: 2,
-    });
-    expect(store.variable({ name: 'mode', type: 'u8' })).toMatchObject({
-      type: 'u8',
-      storedSamples: 1,
-    });
+    expect(store.historyMark('mode')).toBe(store.historyMark({ name: 'mode', type: 'f32' }));
+    expect(storedSamples(store, 'mode')).toBe(11);
+    expect(runsWithSamples(store, 'mode')).toBe(2);
+    expect(storedSamples(store, { name: 'mode', type: 'u8' })).toBe(1);
     expect(store.boundaries().map(({ timeUs }) => timeUs)).toEqual([9 * MS, 20 * MS]);
 
     store.reset();
 
-    expect(store.variable({ name: 'mode', type: 'u8' })?.storedSamples).toBe(0);
-    expect(store.variable('mode')?.storedSamples).toBe(0);
+    expect(storedSamples(store, { name: 'mode', type: 'u8' })).toBe(0);
+    expect(storedSamples(store, 'mode')).toBe(0);
   });
 
   test('names variables after their ids without a schema', () => {
@@ -364,18 +371,6 @@ describe('numeric types', () => {
     expect(stored(store, 6)).toEqual(new Float64Array([2 ** 53 - 1, 1]));
     expect(stored(store, 7)).toEqual(new Float64Array([-(2 ** 40), 1]));
     expect([...store.samples(8, 0, SECOND)]).toEqual([]);
-    expect(variables.map(({ id }) => store.variable(id)?.storage)).toEqual([
-      'f32',
-      'f32',
-      'f32',
-      'f64',
-      'f64',
-      'f64',
-      'f64',
-      'f64',
-      'none',
-    ]);
-    expect(store.variable(6)?.precisionLost).toBe(false);
   });
 
   test('flags 64 bit integers beyond 2^53 once, and keeps their latest value exact', () => {
@@ -386,8 +381,6 @@ describe('numeric types', () => {
     store.append(1, 0, [2n ** 53n + 1n, -(2n ** 60n) - 3n]);
     store.append(1, MS, [2n ** 64n - 1n, 0n]);
 
-    expect(store.variable(6)?.precisionLost).toBe(true);
-    expect(store.variable(7)?.precisionLost).toBe(true);
     expect(events).toEqual([
       { type: 'precision-loss', name: '#6' },
       { type: 'precision-loss', name: '#7' },
@@ -417,7 +410,7 @@ describe('numeric types', () => {
     expect(store.history(20)).toHaveLength(1);
     expect(store.latest(7)).toEqual({ value: 42n, timeUs: undefined });
     expect(store.history(7)).toEqual([]);
-    expect(store.variable(7)?.storedSamples).toBe(5);
+    expect(storedSamples(store, 7)).toBe(5);
   });
 });
 
@@ -458,7 +451,7 @@ describe('blocks', () => {
       .filter((_, index) => index % 80 < 8)
       .forEach((buffer, index) => expect(buffer).toBe(before[index]));
     expect(before.every((buffer) => buffer.byteLength >= 4 * blockSize)).toBe(true);
-    expect(store.variable(1)?.storedSamples).toBe(40 * blockSize);
+    expect(storedSamples(store, 1)).toBe(40 * blockSize);
   });
 
   test('grow from a small first block to the full size', () => {
@@ -567,15 +560,15 @@ describe('queries', () => {
     store.reset();
 
     expect(store.resetCount).toBe(1);
-    expect(store.variable(1)).toMatchObject({ storedSamples: 0, runs: 1 });
+    expect(storedSamples(store, 1)).toBe(0);
     expect(store.boundaries()).toEqual([]);
     expect(store.status().usedBytes).toBe(0);
     expect(store.latest(1)?.value).toBe(9);
 
     streamSingle(store, 3, 10, 5, (index) => 2 * SECOND + index * MS);
 
-    expect(store.variable(1)?.storedSamples).toBe(5);
-    expect(store.variable(1)?.droppedSamples).toBe(0);
+    expect(storedSamples(store, 1)).toBe(5);
+    expect(droppedSamples(store, 1)).toBe(0);
   });
 });
 

@@ -7,6 +7,7 @@ import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store'
 import type { StoreWarning, VariableSpec } from '@/history/types';
 import { MemoryBlockBacking } from '@tests/support/history/memory-backing';
 import { ManualScheduler } from '@/history';
+import { droppedSamples, storedSamples } from '@tests/support/history/sample-counts';
 
 const BLOCK_SIZE = 1024;
 const VARIABLES: readonly VariableSpec[] = [
@@ -80,7 +81,7 @@ describe('memory cap without recording', () => {
     ]);
 
     appendRange(store, 4 * BLOCK_SIZE, 9 * BLOCK_SIZE);
-    const kept = store.variable(1)?.storedSamples ?? 0;
+    const kept = storedSamples(store, 1);
     const firstKept = (9 * BLOCK_SIZE - kept) * 1000;
 
     expect(types(events).filter((type) => type === 'history-dropped').length).toBeGreaterThan(2);
@@ -143,7 +144,9 @@ describe('memory cap while recording', () => {
 
     expect(events).toEqual([]);
     expect(persistence.writes).toBe(12);
-    expect(store.variable(1)?.storedSamples).toBe(12 * BLOCK_SIZE);
+    expect(store.gaps(1, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY)).toEqual([]);
+    expect(store.timeRange(1)?.startUs).toBe(0);
+    expect(store.latest(1)?.timeUs).toBe((12 * BLOCK_SIZE - 1) * 1000);
     expect(store.status()).toMatchObject({ recording: true, historyStopped: false });
     expect(store.status().usedBytes).toBeLessThanOrEqual(4 * BLOCK_BYTES);
     expect(store.status().evictedBlocks).toBeGreaterThanOrEqual(8);
@@ -276,7 +279,7 @@ describe('memory cap while recording', () => {
     appendRange(store, 0, 2 * BLOCK_SIZE + 1);
 
     expect(events).toEqual([]);
-    expect(store.variable(1)?.storedSamples).toBe(2 * BLOCK_SIZE + 1);
+    expect(storedSamples(store, 1)).toBe(2 * BLOCK_SIZE + 1);
     expect(store.status().usedBytes).toBeGreaterThan(2 * BLOCK_BYTES);
 
     await settle();
@@ -366,7 +369,7 @@ describe('writing while recording', () => {
 
     appendRange(store, 3 * BLOCK_SIZE + 100, 3 * BLOCK_SIZE + 101);
 
-    expect(store.variable(1)?.storedSamples).toBe(3 * BLOCK_SIZE + 101);
+    expect(storedSamples(store, 1)).toBe(3 * BLOCK_SIZE + 101);
     expect([...store.samples(1, 0, Number.POSITIVE_INFINITY)]).toHaveLength(5);
   });
 
@@ -428,11 +431,10 @@ describe('writing while recording', () => {
     await streamBlocks(store, 0, 6);
 
     expect(types(events)).toContain('history-stopped');
-    const before = store.variable(1);
+    const before = droppedSamples(store, 1);
     store.append(1, 7 * BLOCK_SIZE * 1000, [1, 2], BLOCK_SIZE);
-    const after = store.variable(1);
 
-    expect(after?.droppedSamples).toBe((before?.droppedSamples ?? 0) + BLOCK_SIZE);
+    expect(droppedSamples(store, 1)).toBe(before + BLOCK_SIZE);
   });
 
   test('tells about failing writes once, backs off, and recovers', async () => {
@@ -566,6 +568,6 @@ describe('short runs', () => {
     const compacted = Block.byteLengthFor({ capacity: 100, kinds: variables.map(() => 'f32') });
 
     expect(store.status().usedBytes).toBeLessThanOrEqual(50 * compacted + 16 * 1024 * 70);
-    expect(store.variable(0)?.storedSamples).toBe(5000);
+    expect(storedSamples(store, 0)).toBe(5000);
   });
 });

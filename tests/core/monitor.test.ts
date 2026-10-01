@@ -5,6 +5,7 @@ import type { SourceStats } from '@/core/source';
 import type { Variable } from '@/core/variables';
 import { ManualScheduler, HistoryStore } from '@/history';
 import { ScriptedSource } from '@tests/support/sources/scripted-source';
+import { storedSamples, droppedSamples } from '@tests/support/history/sample-counts';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
 const ACCESS = { stream: true, write: true, writeNeedsIdle: false, persists: false };
@@ -46,7 +47,9 @@ describe('Monitor fed by a source', () => {
     expect(state.identity).toBe(IDENTITY);
     expect(state.variables).toBe(VARIABLES);
     expect(monitor.state).toBe(state);
-    expect(monitor.history.variable('speed')?.type).toBe('f32');
+    expect(monitor.history.historyMark('speed')).toBe(
+      monitor.history.historyMark({ name: 'speed', type: 'f32' })
+    );
   });
 
   test('stores the samples of a stream on the session timeline, with the ones lost before them', () => {
@@ -57,10 +60,8 @@ describe('Monitor fed by a source', () => {
     link.sink.sample(7, 1_005_000, [1, 0.7], 3);
 
     expect(monitor.history.latest('speed')).toEqual({ value: 0.7, timeUs: 1_005_000 });
-    expect(monitor.history.variable('speed')).toMatchObject({
-      storedSamples: 3,
-      droppedSamples: 3,
-    });
+    expect(storedSamples(monitor.history, 'speed')).toBe(3);
+    expect(droppedSamples(monitor.history, 'speed')).toBe(3);
     expect(monitor.history.gaps('speed', 0, 2_000_000)).toEqual([
       { kind: 'dropped', startUs: 1_001_000, endUs: 1_005_000, count: 3 },
     ]);
@@ -117,7 +118,7 @@ describe('Monitor fed by a source', () => {
     });
     await monitor.history.stopRecording();
     const lines = monitor.state.log
-      .filter((entry) => entry.text.includes('history') || entry.text.includes('recording'))
+      .filter((entry) => entry.source === 'history')
       .map(({ severity, text, count }) => ({ severity, text, count }));
 
     expect(lines).toEqual([

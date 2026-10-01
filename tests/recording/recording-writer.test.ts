@@ -17,6 +17,7 @@ import { HistoryStore, type HistoryStoreOptions } from '@/history/history-store'
 import type { SampleValue, VariableSpec } from '@/history/types';
 import { fileBytes, serializeRecording } from '@tests/support/recording/recording-bytes';
 import { ManualScheduler } from '@/history';
+import { storedSamples, droppedSamples } from '@tests/support/history/sample-counts';
 
 const BLOCK_SIZE = 1024;
 const VARIABLES: readonly VariableSpec[] = [
@@ -170,7 +171,8 @@ describe('recording a session', () => {
     );
     expect(reopened.gaps('pose/x', 0, 3e6)).toEqual(store.gaps('pose/x', 0, 3e6));
     expect(reopened.boundaries()).toEqual(store.boundaries());
-    expect(reopened.variable('pose/x')).toMatchObject({ storedSamples: 1990, droppedSamples: 10 });
+    expect(storedSamples(reopened, 'pose/x')).toBe(1990);
+    expect(droppedSamples(reopened, 'pose/x')).toBe(10);
     expect(reopened.latest('pose/x')).toEqual({ value: valueAt(1999), timeUs: 1_999_000 });
     expect(reopened.history('maze').map((entry) => entry.value)).toEqual([
       new Uint8Array([1, 2, 3]),
@@ -221,7 +223,7 @@ describe('recording a session', () => {
 
     expect(saved.summary.truncatedAt).toBe(whole);
     expect(saved.summary.validEnd).toBe(whole);
-    expect(reopened.variable('pose/x')?.storedSamples).toBe(501);
+    expect(storedSamples(reopened, 'pose/x')).toBe(501);
   });
 
   test('skips and reports a damaged record in the middle, and keeps the records after it', async () => {
@@ -247,9 +249,7 @@ describe('recording a session', () => {
 
     expect(saved.summary.damaged).toEqual([{ offset: marks[0], reason: 'check mismatch' }]);
     expect(saved.summary.truncatedAt).toBeUndefined();
-    expect(reopened.variable('pose/x')?.storedSamples).toBe(
-      store.variable('pose/x')!.storedSamples - 300
-    );
+    expect(storedSamples(reopened, 'pose/x')).toBe(storedSamples(store, 'pose/x') - 300);
   });
 
   test('writes back blocks that left memory from the file they left for, in their place', async () => {
@@ -276,7 +276,7 @@ describe('recording a session', () => {
 
     const samples = everySample(reopened, 'pose/x');
 
-    expect(reopened.variable('pose/x')?.storedSamples).toBe(6 * BLOCK_SIZE);
+    expect(storedSamples(reopened, 'pose/x')).toBe(6 * BLOCK_SIZE);
     expect(samples).toHaveLength(6 * BLOCK_SIZE);
     expect(samples.every((sample, index) => sample.timeUs === index * SAMPLE_US)).toBe(true);
     expect(samples.every((sample, index) => sample.value === valueAt(index))).toBe(true);
@@ -319,7 +319,8 @@ describe('recording a session', () => {
     expect(reopened.gaps('pose/x', 0, 1e12)).toEqual([
       { kind: 'not-stored', startUs: 0, endUs: 1024 * SAMPLE_US, count: 1024 },
     ]);
-    expect(reopened.variable('pose/x')).toMatchObject({ storedSamples: 2, droppedSamples: 0 });
+    expect(storedSamples(reopened, 'pose/x')).toBe(2);
+    expect(droppedSamples(reopened, 'pose/x')).toBe(0);
   });
 
   test('reports a failed write, writes its events again and lets the store retry its blocks', async () => {
@@ -351,6 +352,25 @@ describe('recording a session', () => {
     expect(saved.summary.damaged).toEqual([]);
     expect(saved.summary.truncatedAt).toBeUndefined();
     expect(everySample(reopened, 'pose/x')).toEqual(everySample(store, 'pose/x'));
+  });
+
+  test('reports a record it cannot lay out, and goes on with the ones after', async () => {
+    const { store } = makeStore();
+    const file = new MemoryRecordingFile();
+    const errors: unknown[] = [];
+    const recorder = await RecordingWriter.start(file, HEADER, store, (error) =>
+      errors.push(error)
+    );
+    store.setLatestValue(2 ** 33, new Uint8Array([1]));
+
+    expect(errors).toEqual([expect.any(RangeError)]);
+    expect(recorder.status.failing).toBe(true);
+
+    store.setLatestValue(3, new Uint8Array([2]));
+    await recorder.stop(store);
+    const { store: reopened } = await reopen(file);
+
+    expect(reopened.history('maze').map((entry) => entry.value)).toEqual([new Uint8Array([2])]);
   });
 });
 

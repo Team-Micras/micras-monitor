@@ -1,7 +1,5 @@
-import type { ValueType } from '@/core/variables';
-
 import type { Block } from './block';
-import { type ColumnKind, columnKindOf, nextUp } from './columns';
+import { nextUp } from './columns';
 import {
   type Decimation,
   DecimationBuilder,
@@ -11,7 +9,7 @@ import {
   lowerBound,
   upperBound,
 } from './decimation';
-import type { BlockLoader } from './memory/block-loader';
+import type { BlockMemory } from './memory/block-memory';
 import type { StreamRun } from './stream-run';
 import type { Boundary, Gap, HistoryMark, SampleRun, SampleValue, TimeRange } from './types';
 import type { Segment, VariableHistory } from './variable-history';
@@ -28,56 +26,6 @@ export interface DecimateOptions {
 
   /** Add what the query read to these counters. */
   readonly stats?: DecimationStats;
-}
-
-/**
- * What the store knows about a variable.
- */
-export interface VariableInfo {
-  /** Its name. */
-  readonly name: string;
-
-  /** Its type, once known. */
-  readonly type: ValueType | undefined;
-
-  /** How its history is stored, or `none` for blobs. */
-  readonly storage: ColumnKind | 'none' | undefined;
-
-  /** Whether a 64 bit integer it held did not fit a float exactly. */
-  readonly precisionLost: boolean;
-
-  /** How many of its samples are kept. */
-  readonly storedSamples: number;
-
-  /** How many of its samples the source lost. */
-  readonly droppedSamples: number;
-
-  /** How many runs it was part of. */
-  readonly runs: number;
-}
-
-/**
- * What a variable's history holds: its type and storage, and how many samples it keeps, lost
- * and in how many runs.
- */
-export function variableInfo(record: VariableHistory): VariableInfo {
-  let storedSamples = 0;
-  let droppedSamples = 0;
-
-  for (const { run } of record.segments) {
-    storedSamples += run.keptCount;
-    droppedSamples += run.droppedCount;
-  }
-
-  return {
-    name: record.name,
-    type: record.type,
-    storage: record.type === undefined ? undefined : (columnKindOf(record.type) ?? 'none'),
-    precisionLost: record.precisionLost,
-    storedSamples,
-    droppedSamples,
-    runs: record.segments.length,
-  };
 }
 
 /**
@@ -138,9 +86,9 @@ export function* samplesOf(
   segments: readonly Segment[],
   startUs: number,
   endUs: number,
-  loader: BlockLoader
+  memory: BlockMemory
 ): Generator<SampleRun> {
-  loader.beginQuery();
+  memory.beginQuery();
 
   for (const { run, column } of segments) {
     if (column < 0) {
@@ -160,7 +108,7 @@ export function* samplesOf(
         break;
       }
 
-      const samples = runOf(block, column, startUs, endUs, loader);
+      const samples = runOf(block, column, startUs, endUs, memory);
 
       if (samples) {
         yield { runId: run.id, ...samples };
@@ -176,9 +124,9 @@ export function* samplesOf(
 export function valueAt(
   segments: readonly Segment[],
   timeUs: number,
-  loader: BlockLoader
+  memory: BlockMemory
 ): SampleValue | undefined {
-  loader.beginQuery();
+  memory.beginQuery();
 
   for (let index = segments.length - 1; index >= 0; index--) {
     const { run, column } = segments[index];
@@ -188,12 +136,12 @@ export function valueAt(
       continue;
     }
 
-    loader.markUsed(block);
+    memory.markUsed(block);
     const time = block.time;
     const columns = block.columns;
 
     if (!time || !columns) {
-      loader.request(block);
+      memory.request(block);
       return undefined;
     }
 
@@ -213,7 +161,7 @@ export function valueAt(
  * @param endUs The end of the window, exclusive.
  * @param pixels How many columns to split it into.
  * @param boundaries Where no line is drawn across.
- * @param loader How to reach raw samples.
+ * @param memory How to reach raw samples.
  * @param options A result to reuse and counters to fill.
  */
 export function decimate(
@@ -222,7 +170,7 @@ export function decimate(
   endUs: number,
   pixels: number,
   boundaries: readonly Boundary[],
-  loader: BlockLoader,
+  memory: BlockMemory,
   options: DecimateOptions
 ): Decimation {
   const into = options.into instanceof DecimationBuilder ? options.into : new DecimationBuilder();
@@ -250,8 +198,8 @@ export function decimate(
     into.reset(startUs, endUs, pixels);
   }
 
-  loader.beginQuery();
-  decimateSegments(into, record.segments, boundaries, loader, options.stats);
+  memory.beginQuery();
+  decimateSegments(into, record.segments, boundaries, memory, options.stats);
   into.source = record;
   into.mark = mark;
   return into;
@@ -321,14 +269,14 @@ function runOf(
   column: number,
   startUs: number,
   endUs: number,
-  loader: BlockLoader
+  memory: BlockMemory
 ): Omit<SampleRun, 'runId'> | undefined {
-  loader.markUsed(block);
+  memory.markUsed(block);
   const time = block.time;
   const columns = block.columns;
 
   if (!time || !columns) {
-    loader.request(block);
+    memory.request(block);
     return undefined;
   }
 

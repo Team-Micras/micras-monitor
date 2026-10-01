@@ -6,6 +6,7 @@ import type { WebSocketLike } from '@/sources/micras-comm/transports/websocket-t
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { HistoryStore } from '@/history';
 import { percentile, reportBench } from '@tests/support/ui/bench';
+import { storedSamples } from '@tests/support/history/sample-counts';
 
 declare module 'vitest' {
   interface ProvidedContext {
@@ -94,7 +95,7 @@ function benchLink(link: string, budget: Partial<BandwidthEstimatorOptions>): vo
 
     const perFrame: number[] = [];
     let last = busy.ms;
-    const storedBefore = monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0;
+    const storedBefore = storedSamples(monitor.history, 'imu/gyro_z');
     const started = performance.now();
     await frames(RUN_MS, () => {
       perFrame.push(busy.ms - last);
@@ -102,8 +103,7 @@ function benchLink(link: string, budget: Partial<BandwidthEstimatorOptions>): vo
     });
     const elapsedMs = performance.now() - started;
     const samplesPerSecond =
-      ((monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0) - storedBefore) /
-      (elapsedMs / 1000);
+      (storedSamples(monitor.history, 'imu/gyro_z') - storedBefore) / (elapsedMs / 1000);
     const { bytesInPerSecond } = monitor.state.stats;
     const planned = monitor.state.stats.streams.length;
     monitor.disconnect();

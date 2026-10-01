@@ -14,6 +14,11 @@ import {
 import { delay, TEST_TIMING, waitFor } from '@tests/support/sources/micras-comm/link-harness';
 import { startSimulatedRobot, type SimulatedRobotOptions } from '@scripts/simulated-robot/server';
 import { useVirtualTime } from '@tests/support/virtual-time';
+import {
+  droppedSamples,
+  runsWithSamples,
+  storedSamples,
+} from '@tests/support/history/sample-counts';
 
 /** The share over its budget the planner lets a plan go before making it again. */
 const OVERSPEND_TO_REPLAN = 0.1;
@@ -349,7 +354,7 @@ describe('MicrasCommSource against the simulated robot', () => {
         reported = monitor.state.stats;
         agreed = {
           lost: reported.samplesDropped,
-          kept: monitor.history.variable('imu/gyro_z')?.droppedSamples ?? 0,
+          kept: droppedSamples(monitor.history, 'imu/gyro_z') ?? 0,
         };
       }
     });
@@ -362,7 +367,7 @@ describe('MicrasCommSource against the simulated robot', () => {
     const counted = dropped.reduce((total, gap) => total + (gap.count ?? 0), 0);
 
     expect(dropped.length).toBeGreaterThan(0);
-    expect(counted).toBe(monitor.history.variable('imu/gyro_z')?.droppedSamples);
+    expect(counted).toBe(droppedSamples(monitor.history, 'imu/gyro_z'));
     expect(agreed?.kept).toBe(agreed?.lost);
   });
 
@@ -370,7 +375,7 @@ describe('MicrasCommSource against the simulated robot', () => {
     const { monitor, sim } = start();
     monitor.request([...PINNED, { variable: 'imu/gyro_z', rateHz: 100 }]);
     await streaming(monitor);
-    const stored = () => monitor.history.variable('imu/gyro_z')?.storedSamples ?? 0;
+    const stored = () => storedSamples(monitor.history, 'imu/gyro_z');
     await waitFor(() => stored() >= 20, 3000, 'the first samples');
     const others = ['imu/gyro_x', 'imu/gyro_y', 'imu/gyro_z'].map(
       (name) => monitor.state.variables.find((variable) => variable.name === name)?.id ?? -1
@@ -390,11 +395,11 @@ describe('MicrasCommSource against the simulated robot', () => {
     const gaps = monitor.history.gaps('imu/gyro_z', 0, Number.POSITIVE_INFINITY);
     const dropped = gaps.filter((gap) => gap.kind === 'dropped');
     const lost = dropped.reduce((total, gap) => total + (gap.count ?? 0), 0);
-    expect(monitor.history.variable('imu/gyro_z')?.runs).toBe(1);
+    expect(runsWithSamples(monitor.history, 'imu/gyro_z')).toBe(1);
     expect(gaps.filter((gap) => gap.kind === 'not-streamed')).toEqual([]);
     expect(dropped.length).toBeGreaterThanOrEqual(1);
     expect(lost).toBeGreaterThanOrEqual(1);
-    expect(lost).toBe(monitor.history.variable('imu/gyro_z')?.droppedSamples);
+    expect(lost).toBe(droppedSamples(monitor.history, 'imu/gyro_z'));
   });
 
   test('settles within a 3 KB/s link through several probes, then stops dropping', async () => {

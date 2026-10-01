@@ -1,9 +1,10 @@
-import type { Unsubscribe } from '@/core/emitter';
+import { Emitter, type Unsubscribe } from '@/core/emitter';
 import type { Value } from '@/core/variables';
 
 import type { BlockBacking, BlockData } from './block-backing';
+import { losesPrecision } from './columns';
 import type { Decimation } from './decimation';
-import { HistoryIngest } from './ingest';
+import { BlockMemory } from './memory/block-memory';
 import { LEAF_SIZE } from './min-max-pyramid';
 import {
   changedSince,
@@ -14,10 +15,10 @@ import {
   rangeOfHistory,
   samplesOf,
   valueAt,
-  variableInfo,
-  type VariableInfo,
 } from './queries';
 import type { Scheduler } from './scheduler';
+import { RECEIVED_BACKWARDS, StreamRun } from './stream-run';
+import { ChangeSignal, TickNotifier } from './tick-notifier';
 import type {
   Boundary,
   BoundaryKind,
@@ -37,6 +38,8 @@ import type {
   TimeRange,
   VariableRef,
 } from './types';
+import type { VariableHistory } from './variable-history';
+import { VariableRegistry } from './variable-registry';
 
 /** How many samples a block holds at most unless told otherwise. */
 export const DEFAULT_BLOCK_SIZE = 65_536;
@@ -97,7 +100,7 @@ function checkBlockSize(size: number): number {
  * {@link append} for every sample, {@link markBoundary} when the source loses the robot, and
  * {@link setLatestValue} for read answers. It knows nothing about any link. Times are on the
  * session timeline, in microseconds, kept moving forward across reboots by the source. The
- * changes go through `ingest.ts`, the reads through `queries.ts`.
+ * reads are the functions of `queries.ts` over a variable's runs.
  *
  * History is kept per variable name and type, so that it survives a schema change; queries take
  * a name, or an id of the current schema. Readers subscribe and hear about changes at most once
@@ -110,22 +113,38 @@ function checkBlockSize(size: number): number {
  * {@link restoreValue}.
  */
 export class HistoryStore {
-  readonly #ingest: HistoryIngest;
+  readonly #blockSize: number;
+  readonly #notifier: TickNotifier;
+  readonly #statusSignal: ChangeSignal;
+  readonly #registry: VariableRegistry;
+  readonly #runs = new Map<number, StreamRun>();
+  readonly #openBySlot = new Map<number, StreamRun>();
+  readonly #memory: BlockMemory;
+  readonly #warnings = new Emitter<{ warning: StoreWarning }>();
+  readonly #records = new Emitter<{ record: RecordingRecord }>();
+  #boundaries: readonly Boundary[] = [];
   #sessionRange: TimeRange | undefined;
+  #clockUs = Number.NEGATIVE_INFINITY;
+  #resetCount = 0;
 
   /**
    * @param options The scheduler, and the sizes and limits to use.
    */
   constructor(options: HistoryStoreOptions) {
-    this.#ingest = new HistoryIngest({
-      scheduler: options.scheduler,
-      blockSize: checkBlockSize(options.blockSize ?? DEFAULT_BLOCK_SIZE),
-      memoryCapBytes: options.memoryCapBytes ?? DEFAULT_MEMORY_CAP_BYTES,
+    this.#blockSize = checkBlockSize(options.blockSize ?? DEFAULT_BLOCK_SIZE);
+    this.#notifier = new TickNotifier(options.scheduler);
+    this.#statusSignal = new ChangeSignal(this.#notifier);
+    this.#registry = new VariableRegistry(options.historyLength ?? 32, this.#notifier);
+    this.#memory = new BlockMemory({
+      capBytes: options.memoryCapBytes ?? DEFAULT_MEMORY_CAP_BYTES,
       warningRatio: options.warningRatio ?? 0.8,
-      historyLength: options.historyLength ?? 32,
+      scheduler: options.scheduler,
       now: options.now ?? Date.now,
       flushIntervalMs: options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS,
       maxConcurrentLoads: options.maxConcurrentLoads ?? 4,
+      owners: this.#runs,
+      warnings: this.#warnings,
+      statusSignal: this.#statusSignal,
     });
   }
 
@@ -136,8 +155,12 @@ export class HistoryStore {
    * @param entries Every variable of the schema.
    * @param timeUs When the schema took effect; the latest sample's time by default.
    */
-  setSchema(entries: readonly HistoryVariable[], timeUs?: number): void {
-    this.#ingest.setSchema(entries, timeUs);
+  setSchema(entries: readonly HistoryVariable[], timeUs = this.#clockUs): void {
+    if (this.#registry.setSchema(entries) && Number.isFinite(timeUs)) {
+      this.#addBoundary('schema', timeUs);
+    }
+
+    this.#statusSignal.touch();
   }
 
   /**
@@ -148,7 +171,61 @@ export class HistoryStore {
    * @throws If the run id was used before or a variable appears twice.
    */
   openRun(spec: StreamRunSpec): readonly number[] {
-    return this.#ingest.openRun(spec);
+    if (this.#runs.has(spec.runId)) {
+      throw new Error(`Run ${spec.runId} was already opened`);
+    }
+
+    if (new Set(spec.variables.map((variable) => variable.id)).size !== spec.variables.length) {
+      throw new Error(`Run ${spec.runId} names a variable twice`);
+    }
+
+    const variables = spec.variables.map((variable) => ({
+      id: variable.id,
+      name: variable.name ?? this.#registry.nameOf(variable.id),
+      type: variable.type,
+    }));
+    let typeChanged = false;
+    const records = variables.map(({ id, name, type }) => {
+      const before = this.#registry.resolve(name);
+      const record = this.#registry.recordFor(name, type);
+      typeChanged ||= before !== undefined && before !== record;
+      record.lastId = id;
+      return record;
+    });
+
+    if (typeChanged && Number.isFinite(this.#clockUs)) {
+      this.#addBoundary('schema', this.#clockUs);
+    }
+
+    const closed: number[] = [];
+
+    for (const open of this.#runs.values()) {
+      const conflicts =
+        open.slot === spec.slot || open.records.some((record) => records.includes(record));
+
+      if (!open.closed && conflicts) {
+        this.closeRun(open.id);
+        closed.push(open.id);
+      }
+    }
+
+    const run = new StreamRun(
+      { runId: spec.runId, slot: spec.slot, variables },
+      records,
+      this.#blockSize,
+      this.#memory
+    );
+
+    records.forEach((record, index) => {
+      record.segments.push({ run, column: run.columnOf[index] });
+      record.appended();
+    });
+
+    this.#runs.set(spec.runId, run);
+    this.#openBySlot.set(spec.slot, run);
+    this.#emit({ kind: 'run', run: run.recorded });
+    this.#statusSignal.touch();
+    return closed;
   }
 
   /**
@@ -157,7 +234,29 @@ export class HistoryStore {
    * @throws If no run has that id.
    */
   closeRun(runId: number): void {
-    this.#ingest.closeRun(runId);
+    const run = this.#runs.get(runId);
+
+    if (!run) {
+      throw new Error(`No run ${runId}`);
+    }
+
+    if (run.closed) {
+      return;
+    }
+
+    run.close();
+    this.#emitFinalGaps(run);
+
+    if (this.#openBySlot.get(run.slot) === run) {
+      this.#openBySlot.delete(run.slot);
+    }
+
+    for (const record of run.records) {
+      record.appended();
+    }
+
+    this.#emit({ kind: 'run-closed', runId });
+    this.#statusSignal.touch();
   }
 
   /**
@@ -173,7 +272,57 @@ export class HistoryStore {
    * @throws If the run is not open or the number of values is wrong.
    */
   append(runId: number, timeUs: number, values: ArrayLike<Value>, missedBefore = 0): void {
-    this.#ingest.append(runId, timeUs, values, missedBefore);
+    const run = this.#openRun(runId);
+    const records = run.records;
+
+    if (values.length !== records.length) {
+      throw new RangeError(`Run ${runId} takes ${records.length} values, got ${values.length}`);
+    }
+
+    const received = run.receive(timeUs, missedBefore);
+
+    if (received === RECEIVED_BACKWARDS) {
+      this.#warnings.emit('warning', {
+        type: 'time-backwards',
+        runId,
+        timeUs,
+        lastUs: run.lastTimeUs,
+      });
+    }
+
+    const kept = received >= 0;
+    const stored = kept && run.store(timeUs, values);
+
+    if (stored) {
+      this.#emitFinalGaps(run);
+    }
+
+    if (kept) {
+      this.#clockUs = Math.max(this.#clockUs, timeUs);
+    }
+
+    for (let index = 0; index < records.length; index++) {
+      const record = records[index];
+      const value = values[index];
+      const numeric = run.columnOf[index] >= 0;
+      record.setLatest(value, timeUs);
+
+      if (!numeric) {
+        record.remember(value, timeUs);
+        this.#emitValue(record, run.variables[index].id, value, timeUs);
+      } else if (kept) {
+        this.#checkPrecision(record, run.wide[index], value);
+      }
+
+      if (numeric && stored) {
+        record.tailUs = timeUs;
+        record.appended();
+      } else {
+        record.changed();
+      }
+    }
+
+    this.#memory.flushIfDue();
   }
 
   /**
@@ -181,7 +330,11 @@ export class HistoryStore {
    * across the moment.
    */
   markBoundary(kind: BoundaryKind, timeUs: number): void {
-    this.#ingest.markBoundary(kind, timeUs);
+    this.#addBoundary(kind, timeUs);
+
+    for (const run of this.#openBySlot.values()) {
+      this.closeRun(run.id);
+    }
   }
 
   /**
@@ -192,7 +345,19 @@ export class HistoryStore {
    * @param timeUs When it was sampled, if known.
    */
   setLatestValue(variableId: number, value: Value, timeUs?: number): void {
-    this.#ingest.setLatestValue(variableId, value, timeUs);
+    const record = this.#registry.recordFor(
+      this.#registry.nameOf(variableId),
+      this.#registry.typeOf(variableId)
+    );
+    record.lastId = variableId;
+    record.setLatest(value, timeUs);
+
+    if (!record.numeric) {
+      record.remember(value, timeUs);
+    }
+
+    record.changed();
+    this.#emitValue(record, variableId, value, timeUs ?? Number.NaN);
   }
 
   /**
@@ -200,7 +365,31 @@ export class HistoryStore {
    * runs, which carry on from nothing. A persistence layer written before is no longer read.
    */
   reset(): void {
-    this.#ingest.reset();
+    for (const run of this.#runs.values()) {
+      if (!run.closed) {
+        run.clearHistory();
+      }
+    }
+
+    this.#memory.reset();
+
+    for (const [runId, run] of this.#runs) {
+      if (run.closed) {
+        this.#runs.delete(runId);
+      }
+    }
+
+    for (const record of this.#registry.all()) {
+      const open = record.segments.filter((segment) => !segment.run.closed);
+      record.segments.length = 0;
+      record.segments.push(...open);
+      record.tailUs = Number.NEGATIVE_INFINITY;
+      record.rewritten();
+    }
+
+    this.#boundaries = [];
+    this.#resetCount++;
+    this.#statusSignal.touch();
   }
 
   /**
@@ -209,7 +398,7 @@ export class HistoryStore {
    * comes back from there when a query needs its raw samples; its pyramid stays. Its numeric
    * variables take its last sample as their latest value.
    *
-   * @param run The run, with the names its variables had.
+   * @param recorded The run, with the names its variables had.
    * @param blocks Its blocks, in index order.
    * @param gaps Its gaps, in the order they were written; a later one with the start of an
    *   earlier one replaces it.
@@ -218,30 +407,81 @@ export class HistoryStore {
    * @throws If the run appears twice, or a block does not fit it.
    */
   restoreRun(
-    run: RecordedRun,
+    recorded: RecordedRun,
     blocks: Iterable<BlockData>,
     gaps: readonly RecordedGap[],
     source: BlockBacking
   ): number {
-    return this.#ingest.restoreRun(run, blocks, gaps, source);
+    if (this.#runs.has(recorded.runId)) {
+      throw new Error(`Run ${recorded.runId} appears twice in the session`);
+    }
+
+    const records = recorded.variables.map(({ id, name, type }) => {
+      const record = this.#registry.recordFor(name, type);
+      record.lastId = id;
+      return record;
+    });
+    const run = new StreamRun(recorded, records, this.#blockSize, this.#memory);
+    records.forEach((record, index) => {
+      record.segments.push({ run, column: run.columnOf[index] });
+    });
+    this.#runs.set(recorded.runId, run);
+    let skipped = 0;
+    let last: BlockData | undefined;
+
+    for (const data of blocks) {
+      const block = run.restoreBlock(data);
+
+      if (!block) {
+        skipped++;
+        continue;
+      }
+
+      this.#memory.adopt(block, source);
+      last = data.time.length > 0 ? data : last;
+    }
+
+    run.finishRestore(gaps);
+
+    if (last) {
+      this.#takeLastSamples(run, last);
+    }
+
+    for (const record of records) {
+      record.rewritten();
+    }
+
+    return skipped;
   }
 
   /**
    * Take back a value of a saved recording that was not part of a stored stream. A variable
    * with stored samples keeps its last one as its latest value.
    */
-  restoreValue(value: RecordedValue): void {
-    this.#ingest.restoreValue(value);
+  restoreValue({ variableId, name, timeUs, value }: RecordedValue): void {
+    const record = this.#registry.recordFor(name, this.#registry.typeOf(variableId));
+    const time = Number.isNaN(timeUs) ? undefined : timeUs;
+    record.lastId = variableId;
+
+    if (record.tailUs === Number.NEGATIVE_INFINITY) {
+      record.setLatest(value, time);
+    }
+
+    if (!record.numeric) {
+      record.remember(value, time);
+    }
+
+    record.changed();
   }
 
   /** How many times the history was forgotten by {@link reset}, to tell a fresh one from a longer one. */
   get resetCount(): number {
-    return this.#ingest.resetCount;
+    return this.#resetCount;
   }
 
   /** The latest value of a variable; the same object until it changes. */
   latest(variable: VariableRef): LatestValue | undefined {
-    return this.#ingest.registry.resolve(variable)?.latest;
+    return this.#registry.resolve(variable)?.latest;
   }
 
   /**
@@ -249,13 +489,7 @@ export class HistoryStore {
    * the same array until a value arrives.
    */
   history(variable: VariableRef): readonly LatestValue[] {
-    return this.#ingest.registry.resolve(variable)?.history ?? NO_VALUES;
-  }
-
-  /** What the store knows about a variable: its storage and how many samples it kept and lost. */
-  variable(variable: VariableRef): VariableInfo | undefined {
-    const record = this.#ingest.registry.resolve(variable);
-    return record && variableInfo(record);
+    return this.#registry.resolve(variable)?.history ?? NO_VALUES;
   }
 
   /**
@@ -264,11 +498,11 @@ export class HistoryStore {
    */
   timeRange(variable?: VariableRef): TimeRange | undefined {
     if (variable !== undefined) {
-      const record = this.#ingest.registry.resolve(variable);
+      const record = this.#registry.resolve(variable);
       return record && rangeOfHistory(record);
     }
 
-    const range = rangeOf(this.#ingest.runs.values());
+    const range = rangeOf(this.#runs.values());
     const kept = this.#sessionRange;
 
     if (range?.startUs !== kept?.startUs || range?.endUs !== kept?.endUs) {
@@ -283,7 +517,7 @@ export class HistoryStore {
    * it changes.
    */
   historyMark(variable: VariableRef): HistoryMark | undefined {
-    return this.#ingest.registry.resolve(variable)?.mark;
+    return this.#registry.resolve(variable)?.mark;
   }
 
   /**
@@ -302,10 +536,10 @@ export class HistoryStore {
    * changes when they return.
    */
   *samples(variable: VariableRef, startUs: number, endUs: number): Generator<SampleRun> {
-    const record = this.#ingest.registry.resolve(variable);
+    const record = this.#registry.resolve(variable);
 
     if (record) {
-      yield* samplesOf(record.segments, startUs, endUs, this.#ingest.memory.loader);
+      yield* samplesOf(record.segments, startUs, endUs, this.#memory);
     }
   }
 
@@ -314,8 +548,8 @@ export class HistoryStore {
    * across plots. Undefined before the first sample, or while its block is being read back.
    */
   valueAt(variable: VariableRef, timeUs: number): SampleValue | undefined {
-    const segments = this.#ingest.registry.resolve(variable)?.segments ?? [];
-    return valueAt(segments, timeUs, this.#ingest.memory.loader);
+    const segments = this.#registry.resolve(variable)?.segments ?? [];
+    return valueAt(segments, timeUs, this.#memory);
   }
 
   /**
@@ -340,12 +574,12 @@ export class HistoryStore {
     options: DecimateOptions = {}
   ): Decimation {
     return decimate(
-      this.#ingest.registry.resolve(variable),
+      this.#registry.resolve(variable),
       startUs,
       endUs,
       pixels,
-      this.#ingest.boundaries,
-      this.#ingest.memory.loader,
+      this.#boundaries,
+      this.#memory,
       options
     );
   }
@@ -355,12 +589,12 @@ export class HistoryStore {
    * dropped samples and samples not kept, ordered by start.
    */
   gaps(variable: VariableRef, startUs: number, endUs: number): Gap[] {
-    return gapsOf(this.#ingest.registry.resolve(variable)?.segments ?? [], startUs, endUs);
+    return gapsOf(this.#registry.resolve(variable)?.segments ?? [], startUs, endUs);
   }
 
   /** Every boundary so far, oldest first; the same array until a boundary is added. */
   boundaries(): readonly Boundary[] {
-    return this.#ingest.boundaries;
+    return this.#boundaries;
   }
 
   /**
@@ -368,7 +602,7 @@ export class HistoryStore {
    * for `useSyncExternalStore`.
    */
   version(variable: VariableRef): number {
-    return this.#ingest.registry.channelFor(variable).version;
+    return this.#registry.channelFor(variable).version;
   }
 
   /**
@@ -378,8 +612,8 @@ export class HistoryStore {
    * @returns A function that ends the subscription.
    */
   subscribe(variables: readonly VariableRef[], callback: () => void): () => void {
-    const channels = variables.map((variable) => this.#ingest.registry.channelFor(variable));
-    return this.#ingest.notifier.subscribe(channels, callback);
+    const channels = variables.map((variable) => this.#registry.channelFor(variable));
+    return this.#notifier.subscribe(channels, callback);
   }
 
   /**
@@ -389,12 +623,12 @@ export class HistoryStore {
    * @returns A function that ends the subscription.
    */
   subscribeStatus(callback: () => void): () => void {
-    return this.#ingest.notifier.subscribe([this.#ingest.statusSignal], callback);
+    return this.#notifier.subscribe([this.#statusSignal], callback);
   }
 
   /** The memory used and the recording state; the same object until it changes. */
   status(): StoreStatus {
-    return this.#ingest.memory.status();
+    return this.#memory.status();
   }
 
   /**
@@ -403,7 +637,7 @@ export class HistoryStore {
    * @returns A function that stops listening.
    */
   onWarning(listener: (warning: StoreWarning) => void): Unsubscribe {
-    return this.#ingest.warnings.on('warning', listener);
+    return this.#warnings.on('warning', listener);
   }
 
   /**
@@ -415,7 +649,11 @@ export class HistoryStore {
    * @returns A function that stops listening.
    */
   follow(listener: (record: RecordingRecord) => void): Unsubscribe {
-    return this.#ingest.follow(listener);
+    for (const record of this.#recordedSoFar()) {
+      listener(record);
+    }
+
+    return this.#records.on('record', listener);
   }
 
   /**
@@ -425,7 +663,7 @@ export class HistoryStore {
    * come from {@link follow}.
    */
   startRecording(persistence: BlockBacking): void {
-    this.#ingest.memory.writer.start(persistence);
+    this.#memory.startRecording(persistence);
   }
 
   /**
@@ -434,7 +672,7 @@ export class HistoryStore {
    * samples before the stream goes quiet reach the persistence layer as well.
    */
   flushIfDue(): void {
-    this.#ingest.memory.writer.flushIfDue();
+    this.#memory.flushIfDue();
   }
 
   /**
@@ -444,6 +682,110 @@ export class HistoryStore {
    * @returns A promise that settles once every write under way has.
    */
   stopRecording(): Promise<void> {
-    return this.#ingest.memory.writer.stop();
+    return this.#memory.stopRecording();
+  }
+
+  *#recordedSoFar(): Generator<RecordingRecord> {
+    for (const run of this.#runs.values()) {
+      yield { kind: 'run', run: run.recorded };
+
+      for (const gap of run.gaps) {
+        if (run.closed || !Number.isNaN(gap.untilUs)) {
+          yield { kind: 'gap', gap: run.recordedGap(gap) };
+        }
+      }
+
+      if (run.closed) {
+        yield { kind: 'run-closed', runId: run.id };
+      }
+    }
+
+    for (const boundary of this.#boundaries) {
+      yield { kind: 'boundary', boundary };
+    }
+
+    for (const record of this.#registry.all()) {
+      const latest = record.latest;
+
+      if (latest && !record.numeric && record.lastId !== undefined) {
+        yield {
+          kind: 'value',
+          value: {
+            variableId: record.lastId,
+            name: record.name,
+            timeUs: latest.timeUs ?? Number.NaN,
+            value: latest.value,
+          },
+        };
+      }
+    }
+  }
+
+  #openRun(runId: number): StreamRun {
+    const run = this.#runs.get(runId);
+
+    if (!run) {
+      throw new Error(`No run ${runId}`);
+    }
+
+    if (run.closed) {
+      throw new Error(`Run ${runId} is closed`);
+    }
+
+    return run;
+  }
+
+  #takeLastSamples(run: StreamRun, last: BlockData): void {
+    const at = last.time.length - 1;
+    const timeUs = last.time[at];
+
+    run.records.forEach((record, index) => {
+      const column = run.columnOf[index];
+
+      if (column >= 0 && record.tailUs <= timeUs) {
+        record.setLatest(last.columns[column].values[at], timeUs);
+        record.tailUs = timeUs;
+        this.#clockUs = Math.max(this.#clockUs, timeUs);
+      }
+    });
+  }
+
+  #checkPrecision(record: VariableHistory, wide: boolean, value: Value): void {
+    if (wide && !record.precisionLost && losesPrecision(value)) {
+      record.precisionLost = true;
+      this.#warnings.emit('warning', { type: 'precision-loss', name: record.name });
+    }
+  }
+
+  #addBoundary(kind: BoundaryKind, timeUs: number): void {
+    const boundary = { kind, timeUs };
+    this.#boundaries = [...this.#boundaries, boundary];
+
+    for (const record of this.#registry.all()) {
+      if (timeUs < record.tailUs) {
+        record.rewritten();
+      } else {
+        record.appended();
+      }
+    }
+
+    this.#emit({ kind: 'boundary', boundary });
+    this.#statusSignal.touch();
+  }
+
+  #emitFinalGaps(run: StreamRun): void {
+    for (const gap of run.takeFinalGaps()) {
+      this.#emit({ kind: 'gap', gap: run.recordedGap(gap) });
+    }
+  }
+
+  #emitValue(record: VariableHistory, variableId: number, value: Value, timeUs: number): void {
+    if (this.#records.has('record')) {
+      this.#emit({ kind: 'value', value: { variableId, name: record.name, timeUs, value } });
+    }
+  }
+
+  #emit(record: RecordingRecord): void {
+    this.#records.emit('record', record);
   }
 }

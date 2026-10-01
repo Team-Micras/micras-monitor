@@ -37,12 +37,13 @@ interface Pending {
 
 /**
  * Writes a store's session to a recording file as it grows: the header, then what the store
- * already holds, then every block and ingestion event as they come. It is the store's persistence
+ * already holds, then every block and record as they come. It is the store's persistence
  * layer while recording, so blocks written can leave memory and come back from the file.
  *
  * Writes go one at a time, each batching whatever queued up behind the previous one. A write
  * that fails is reported and not lost: its events are written again with the next write, and the
- * store writes its blocks again after a backoff. Records go at the end of what is known to be in
+ * store writes its blocks again after a backoff. A record that cannot be laid out is reported and
+ * left out. Records go at the end of what is known to be in
  * the file, so a write cut short is overwritten by the next one.
  */
 export class RecordingWriter implements BlockBacking {
@@ -75,7 +76,7 @@ export class RecordingWriter implements BlockBacking {
    * @param file An empty file.
    * @param header The recording's header.
    * @param store The store to record.
-   * @param onError Hears about each write that fails.
+   * @param onError Hears about each write that fails and each record that cannot be laid out.
    */
   static async start(
     file: RecordingFile,
@@ -149,7 +150,15 @@ export class RecordingWriter implements BlockBacking {
   }
 
   #enqueue(record: RecordingRecord, block?: Pending['block']): Promise<void> {
-    const bytes = encodeRecordingRecord(record);
+    let bytes: Uint8Array;
+
+    try {
+      bytes = encodeRecordingRecord(record);
+    } catch (error) {
+      this.#failed(error);
+      return Promise.reject(error);
+    }
+
     return new Promise<void>((resolve, reject) => {
       this.#queue.push({ bytes, block, resolve, reject });
       this.#draining ??= this.#drain();
@@ -183,9 +192,7 @@ export class RecordingWriter implements BlockBacking {
     } catch (error) {
       this.#queue = [...batch.filter((item) => !item.block), ...this.#queue];
       batch.filter((item) => item.block).forEach((item) => item.reject(error));
-      this.#failing = true;
-      this.#onError(error);
-      this.#changed();
+      this.#failed(error);
       return false;
     }
 
@@ -209,6 +216,12 @@ export class RecordingWriter implements BlockBacking {
     this.#failing = false;
     this.#changed();
     return true;
+  }
+
+  #failed(error: unknown): void {
+    this.#failing = true;
+    this.#onError(error);
+    this.#changed();
   }
 
   #stats(): RecordingWriterStats {

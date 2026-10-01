@@ -37,6 +37,16 @@ export class Emitter<Events extends object> {
   }
 
   /**
+   * Whether an event has any listener, so that the code emitting it can skip building a payload
+   * nobody hears.
+   *
+   * @param event The event.
+   */
+  has(event: keyof Events): boolean {
+    return (this.listeners[event]?.size ?? 0) > 0;
+  }
+
+  /**
    * Call every listener of an event.
    *
    * @param event The event to emit.

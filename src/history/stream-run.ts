@@ -4,7 +4,7 @@ import { fitsColumns, type Block } from './block';
 import type { BlockData } from './block-backing';
 import { type ColumnKind, columnKindOf, toNumber } from './columns';
 import { GapLog } from './gap-log';
-import type { BlockMemory } from './memory/block-memory';
+import type { BlockMemory, BlockOwner } from './memory/block-memory';
 import { LEAF_SIZE } from './min-max-pyramid';
 import type { HistoryVariable, RecordedGap, RecordedRun, RunGap } from './types';
 import type { VariableHistory } from './variable-history';
@@ -31,7 +31,7 @@ export const RECEIVED_DUPLICATE = -1;
  * Its blocks come from the block memory, which tells the run when one of them leaves memory,
  * comes back or is let go of.
  */
-export class StreamRun {
+export class StreamRun implements BlockOwner {
   /** The session's id for the run. */
   readonly id: number;
 

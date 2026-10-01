@@ -4,6 +4,7 @@ import { Monitor } from '@/core/monitor';
 import { DEMO_ROBOT } from '@/sources/demo/demo-robot';
 import { DemoSource, type DemoOptions, type DemoRobot } from '@/sources/demo/demo-source';
 import { ManualScheduler, HistoryStore } from '@/history';
+import { storedSamples } from '@tests/support/history/sample-counts';
 
 const URL = { transport: 'websocket', url: 'ws://robot' } as const;
 const STOP = 5;
@@ -129,7 +130,7 @@ describe('DemoSource sampling', () => {
     monitor.connect(URL);
     vi.advanceTimersByTime(40);
     expect(monitor.state.status.kind).toBe('linked');
-    return () => monitor.history.variable('x')?.storedSamples ?? 0;
+    return () => storedSamples(monitor.history, 'x');
   }
 
   test('keeps sampling when the wall clock steps back', () => {

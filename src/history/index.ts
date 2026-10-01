@@ -25,7 +25,7 @@ export {
   HistoryStore,
   type HistoryStoreOptions,
 } from './history-store';
-export type { DecimateOptions, VariableInfo } from './queries';
+export type { DecimateOptions } from './queries';
 export type {
   Boundary,
   BoundaryKind,

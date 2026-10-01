@@ -12,6 +12,7 @@ import { micras } from '@/robots/micras';
 import type { DemoRobot, DemoVariable } from '@/sources/demo/demo-source';
 import { EXPLORED_16, FRESH_16 } from '@tests/support/robots/micras/maze-vectors';
 import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
+import { storedSamples } from '@tests/support/history/sample-counts';
 
 const monitors: AppMonitor[] = [];
 
@@ -96,7 +97,7 @@ describe('the Micras package in the app', () => {
     await expect.poll(() => maze()?.dataset.robotCell).toBe('0,1');
 
     blob = EXPLORED_16;
-    const revisions = () => monitor.history.variable('maze/revision')?.storedSamples ?? 0;
+    const revisions = () => storedSamples(monitor.history, 'maze/revision');
     const seen = revisions();
     await expect.poll(revisions).toBeGreaterThan(seen + 10);
     expect(maze()?.dataset.walls).toBe('65');

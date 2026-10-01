@@ -1,13 +1,30 @@
 import type { Emitter } from '@/core/emitter';
 
 import { Block, type BlockLayout } from '../block';
-import type { BlockBacking } from '../block-backing';
+import type { BlockBacking, BlockData } from '../block-backing';
+import type { BlockAccess } from '../decimation';
 import type { Scheduler } from '../scheduler';
-import type { StreamRun } from '../stream-run';
 import type { ChangeSignal } from '../tick-notifier';
 import type { StoreStatus, StoreWarning } from '../types';
 import { BlockLoader } from './block-loader';
 import { BlockWriter } from './block-writer';
+
+/**
+ * What the block memory needs of the run that owns blocks.
+ */
+export interface BlockOwner {
+  /** Whether the run takes no more samples. */
+  readonly closed: boolean;
+
+  /** Seal the block being filled, if it holds anything. */
+  sealOpenBlock(): void;
+
+  /** One of its blocks left memory or came back: its readers must look again. */
+  rewritten(): void;
+
+  /** One of its sealed blocks was let go of for good. */
+  dropBlock(block: Block): void;
+}
 
 /**
  * How to set up the block memory.
@@ -31,8 +48,8 @@ export interface BlockMemoryOptions {
   /** How many blocks may be read back at once. */
   readonly maxConcurrentLoads: number;
 
-  /** The store's runs by id, told when one of their blocks leaves memory, returns or is let go of. */
-  readonly runs: ReadonlyMap<number, StreamRun>;
+  /** The runs by id, in the order they opened, which own the blocks. */
+  readonly owners: ReadonlyMap<number, BlockOwner>;
 
   /** Where the warnings go. */
   readonly warnings: Emitter<{ warning: StoreWarning }>;
@@ -46,64 +63,57 @@ export interface BlockMemoryOptions {
  *
  * - While recording, every sealed block is written to the persistence layer, and the blocks
  *   being filled are sealed and written every few seconds, so that little is lost if the tab
- *   dies; {@link writer} does the writing. A block with a copy can leave memory when room is
- *   needed, least recently read first, and comes back through {@link loader} when a query needs
- *   its raw samples. While a write is under way the blocks may go one block over the cap, rather
- *   than lose samples to the write's latency. If nothing can leave, new samples stop being kept
- *   until room comes back.
+ *   dies. A block with a copy can leave memory when room is needed, least recently read first,
+ *   and comes back when a query needs its raw samples. While a write is under way the blocks may
+ *   go one block over the cap, rather than lose samples to the write's latency. If nothing can
+ *   leave, new samples stop being kept until room comes back.
  * - While not recording, the live view never stops: at the cap, the oldest sealed blocks without
  *   a copy are let go of, and their stretch becomes a gap of samples not stored.
+ *
+ * Reads are asked for during a query and started once the scheduler tick ends, after every
+ * query of the tick marked the blocks it uses. A read reserves its memory before it starts and
+ * never evicts a block used in the same tick, so a working set larger than the cap settles on
+ * pyramid answers for what does not fit instead of cycling.
  *
  * The warning comes at a share of the cap: of all the memory while not recording, and of the
  * memory nothing can free, the pyramids, leaf times and gap records, while recording.
  */
-export class BlockMemory {
-  /** Reads evicted blocks back for the queries. */
-  readonly loader: BlockLoader;
-
-  /** Writes sealed blocks to the persistence layer while recording. */
-  readonly writer: BlockWriter;
-
+export class BlockMemory implements BlockAccess {
   readonly #capBytes: number;
   readonly #warningRatio: number;
-  readonly #runs: ReadonlyMap<number, StreamRun>;
+  readonly #scheduler: Scheduler;
+  readonly #owners: ReadonlyMap<number, BlockOwner>;
   readonly #warnings: Emitter<{ warning: StoreWarning }>;
   readonly #statusSignal: ChangeSignal;
+  readonly #loader: BlockLoader;
+  readonly #writer: BlockWriter;
   #blocks: Block[] = [];
   #usedBytes = 0;
   #fixedBytes = 0;
   #historyStopped = false;
   #roomChanged = false;
   #warned = false;
+  #tickScheduled = false;
   #resetCount = 0;
-  #status: StoreStatus;
+  #status: StoreStatus | undefined;
 
   /**
-   * @param options The cap, the clock, the runs and where to report.
+   * @param options The cap, the clock, the owners and where to report.
    */
   constructor(options: BlockMemoryOptions) {
     this.#capBytes = options.capBytes;
     this.#warningRatio = options.warningRatio;
-    this.#runs = options.runs;
+    this.#scheduler = options.scheduler;
+    this.#owners = options.owners;
     this.#warnings = options.warnings;
     this.#statusSignal = options.statusSignal;
-    this.loader = new BlockLoader(this, options.scheduler, options.maxConcurrentLoads);
-    this.writer = new BlockWriter(this, options.now, options.flushIntervalMs);
-    this.#status = this.#snapshot();
-  }
-
-  /** Every block, oldest first. */
-  get blocks(): readonly Block[] {
-    return this.#blocks;
-  }
-
-  /** How many times {@link reset} forgot every block, so that work started before can tell. */
-  get resetCount(): number {
-    return this.#resetCount;
+    this.#loader = new BlockLoader(options.maxConcurrentLoads);
+    this.#writer = new BlockWriter(options.now, options.flushIntervalMs);
   }
 
   /** The memory the blocks take and what is recording; the same object until it changes. */
   status(): StoreStatus {
+    this.#status ??= this.#snapshot();
     return this.#status;
   }
 
@@ -118,8 +128,8 @@ export class BlockMemory {
 
     this.#roomChanged = false;
     const bytes = Block.byteLengthFor(layout);
-    const fits = this.makeRoom(this.#historyStopped ? 2 * bytes : bytes, false);
-    const overdraft = this.writer.pendingWrites > 0 && this.#usedBytes <= this.#capBytes;
+    const fits = this.#makeRoom(this.#historyStopped ? 2 * bytes : bytes, false);
+    const overdraft = this.#writer.pendingWrites > 0 && this.#usedBytes <= this.#capBytes;
 
     if (!fits && !overdraft) {
       this.#stopHistory();
@@ -133,11 +143,11 @@ export class BlockMemory {
 
     if (this.#historyStopped) {
       this.#historyStopped = false;
-      this.warn({ type: 'history-resumed' });
+      this.#warn({ type: 'history-resumed' });
     }
 
     this.#checkWarning();
-    this.statusChanged();
+    this.#statusChanged();
     return block;
   }
 
@@ -145,18 +155,15 @@ export class BlockMemory {
   seal(block: Block): void {
     block.seal();
     const indexBefore = block.indexByteLength;
-    this.#usedBytes -= block.compact();
+    const freed = block.compact();
+    this.#usedBytes -= freed;
     this.#fixedBytes += block.indexByteLength - indexBefore;
-    this.writer.persistSealed();
-  }
 
-  /** Seal the block every open run is filling, in the order the runs opened. */
-  sealOpenBlocks(): void {
-    for (const run of this.#runs.values()) {
-      if (!run.closed) {
-        run.sealOpenBlock();
-      }
+    if (freed !== 0) {
+      this.#statusChanged();
     }
+
+    this.#persistSealed();
   }
 
   /**
@@ -166,7 +173,7 @@ export class BlockMemory {
   adopt(block: Block, source: BlockBacking): void {
     block.copy = source;
     this.#roomChanged = true;
-    this.makeRoom(0, false);
+    this.#makeRoom(0, false);
   }
 
   /** Memory outside the blocks, which never leaves, was taken, or given back when negative. */
@@ -174,12 +181,7 @@ export class BlockMemory {
     this.#usedBytes += bytes;
     this.#fixedBytes += bytes;
     this.#checkWarning();
-    this.statusChanged();
-  }
-
-  /** Raw samples were reserved, read back or given back, when negative. */
-  charge(bytes: number): void {
-    this.#usedBytes += bytes;
+    this.#statusChanged();
   }
 
   /** Forget every block and stop recording, as for a new session. */
@@ -191,80 +193,70 @@ export class BlockMemory {
     this.#historyStopped = false;
     this.#roomChanged = true;
     this.#warned = false;
-    this.loader.reset();
-    this.writer.reset();
-    this.statusChanged();
+    this.#loader.reset();
+    this.#writer.reset();
+    this.#statusChanged();
+  }
+
+  /** Start a query: its blocks count as used in the current tick. */
+  beginQuery(): void {
+    if (this.#tickScheduled) {
+      return;
+    }
+
+    this.#tickScheduled = true;
+    this.#scheduler.schedule(() => this.#endTick());
+  }
+
+  /** {@inheritDoc BlockAccess.markUsed} */
+  markUsed(block: Block): void {
+    this.#loader.markUsed(block);
+  }
+
+  /** {@inheritDoc BlockAccess.request} */
+  request(block: Block): void {
+    this.#loader.request(block);
   }
 
   /**
-   * Make room for some bytes: evict blocks with a copy, least recently used first, and, while
-   * nothing records, let go of the oldest sealed blocks without one.
-   *
-   * @param bytes How many bytes are needed.
-   * @param forLoad Whether a read needs them: it lets go of nothing, evicts no block used in the
-   *   current query tick, and evicts nothing unless that makes enough room.
-   * @returns Whether the bytes fit under the cap.
+   * Start writing blocks to a persistence layer: first the whole session so far, the blocks
+   * being filled sealed and those evicted read back from where they live, then every block as
+   * it seals.
    */
-  makeRoom(bytes: number, forLoad: boolean): boolean {
-    if (forLoad && this.#usedBytes - this.#evictableBytes() + bytes > this.#capBytes) {
-      return false;
+  startRecording(target: BlockBacking): void {
+    this.#writer.start(target);
+    this.#sealOpenBlocks();
+    this.#persistSealed();
+    void this.#backfill(target);
+    this.#reconsiderWarning();
+    this.#statusChanged();
+  }
+
+  /**
+   * Seal and write what is being filled, then stop writing blocks. Blocks already written can
+   * still leave memory and come back.
+   *
+   * @returns A promise that settles once every write under way has.
+   */
+  stopRecording(): Promise<void> {
+    this.#sealOpenBlocks();
+    this.#writer.retryNow();
+    this.#persistSealed();
+    const written = this.#writer.stop();
+    this.#reconsiderWarning();
+    this.#statusChanged();
+    return written;
+  }
+
+  /**
+   * While recording, seal and write the blocks being filled once the flush interval has passed,
+   * and retry failed writes once their backoff has.
+   */
+  flushIfDue(): void {
+    if (this.#writer.flushDue()) {
+      this.#sealOpenBlocks();
+      this.#persistSealed();
     }
-
-    let changed = false;
-
-    while (this.#usedBytes + bytes > this.#capBytes) {
-      const victim = this.#evictable(forLoad);
-
-      if (victim) {
-        this.#usedBytes -= victim.evict();
-        this.ownerOf(victim)?.rewritten();
-        changed = true;
-        continue;
-      }
-
-      const oldest = forLoad || this.writer.recording ? undefined : this.#droppable();
-
-      if (!oldest) {
-        break;
-      }
-
-      this.#drop(oldest);
-      changed = true;
-    }
-
-    if (changed) {
-      this.#roomChanged = true;
-      this.statusChanged();
-    }
-
-    return this.#usedBytes + bytes <= this.#capBytes;
-  }
-
-  /** Something may have freed memory, so that a stopped history tries to resume. */
-  noteRoomChanged(): void {
-    this.#roomChanged = true;
-  }
-
-  /** Warn again if the memory is past the share of the cap, as when recording starts or stops. */
-  reconsiderWarning(): void {
-    this.#warned = false;
-    this.#checkWarning();
-  }
-
-  /** {@link status} changed. */
-  statusChanged(): void {
-    this.#status = this.#snapshot();
-    this.#statusSignal.touch();
-  }
-
-  /** Tell the user about something. */
-  warn(warning: StoreWarning): void {
-    this.#warnings.emit('warning', warning);
-  }
-
-  /** The run a block belongs to, if the store still holds it. */
-  ownerOf(block: Block): StreamRun | undefined {
-    return this.#runs.get(block.ref.runId);
   }
 
   #snapshot(): StoreStatus {
@@ -280,11 +272,196 @@ export class BlockMemory {
       usedBytes: this.#usedBytes,
       capBytes: this.#capBytes,
       historyStopped: this.#historyStopped,
-      recording: this.writer.recording,
-      persistenceFailing: this.writer.failing,
+      recording: this.#writer.target !== undefined,
+      persistenceFailing: this.#writer.failing,
       residentBlocks,
       evictedBlocks: this.#blocks.length - residentBlocks,
     };
+  }
+
+  #statusChanged(): void {
+    this.#status = undefined;
+    this.#statusSignal.touch();
+  }
+
+  #warn(warning: StoreWarning): void {
+    this.#warnings.emit('warning', warning);
+  }
+
+  #sealOpenBlocks(): void {
+    for (const owner of this.#owners.values()) {
+      if (!owner.closed) {
+        owner.sealOpenBlock();
+      }
+    }
+  }
+
+  #endTick(): void {
+    for (const block of this.#loader.requested) {
+      if (!this.#loader.canStart) {
+        break;
+      }
+
+      this.#startLoad(block);
+    }
+
+    this.#loader.endTick();
+    this.#tickScheduled = false;
+  }
+
+  #startLoad(block: Block): void {
+    const source = block.copy;
+
+    if (!source || block.resident || block.loading) {
+      return;
+    }
+
+    const reserved = block.restoredByteLength;
+
+    if (!this.#makeRoom(reserved, true)) {
+      return;
+    }
+
+    this.#usedBytes += reserved;
+    this.#status = undefined;
+    this.#loader.started(block);
+    void this.#load(block, source, reserved);
+  }
+
+  async #load(block: Block, source: BlockBacking, reserved: number): Promise<void> {
+    const resetCount = this.#resetCount;
+    let restored = false;
+
+    try {
+      const persisted = await source.read(block.ref);
+
+      if (resetCount === this.#resetCount && !block.resident) {
+        this.#usedBytes += block.restore(persisted) - reserved;
+        block.lastUsed = this.#loader.tick;
+        restored = true;
+      }
+    } catch (error) {
+      this.#warn({ type: 'persistence-error', error });
+    } finally {
+      const current = resetCount === this.#resetCount;
+      this.#loader.ended(block, current);
+
+      if (current) {
+        if (!restored) {
+          this.#usedBytes -= reserved;
+          this.#roomChanged = true;
+        }
+
+        this.#statusChanged();
+      }
+    }
+
+    if (restored) {
+      this.#owners.get(block.ref.runId)?.rewritten();
+    }
+  }
+
+  #persistSealed(): void {
+    const target = this.#writer.target;
+
+    if (!target || !this.#writer.canWrite) {
+      return;
+    }
+
+    for (const block of this.#blocks) {
+      if (block.sealed && block.resident && block.copy !== target && !block.writing) {
+        this.#writer.track(
+          this.#persist(block, target, () => Promise.resolve(block.toPersisted()))
+        );
+      }
+    }
+  }
+
+  async #backfill(target: BlockBacking): Promise<void> {
+    const evicted = this.#blocks.filter((block) => !block.resident && block.copy !== target);
+
+    await evicted.reduce<Promise<void>>(async (previous, block) => {
+      await previous;
+      const source = block.copy;
+
+      if (this.#writer.target !== target || !source || block.resident || block.writing) {
+        return;
+      }
+
+      const write = this.#persist(block, target, () => source.read(block.ref));
+      this.#writer.track(write);
+      await write;
+    }, Promise.resolve());
+  }
+
+  async #persist(
+    block: Block,
+    target: BlockBacking,
+    contents: () => Promise<BlockData>
+  ): Promise<void> {
+    const resetCount = this.#resetCount;
+    this.#writer.began(block);
+
+    try {
+      await target.write(await contents());
+      block.copy = target;
+
+      if (this.#writer.recovered()) {
+        this.#warn({ type: 'persistence-recovered' });
+        this.#statusChanged();
+      }
+    } catch (error) {
+      if (this.#writer.failed()) {
+        this.#warn({ type: 'persistence-error', error });
+        this.#statusChanged();
+      }
+    } finally {
+      const current = resetCount === this.#resetCount;
+      this.#writer.ended(block, current);
+
+      if (current) {
+        this.#roomChanged = true;
+      }
+    }
+
+    if (resetCount === this.#resetCount) {
+      this.#makeRoom(0, false);
+    }
+  }
+
+  #makeRoom(bytes: number, forLoad: boolean): boolean {
+    if (forLoad && this.#usedBytes - this.#evictableBytes() + bytes > this.#capBytes) {
+      return false;
+    }
+
+    let changed = false;
+
+    while (this.#usedBytes + bytes > this.#capBytes) {
+      const victim = this.#evictable(forLoad);
+
+      if (victim) {
+        this.#usedBytes -= victim.evict();
+        this.#owners.get(victim.ref.runId)?.rewritten();
+        changed = true;
+        continue;
+      }
+
+      const oldest = forLoad || this.#writer.target ? undefined : this.#droppable();
+
+      if (!oldest) {
+        break;
+      }
+
+      this.#drop(oldest);
+      changed = true;
+    }
+
+    if (changed) {
+      this.#roomChanged = true;
+      this.#statusChanged();
+    }
+
+    return this.#usedBytes + bytes <= this.#capBytes;
   }
 
   #stopHistory(): void {
@@ -293,8 +470,8 @@ export class BlockMemory {
     }
 
     this.#historyStopped = true;
-    this.warn({ type: 'history-stopped', usedBytes: this.#usedBytes, capBytes: this.#capBytes });
-    this.statusChanged();
+    this.#warn({ type: 'history-stopped', usedBytes: this.#usedBytes, capBytes: this.#capBytes });
+    this.#statusChanged();
   }
 
   #evictable(forLoad: boolean): Block | undefined {
@@ -327,7 +504,7 @@ export class BlockMemory {
       block.copy !== undefined &&
       !block.writing &&
       !block.loading &&
-      !(forLoad && block.lastUsed === this.loader.tick)
+      !(forLoad && block.lastUsed === this.#loader.tick)
     );
   }
 
@@ -341,8 +518,8 @@ export class BlockMemory {
     this.#blocks.splice(this.#blocks.indexOf(block), 1);
     this.#usedBytes -= block.rawByteLength + block.indexByteLength;
     this.#fixedBytes -= block.indexByteLength;
-    this.ownerOf(block)?.dropBlock(block);
-    this.warn({
+    this.#owners.get(block.ref.runId)?.dropBlock(block);
+    this.#warn({
       type: 'history-dropped',
       untilUs: block.lastTimeUs,
       usedBytes: this.#usedBytes,
@@ -350,8 +527,13 @@ export class BlockMemory {
     });
   }
 
+  #reconsiderWarning(): void {
+    this.#warned = false;
+    this.#checkWarning();
+  }
+
   #checkWarning(): void {
-    const pressure = this.writer.recording ? this.#fixedBytes : this.#usedBytes;
+    const pressure = this.#writer.target ? this.#fixedBytes : this.#usedBytes;
 
     if (pressure < this.#capBytes * this.#warningRatio) {
       this.#warned = false;
@@ -363,6 +545,6 @@ export class BlockMemory {
     }
 
     this.#warned = true;
-    this.warn({ type: 'memory-warning', usedBytes: this.#usedBytes, capBytes: this.#capBytes });
+    this.#warn({ type: 'memory-warning', usedBytes: this.#usedBytes, capBytes: this.#capBytes });
   }
 }

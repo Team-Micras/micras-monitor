@@ -26,6 +26,7 @@ import {
 } from '@/recording/library/recording-manager';
 import { seedRecording } from '@tests/support/recording/library/memory-library';
 import { deserializeRecording, fileBytes } from '@tests/support/recording/recording-bytes';
+import { storedSamples } from '@tests/support/history/sample-counts';
 
 const SAMPLE_US = 10_000;
 const VARIABLES: readonly Variable[] = [
@@ -265,8 +266,8 @@ describe('opening a saved session', () => {
     expect(viewing?.loadMs).toBeGreaterThanOrEqual(0);
 
     await stream(1);
-    expect(viewing?.store.variable('pose/x')?.storedSamples).toBe(400);
-    expect(store.variable('pose/x')?.storedSamples).toBe(500);
+    expect(viewing && storedSamples(viewing.store, 'pose/x')).toBe(400);
+    expect(storedSamples(store, 'pose/x')).toBe(500);
 
     await manager.backToLive();
     expect(manager.state.viewing).toBeNull();
@@ -453,7 +454,7 @@ describe('recovering after the tab died', () => {
 
     expect(reopened?.timeRange()?.startUs).toBe(0);
     expect(lostUs).toBeLessThanOrEqual(5_000_000);
-    expect(reopened?.variable('pose/x')?.storedSamples).toBe(recovered.session.samples);
+    expect(reopened && storedSamples(reopened, 'pose/x')).toBe(recovered.session.samples);
     expect(recovered.session.samples).toBeGreaterThanOrEqual(first.streamed() - 500);
   });
 

@@ -18,6 +18,7 @@ import { createShellStore } from '@/ui/state/shell-store';
 import '@/ui/styles.css';
 import type { ShellWindow } from '@/ui/windows/types';
 import { DEMO_TARGET, demoMonitor } from '@tests/support/sources/demo-monitor';
+import { storedSamples as samplesOf } from '@tests/support/history/sample-counts';
 
 /** How many plots, each with two signals. */
 export const PLOTS = 8;
@@ -79,5 +80,5 @@ export async function renderEightPlots(scheduler?: Scheduler): Promise<AppMonito
 
 /** The samples the history holds of the counted signal. */
 export function storedSamples(monitor: AppMonitor): number {
-  return monitor.history.variable(COUNTED_SIGNAL)?.storedSamples ?? 0;
+  return samplesOf(monitor.history, COUNTED_SIGNAL);
 }
