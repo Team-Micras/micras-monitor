@@ -28,7 +28,7 @@ import {
   CommandList,
   CommandShortcut,
 } from '../components/ui/command';
-import { formatChord } from '../keymap/chords';
+import { formatChord } from '@/core/chords';
 import { workspaceAction, type KeyAction } from '../keymap/keymap';
 import { useLiveMonitor, useRobotPackage } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';

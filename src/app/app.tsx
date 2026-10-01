@@ -13,7 +13,12 @@ import { useLayouts } from './layouts/use-layouts';
 import { TooltipProvider } from './components/ui/tooltip';
 import { LazyPart } from './lib/lazy-part';
 import { useEver } from './lib/use-ever';
-import { commandAnswered, commandSent, noRobotFor } from './lib/command-outcome';
+import {
+  commandAnswered,
+  commandSent,
+  noRobotFor,
+  noRobotForCommands,
+} from './lib/command-outcome';
 import {
   MonitorContext,
   PackageChooser,
@@ -41,7 +46,7 @@ import {
 } from './shell/lazy-shell';
 import { useReloadBlocked } from './shell/reload-guard';
 import { StatusBar } from './shell/status-bar';
-import { SendCommandContext } from './shell/send-command';
+import { SendCommandContext, type SendCommand } from './shell/send-command';
 import { TopBar } from './shell/top-bar';
 import { UpdateNotice } from './shell/update-notice';
 import { useStreamDemand } from './stream-demand';
@@ -117,6 +122,11 @@ export function App({
   );
 }
 
+interface PendingCommand {
+  readonly command: CommandSpec;
+  readonly run: (command: CommandSpec) => void;
+}
+
 function DrawerFailed() {
   return (
     <div
@@ -159,8 +169,9 @@ function Shell({
   const closing = useShell((state) => state.closingWorkspace !== null);
   const closingAsked = useEver(closing);
   const presses = useRef(0);
-  const [confirming, setConfirming] = useState<CommandSpec | null>(null);
+  const [confirming, setConfirming] = useState<PendingCommand | null>(null);
   const [asking, setAsking] = useState(false);
+  const [asks, setAsks] = useState(0);
   const askedOnce = useEver(asking);
   const phone = usePhone();
   const livePackage = useRobotPackage(live)?.package ?? null;
@@ -193,13 +204,29 @@ function Shell({
     store.getState().showCommandNotice(commandAnswered(id, command, pkg, outcome));
   };
 
-  const sendCommand = (command: CommandSpec) => {
+  const sendCommand: SendCommand = (command, run = (confirmed) => void send(confirmed)) => {
     if (command.confirm === undefined) {
-      void send(command);
+      run(command);
     } else {
-      setConfirming(command);
+      setConfirming({ command, run });
+      setAsks((count) => count + 1);
       setAsking(true);
     }
+  };
+
+  const confirmFailed = () => {
+    presses.current += 1;
+    setAsking(false);
+    store.getState().showCommandNotice({
+      id: presses.current,
+      tone: 'error',
+      text: "Couldn't open the confirmation — reload",
+    });
+  };
+
+  const noCommandKey = () => {
+    presses.current += 1;
+    store.getState().showCommandNotice(noRobotForCommands(presses.current));
   };
 
   const sendByName = (name: string) => {
@@ -275,7 +302,7 @@ function Shell({
     return false;
   };
 
-  useKeymap(bindings, onAction, onType);
+  useKeymap(bindings, onAction, onType, noCommandKey);
   useStreamDemand(phone ? planWindows(plan) : null);
   useLayouts(layouts);
 
@@ -319,12 +346,12 @@ function Shell({
         ) : null}
         <UpdateNotice updates={updates} blockedBy={blockedBy} />
         {askedOnce ? (
-          <LazyPart fallback={null} resetKey={confirming}>
+          <LazyPart fallback={null} resetKey={asks} onError={confirmFailed}>
             <LazyCommandConfirm
               open={asking}
-              command={confirming}
+              command={confirming?.command ?? null}
               onOpenChange={setAsking}
-              onConfirm={(command) => void send(command)}
+              onConfirm={(command) => (confirming?.run ?? ((sent) => void send(sent)))(command)}
             />
           </LazyPart>
         ) : null}

@@ -215,7 +215,7 @@ describe('pinned commands and command keys', () => {
     const context = await setup();
     await userEvent.keyboard(' ');
     expect(context.sent).toEqual([]);
-    expect(context.outcomes()).toBe('');
+    await expect.poll(context.outcomes).toContain('No robot to send commands to');
     await expect
       .element(context.screen.getByRole('banner').getByRole('button', { name: /^Stop/ }))
       .not.toBeInTheDocument();

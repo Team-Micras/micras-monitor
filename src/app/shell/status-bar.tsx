@@ -5,7 +5,7 @@ import { activeWorkspace, windowIds } from '@/tiling';
 import { Button } from '../components/ui/button';
 import { Kbd } from '../components/ui/kbd';
 import { Separator } from '../components/ui/separator';
-import { formatChord } from '../keymap/chords';
+import { formatChord } from '@/core/chords';
 import { useMonitorScope } from '../monitor-context';
 import { useShell, useShellStore } from '../state/shell-store';
 

@@ -3,7 +3,7 @@ import { createElement, useEffect } from 'react';
 import type { CommandSpec } from '@/robot-kit';
 
 import { Kbd } from '../components/ui/kbd';
-import { formatChord } from '../keymap/chords';
+import { formatChord } from '@/core/chords';
 import { commandAction } from '../keymap/keymap';
 import type { CommandNotice, CommandTone } from '../lib/command-outcome';
 import { cn } from '../lib/utils';

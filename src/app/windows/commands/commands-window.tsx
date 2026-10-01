@@ -12,8 +12,6 @@ import { roleVariable, type CommandSpec } from '@/robot-kit';
 
 import { Button } from '../../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
-import { LazyPart } from '../../lib/lazy-part';
-import { useEver } from '../../lib/use-ever';
 import { cn } from '../../lib/utils';
 import { useLiveValue, useRobotPackage, useShownMonitor, useStatus } from '../../monitor-context';
 import { useAnnounce } from '../../shell/announce';
@@ -22,7 +20,6 @@ import { useCommandTracker } from '../shared/command-tracker';
 import { usePresentedVariables } from '../shared/presented-variables';
 import type { WindowViewProps } from '../types';
 import { commandIcon } from './command-icons';
-import { LazyCommandConfirm } from './lazy-command-confirm';
 import {
   commandAvailability,
   outcomeMessage,
@@ -35,9 +32,9 @@ const TONE_ICONS = { ok: CircleCheckIcon, refused: CircleAlertIcon, failed: Circ
 /**
  * The robot package's commands as buttons, a dangerous one drawn big in the stop color. A command
  * with a confirmation asks first; a button says when the robot's state is not one its table
- * accepts it in, and the robot's answer, a refusal with its reason included, shows below. A
- * pinned command goes through the shell, as its button in the top bar and its key do, to the live
- * robot and with the shell's notice; a view that keeps the pinned commands in reach of its own,
+ * accepts it in, and the robot's answer, a refusal with its reason included, shows below. The
+ * shell asks for every confirmation. A pinned command goes through the shell, as its button in the
+ * top bar and its key do, to the live robot and with the shell's notice; a view that keeps the pinned commands in reach of its own,
  * such as the phone's, leaves them out with `showPinned`.
  */
 export function CommandsWindow({
@@ -54,11 +51,7 @@ export function CommandsWindow({
   const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
   const [answer, setAnswer] = useState<OutcomeMessage | null>(null);
   const [answers, setAnswers] = useState(0);
-  const [confirming, setConfirming] = useState<CommandSpec | null>(null);
-  const [asking, setAsking] = useState(false);
-  const askedOnce = useEver(asking);
-  const [asks, setAsks] = useState(0);
-  const sendPinned = useSendCommand();
+  const sendCommand = useSendCommand();
   const announce = useAnnounce();
 
   const linked = status.kind === 'linked';
@@ -105,21 +98,8 @@ export function CommandsWindow({
     show(outcomeMessage(command, outcome, pkg, labels));
   };
 
-  const confirmFailed = () => {
-    setAsking(false);
-    show({ tone: 'failed', title: "Couldn't open the confirmation — reload", detail: null });
-  };
-
   const press = (command: CommandSpec) => {
-    if (command.pinned === true) {
-      sendPinned(command);
-    } else if (command.confirm === undefined) {
-      void send(command);
-    } else {
-      setConfirming(command);
-      setAsks((count) => count + 1);
-      setAsking(true);
-    }
+    sendCommand(command, command.pinned === true ? undefined : (confirmed) => void send(confirmed));
   };
 
   return (
@@ -143,16 +123,6 @@ export function CommandsWindow({
       {answer === null ? null : (
         <Answer message={answer} sequence={answers} onDismiss={() => setAnswer(null)} />
       )}
-      {askedOnce ? (
-        <LazyPart fallback={null} resetKey={asks} onError={confirmFailed}>
-          <LazyCommandConfirm
-            open={asking}
-            command={confirming}
-            onOpenChange={setAsking}
-            onConfirm={(command) => void send(command)}
-          />
-        </LazyPart>
-      ) : null}
     </div>
   );
 }

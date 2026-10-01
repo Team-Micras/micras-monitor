@@ -24,6 +24,11 @@ export function noRobotFor(id: number, command: CommandSpec): CommandNotice {
   return { id, tone: 'warning', text: `No robot to send ${command.label} to` };
 }
 
+/** The notice for a press of Space while no package has told which command it sends. */
+export function noRobotForCommands(id: number): CommandNotice {
+  return { id, tone: 'warning', text: 'No robot to send commands to' };
+}
+
 /** The notice for a command sent and not answered yet. */
 export function commandSent(id: number, command: CommandSpec): CommandNotice {
   return { id, tone: 'pending', text: `${command.label} sent…` };

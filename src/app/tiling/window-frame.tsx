@@ -23,7 +23,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { formatChord } from '../keymap/chords';
+import { formatChord } from '@/core/chords';
 import type { KeyAction } from '../keymap/keymap';
 import { cn } from '../lib/utils';
 import { useShownMonitor } from '../monitor-context';

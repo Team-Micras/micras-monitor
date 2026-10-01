@@ -20,7 +20,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '../components/ui/context-menu';
-import { formatChord } from '../keymap/chords';
+import { formatChord } from '@/core/chords';
 import { workspaceAction, type KeyAction } from '../keymap/keymap';
 import { cn } from '../lib/utils';
 import { useShell, useShellStore } from '../state/shell-store';

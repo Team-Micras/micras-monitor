@@ -9,7 +9,7 @@ import {
 } from '@/tiling';
 
 import { Kbd } from '../components/ui/kbd';
-import { formatChord } from '../keymap/chords';
+import { formatChord } from '@/core/chords';
 import type { KeyAction } from '../keymap/keymap';
 import { useShell, useShellStore } from '../state/shell-store';
 import { windowTitle } from '../windows/registry';

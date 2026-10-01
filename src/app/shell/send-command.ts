@@ -10,8 +10,12 @@ import { createContext, use } from 'react';
 
 import type { CommandSpec } from '@/robot-kit';
 
-/** Sends a command to the live robot and shows how it went. */
-export type SendCommand = (command: CommandSpec) => void;
+/**
+ * Sends a command, after asking when it has a confirmation. By default it goes to the live robot
+ * and the shell shows how it went; `run` takes over what happens once the command is confirmed,
+ * for a window that sends it to the monitor it shows and reports the answer itself.
+ */
+export type SendCommand = (command: CommandSpec, run?: (command: CommandSpec) => void) => void;
 
 /** Carries the shell's way to send a command to the windows and the bars. */
 export const SendCommandContext = createContext<SendCommand | null>(null);
