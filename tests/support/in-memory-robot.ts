@@ -11,7 +11,11 @@
  */
 
 import type { WebSocketFactory, WebSocketLike } from '@/link';
-import type { WebSocketEventType } from '@/link/websocket-transport';
+import {
+  TAKEN_OVER_CLOSE_CODE,
+  TAKEN_OVER_REASON,
+  type WebSocketEventType,
+} from '@/link/websocket-transport';
 import { emptyRobotStats, NO_FAULTS, type RobotStats } from '@scripts/simulated-robot/faults';
 import type { Robot } from '@scripts/simulated-robot/robot';
 import {
@@ -36,6 +40,12 @@ export interface InMemoryRobot {
    * closed, a socket that fails to connect.
    */
   readonly createSocket: WebSocketFactory;
+
+  /**
+   * Hands the link to another monitor, as the simulation's bridge does when one connects: every
+   * connection is closed with the code and reason the bridge closes the previous one with.
+   */
+  takeOver(): void;
 
   /** Drops every connection and refuses new ones, as a server that stops does. */
   close(): void;
@@ -84,6 +94,11 @@ export function startInMemoryRobot(
       });
       sockets.add(socket);
       return socket;
+    },
+    takeOver: () => {
+      for (const socket of sockets) {
+        socket.drop(TAKEN_OVER_CLOSE_CODE, TAKEN_OVER_REASON);
+      }
     },
     close: () => {
       closed = true;
@@ -169,7 +184,7 @@ class InMemorySocket implements WebSocketLike {
   }
 
   /** Closes both ends, telling the robot and then the monitor. */
-  drop(code: number): void {
+  drop(code: number, reason = ''): void {
     if (this.#closed) {
       return;
     }
@@ -177,7 +192,7 @@ class InMemorySocket implements WebSocketLike {
     this.#closed = true;
     later(() => {
       this.#onClose.forEach((listener) => listener());
-      this.#emit('close', { code, reason: '' });
+      this.#emit('close', { code, reason });
     });
   }
 

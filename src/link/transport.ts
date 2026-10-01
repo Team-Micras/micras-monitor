@@ -11,7 +11,9 @@ export type CloseReason =
   /** A connection attempt did not succeed. */
   | 'failed'
   /** Reconnecting needs the browser to see a user gesture first. */
-  | 'needs-user-gesture';
+  | 'needs-user-gesture'
+  /** Another monitor took the link, so this one stays off it until opened again. */
+  | 'taken-over';
 
 /** Where a transport is in its life. */
 export type TransportState =

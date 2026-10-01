@@ -303,6 +303,24 @@ describe('MicrasCommSource against the simulated robot', () => {
     ).toMatchObject({ source: 'link', severity: 'warning' });
   });
 
+  test('says another monitor took the link and does not take it back on its own', async () => {
+    const { source, monitor, sim, sockets } = start();
+    await streaming(source);
+
+    sim.takeOver();
+    await waitFor(() => monitor.state.status.kind === 'failed', 3000, 'the link to be taken');
+    await delay(30_000);
+
+    expect(monitor.state.status).toMatchObject({
+      kind: 'failed',
+      message: 'Another monitor took the link. Connect to take it back.',
+    });
+    expect(sockets).toHaveLength(1);
+    expect(
+      monitor.state.log.filter((entry) => entry.text === 'another monitor took the link')
+    ).toMatchObject([{ source: 'link', severity: 'warning' }]);
+  });
+
   test('keeps the samples lost on a noisy link as gaps with their count', async () => {
     const { source, monitor } = start({ corruptRate: 0.05, seed: 7 });
     monitor.request([{ variable: 'imu/gyro_z', rateHz: 200 }]);

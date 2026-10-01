@@ -104,6 +104,8 @@ export {
 export { accessOf, valueTypeOf, variableOf } from './value-types';
 export { BaseTransport, type CloseReason, type Transport, type TransportState } from './transport';
 export {
+  TAKEN_OVER_CLOSE_CODE,
+  TAKEN_OVER_REASON,
   WebSocketTransport,
   type WebSocketFactory,
   type WebSocketLike,

@@ -42,6 +42,7 @@ import {
   type StreamPlannerOptions,
   type TimelineEvent,
   type Transport,
+  type TransportState,
   type WebSocketFactory,
   variableOf,
 } from '@/link';
@@ -310,7 +311,7 @@ class MicrasCommConnection implements SourceConnection {
     const { transport, session, planner } = link;
     this.#link = link;
     this.#detach = [
-      transport.onState(() => this.#refreshStatus()),
+      transport.onState((state) => this.#onTransportState(state)),
       transport.onError((error) => this.#note('warning', error.message)),
       session.on('state', (state) => this.#onState(state)),
       session.on('schema', () => this.#refreshVariables()),
@@ -446,6 +447,14 @@ class MicrasCommConnection implements SourceConnection {
 
   #linkedSession(): Session | undefined {
     return this.#status?.kind === 'linked' ? this.#link?.session : undefined;
+  }
+
+  #onTransportState(state: TransportState): void {
+    if (state.kind === 'closed' && state.reason === 'taken-over' && state.error !== undefined) {
+      this.#note('warning', state.error.message);
+    }
+
+    this.#refreshStatus();
   }
 
   #note(severity: LogSeverity, text: string): void {

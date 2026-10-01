@@ -31,11 +31,22 @@ export interface WebSocketTransportOptions {
 const NORMAL_CLOSURE = 1000;
 
 /**
+ * The close code the simulation's bridge closes a monitor with when another one connects, since
+ * the radio pairs with one peer at a time.
+ */
+export const TAKEN_OVER_CLOSE_CODE = 4001;
+
+/** The reason the bridge gives with {@link TAKEN_OVER_CLOSE_CODE}. */
+export const TAKEN_OVER_REASON = 'another monitor took the link';
+
+/**
  * A transport over a WebSocket, which is how the simulation's bridge exposes the robot's radio.
  *
  * Every attempt opens a fresh socket, and a socket that closed is let go of entirely, handlers
  * and all, so that nothing from a dead connection reaches a live one. The backoff only starts over
- * once bytes arrive, so a server that accepts and hangs up at once is not hammered.
+ * once bytes arrive, so a server that accepts and hangs up at once is not hammered. A socket the
+ * bridge closes because another monitor took the link is not reconnected: taking it back would
+ * close the other one, so only `open()` does.
  */
 export class WebSocketTransport extends BaseTransport {
   private readonly createSocket: WebSocketFactory;
@@ -121,6 +132,18 @@ export class WebSocketTransport extends BaseTransport {
 
   private readonly onClose = (event: unknown): void => {
     this.release();
+
+    if (isRecord(event) && event.code === TAKEN_OVER_CLOSE_CODE) {
+      this.wanted = false;
+      this.backoff.reset();
+      this.setState({
+        kind: 'closed',
+        reason: 'taken-over',
+        error: new Error(closeReason(event)),
+      });
+      return;
+    }
+
     this.scheduleRetry(
       this.opened ? 'lost' : 'failed',
       new Error(`WebSocket closed (${describeClose(event)})`)
@@ -198,4 +221,8 @@ function describeClose(event: unknown): string {
   const code = isRecord(event) && typeof event.code === 'number' ? event.code : 'no code';
   const reason = isRecord(event) && typeof event.reason === 'string' ? event.reason : '';
   return reason ? `${code}: ${reason}` : String(code);
+}
+
+function closeReason(event: Record<string, unknown>): string {
+  return typeof event.reason === 'string' && event.reason !== '' ? event.reason : TAKEN_OVER_REASON;
 }

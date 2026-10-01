@@ -44,6 +44,12 @@ function transportStatus(target: Target, state: TransportState): SourceStatus {
   switch (state.reason) {
     case 'needs-user-gesture':
       return { kind: 'failed', target, message: 'Click Connect to reach the robot again.' };
+    case 'taken-over':
+      return {
+        kind: 'failed',
+        target,
+        message: 'Another monitor took the link. Connect to take it back.',
+      };
     case 'failed':
     case 'lost':
       return {

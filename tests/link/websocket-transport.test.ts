@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { TransportState } from '@/link/transport';
 import {
+  TAKEN_OVER_CLOSE_CODE,
   WebSocketTransport,
   type WebSocketEventType,
   type WebSocketLike,
@@ -43,8 +44,8 @@ class FakeSocket implements WebSocketLike {
     this.fire('open');
   }
 
-  drop(code = 1006): void {
-    this.fire('close', { code, reason: '' });
+  drop(code = 1006, reason = ''): void {
+    this.fire('close', { code, reason });
   }
 }
 
@@ -217,5 +218,28 @@ describe('WebSocketTransport', () => {
     vi.advanceTimersByTime(60_000);
 
     expect(sockets).toHaveLength(1);
+  });
+
+  test('stops reconnecting once another monitor took the link, until opened again', () => {
+    const { transport, sockets, latest } = setup();
+
+    transport.open();
+    latest().accept();
+    const socket = latest();
+    socket.drop(TAKEN_OVER_CLOSE_CODE, 'another monitor took the link');
+    vi.advanceTimersByTime(60_000);
+
+    expect(sockets).toHaveLength(1);
+    expect(socket.listenerCount).toBe(0);
+    expect(transport.state).toEqual({
+      kind: 'closed',
+      reason: 'taken-over',
+      error: new Error('another monitor took the link'),
+    });
+
+    transport.open();
+    expect(sockets).toHaveLength(2);
+    latest().accept();
+    expect(transport.state).toEqual({ kind: 'open' });
   });
 });
