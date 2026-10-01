@@ -4,7 +4,7 @@
  * @module
  */
 
-import { CREDIT_WINDOW, TypeCode } from '../../src/protocol';
+import { CREDIT_WINDOW, TypeCode } from '../../src/sources/micras-comm/wire';
 import { encodeMaze, simulatedMaze } from './maze';
 
 /** One registered variable, the way the firmware's pool holds it. */

@@ -1,7 +1,7 @@
 import { expect, inject, test } from 'vitest';
 
 import { Monitor } from '@/core/monitor';
-import type { LinkBudgetOptions, WebSocketLike } from '@/link';
+import type { LinkBudgetOptions, WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { TelemetryStore } from '@/telemetry';
 import { percentile, reportBench } from '@tests/support/app/bench';

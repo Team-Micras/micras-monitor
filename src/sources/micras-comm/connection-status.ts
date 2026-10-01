@@ -5,7 +5,8 @@
  */
 
 import type { SourceIdentity, SourceStatus, Target } from '@/core/source';
-import type { RobotInfo, SessionState, TransportState } from '@/link';
+
+import type { RobotInfo, SessionState, TransportState } from './link';
 
 /** Where a live connection is, as {@link connectionStatus} reads it. */
 export interface LinkSnapshot {

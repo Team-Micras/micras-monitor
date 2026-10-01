@@ -24,6 +24,8 @@ import {
   type WriteValue,
 } from '@/core/source';
 import type { Variable } from '@/core/variables';
+
+import { connectionStatus, isLinkUp, sameStatus } from './connection-status';
 import {
   BluetoothTransport,
   MemorySchemaCache,
@@ -45,10 +47,8 @@ import {
   type TransportState,
   type WebSocketFactory,
   variableOf,
-} from '@/link';
-import { CommandResult, Severity, WriteStatus } from '@/protocol';
-
-import { connectionStatus, isLinkUp, sameStatus } from './connection-status';
+} from './link';
+import { CommandResult, Severity, WriteStatus } from './wire';
 
 /** What the source is built from; everything has a default. */
 export interface MicrasCommOptions {

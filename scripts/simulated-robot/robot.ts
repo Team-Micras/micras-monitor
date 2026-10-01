@@ -30,7 +30,7 @@ import {
   WriteStatus,
   writeValue,
   type Frame,
-} from '../../src/protocol';
+} from '../../src/sources/micras-comm/wire';
 import { Command, Reason, refusal, RobotState, toCommand } from './commands';
 import { seededRandom, type FaultOptions, type RobotStats } from './faults';
 import {

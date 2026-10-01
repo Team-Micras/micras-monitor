@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { Monitor, type VariableDemand } from '@/core/monitor';
-import type { WebSocketLike } from '@/link';
+import type { WebSocketLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource, type MicrasCommOptions } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
 import { TelemetryStore } from '@/telemetry';
 import { MemoryStorage } from '@tests/support/app/layouts/memory-storage';
-import { startInMemoryRobot, type InMemoryRobot } from '@tests/support/in-memory-robot';
-import { delay, TEST_TIMING, waitFor } from '@tests/support/session-harness';
+import {
+  startInMemoryRobot,
+  type InMemoryRobot,
+} from '@tests/support/sources/micras-comm/in-memory-robot';
+import { delay, TEST_TIMING, waitFor } from '@tests/support/sources/micras-comm/link-harness';
 import { startSimulatedRobot, type SimulatedRobotOptions } from '@scripts/simulated-robot/server';
 import { useVirtualTime } from '@tests/support/virtual-time';
 

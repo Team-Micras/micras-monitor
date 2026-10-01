@@ -1,4 +1,4 @@
-import { Cobs } from '../../src/protocol';
+import { Cobs } from '../../src/sources/micras-comm/wire';
 import { seededRandom, type FaultOptions, type RobotStats } from './faults';
 
 interface InFlight {

@@ -5,8 +5,8 @@
  * @module
  */
 
-import { decodeAccess, encodeAccess, TypeCode } from '@/protocol';
-import type { SchemaCache, SchemaEntry } from '@/link';
+import type { SchemaCache, SchemaEntry } from './link';
+import { decodeAccess, encodeAccess, TypeCode } from './wire';
 
 /** The part of `localStorage` the cache uses. */
 export type SchemaStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;

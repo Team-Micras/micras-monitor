@@ -15,7 +15,7 @@
 
 import { parseArgs } from 'node:util';
 
-import { TypeCode } from '../src/protocol';
+import { TypeCode } from '../src/sources/micras-comm/wire';
 import {
   Session,
   WebSocketTransport,
@@ -23,7 +23,7 @@ import {
   type HandshakeReason,
   type LinkStats,
   type SchemaEntry,
-} from '../src/link';
+} from '../src/sources/micras-comm/link';
 
 const { values: args } = parseArgs({
   options: {
