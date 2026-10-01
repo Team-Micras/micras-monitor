@@ -182,9 +182,33 @@
       }
     },
     {
-      "files": ["src/sources/micras-comm/**"],
+      "files": ["src/sources/*/**"],
       "rules": {
         "no-await-in-loop": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
+              },
+              {
+                "regex": "^(@/(history|recording|tiling|robots|ui|main)|(\\.\\./)+(history|recording|tiling|robots|ui|main))(/|$)",
+                "message": "A source depends only on src/core and its own folder; it never reaches the UI, the history, the recordings, the tiling engine or a robot package."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/sources/micras-comm/**"],
+      "rules": {
         "no-restricted-imports": [
           "error",
           {
@@ -254,7 +278,7 @@
                 "message": "A robot package depends only on src/core, with src/core/robot as its contract, and React."
               },
               {
-                "group": ["@/ui/*", "!@/ui/lazy", "!@/ui/lazy/*"],
+                "group": ["@/ui/**", "!@/ui/lazy", "!@/ui/lazy/**"],
                 "message": "Of the UI, a robot package may only use src/ui/lazy to load its views on demand."
               },
               {
@@ -284,6 +308,22 @@
               {
                 "regex": "^(@/(sources|robots|main)|(\\.\\./)+(sources|robots|main))(/|$)",
                 "message": "The UI reads the monitor of src/core; only src/main.tsx wires sources and robot packages in."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/ui/lazy/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**", "!react", "!react/**", "!react-dom", "!react-dom/**", "!./**"],
+                "message": "src/ui/lazy is what the robot packages may use of the UI, so it imports only React and its own folder."
               }
             ]
           }
@@ -372,7 +412,14 @@
                 "message": "Scripts never import tests."
               },
               {
-                "regex": "^(@/(history|recording|tiling|core/robot|robots|ui|sources/demo|sources/micras-comm/(link|streaming|transports))|(\\.\\./)+src/(history|recording|tiling|core/robot|robots|ui|sources/demo|sources/micras-comm/(link|streaming|transports)))(/|$)",
+                "group": [
+                  "**/src/**",
+                  "@/**",
+                  "!**/src/sources/micras-comm/wire",
+                  "!**/src/sources/micras-comm/wire/**",
+                  "!@/sources/micras-comm/wire",
+                  "!@/sources/micras-comm/wire/**"
+                ],
                 "message": "The simulated robot stands in for the firmware and speaks only the micras_comm wire format of src/sources/micras-comm/wire."
               },
               {
