@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { LayoutPreset, PresetNode, PresetWindow } from '@/robot-kit';
+import type { LayoutPreset, PresetNode, PresetWindow } from '@/core/robot';
 
 function window(kind: string, title?: string, variables?: readonly string[]): PresetNode {
   const spec: PresetWindow = {

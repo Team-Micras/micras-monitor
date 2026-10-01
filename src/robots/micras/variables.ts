@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { VariableSpec } from '@/robot-kit';
+import type { VariableSpec } from '@/core/robot';
 
 import { FAULT_LABELS, OBJECTIVE_LABELS, RUN_PROFILE_LABELS, STATE_LABELS } from './labels';
 import { MAZE_TYPE_TAG } from './maze';

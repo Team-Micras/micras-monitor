@@ -9,7 +9,7 @@ import { createContext, use } from 'react';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
-import type { CommandSpec, LayoutPreset } from '@/robot-kit';
+import type { CommandSpec, LayoutPreset } from '@/core/robot';
 import {
   activeWorkspace,
   applyDrop,

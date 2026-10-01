@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { BitmaskType, EnumType } from '@/robot-kit';
+import type { BitmaskType, EnumType } from '@/core/robot';
 
 /** The states of the robot, by the firmware's ids. */
 export const FsmState = {

@@ -3,8 +3,8 @@ import { describe, expect, test, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry } from '@/robot-kit';
-import { mouse } from '@tests/support/robot-kit/packages';
+import { RobotRegistry } from '@/core/robot';
+import { mouse } from '@tests/support/core/robot/packages';
 import { DEMO_TARGET, demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 
 import { App } from '@/app/app';

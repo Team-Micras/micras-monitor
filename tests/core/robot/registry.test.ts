@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { mouse, sumo } from '@tests/support/robot-kit/packages';
-import { PackageError, RobotRegistry } from '@/robot-kit';
+import { mouse, sumo } from '@tests/support/core/robot/packages';
+import { PackageError, RobotRegistry } from '@/core/robot';
 
 describe('registering packages', () => {
   test('lists packages in registration order and finds them by id', () => {

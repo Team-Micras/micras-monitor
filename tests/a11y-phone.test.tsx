@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry } from '@/robot-kit';
-import { micras } from '@robots/micras';
+import { RobotRegistry } from '@/core/robot';
+import { micras } from '@/robots/micras';
 
 import { App } from '@/app/app';
 import type { AppMonitor } from '@/app/monitor-context';

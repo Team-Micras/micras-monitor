@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import type { CommandSpec, RobotRegistry } from '@/core/robot';
 import { whenIdle } from '@/lazy/idle';
 import { prefetchAll } from '@/lazy/lazy-with-retry';
-import type { CommandSpec, RobotRegistry } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
 import { actionFor, commandOf, type KeyAction } from './keymap/keymap';

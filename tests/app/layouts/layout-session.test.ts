@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { Variable } from '@/core/variables';
-import type { LayoutPreset } from '@/robot-kit';
+import type { LayoutPreset } from '@/core/robot';
 import { activeWorkspace, leafIds } from '@/tiling';
 
 import { createShellStore, type ShellStore } from '@/app/state/shell-store';

@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { LayoutPreset } from '@/robot-kit';
+import type { LayoutPreset } from '@/core/robot';
 import { restoreDesktop, serializeDesktop, type Desktop } from '@/tiling';
 
 import type { WindowPayload } from '../windows/types';

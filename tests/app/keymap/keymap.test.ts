@@ -15,7 +15,7 @@ import {
   workspaceIndexOf,
 } from '@/app/keymap/keymap';
 import { tilingCommandFor } from '@/app/keymap/tiling-commands';
-import type { CommandSpec } from '@/robot-kit';
+import type { CommandSpec } from '@/core/robot';
 
 const STOP: CommandSpec = {
   code: 5,

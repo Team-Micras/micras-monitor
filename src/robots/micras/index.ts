@@ -8,7 +8,7 @@
 
 import type { ReactNode } from 'react';
 
-import type { RobotPackage, SerializableType } from '@/robot-kit';
+import type { RobotPackage, SerializableType } from '@/core/robot';
 
 import { COMMANDS, REFUSAL_REASONS } from './commands';
 import { FsmState, stateFromLog } from './labels';

@@ -4,7 +4,7 @@ import { render } from 'vitest-browser-react';
 import { MonitorContext, type AppMonitor } from '@/app/monitor-context';
 import { useReloadBlocked } from '@/app/shell/reload-guard';
 import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';
-import { mouse } from '@tests/support/robot-kit/packages';
+import { mouse } from '@tests/support/core/robot/packages';
 import { DEMO_TARGET, demoMonitor, monitorScope } from '@tests/support/sources/demo-monitor';
 
 const IDLE = 0;

@@ -9,10 +9,10 @@ import {
   validatePackage,
   type EnumType,
   type PresetNode,
-} from '@/robot-kit';
+} from '@/core/robot';
 
 import { reservedChord } from '@/app/keymap/keymap';
-import { Command, Reason } from '@robots/micras/commands';
+import { Command, Reason } from '@/robots/micras/commands';
 import {
   COMMAND_NAMES,
   COMMAND_TABLE,
@@ -23,8 +23,8 @@ import {
   STATE_NAMES,
   VARIABLE_NAMES,
 } from '@tests/support/robots/micras/firmware';
-import { FsmState, RunProfileBit, stateFromLog } from '@robots/micras/labels';
-import { micras } from '@robots/micras';
+import { FsmState, RunProfileBit, stateFromLog } from '@/robots/micras/labels';
+import { micras } from '@/robots/micras';
 
 function labels(name: string): EnumType {
   const spec = micras.variables[name]?.labels;

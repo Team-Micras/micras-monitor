@@ -1,6 +1,6 @@
 import { useId } from 'react';
 
-import type { TypeViewProps } from '@/robot-kit';
+import type { TypeViewProps } from '@/core/robot';
 
 import { MAZE_CELL_SIZE_M, Side, WallState, type Maze } from './maze';
 

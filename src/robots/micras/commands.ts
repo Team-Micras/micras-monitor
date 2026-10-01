@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { CommandSpec } from '@/robot-kit';
+import type { CommandSpec } from '@/core/robot';
 
 import { FsmState } from './labels';
 

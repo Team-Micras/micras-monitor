@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { CommandSpec, ReservedChord } from '@/robot-kit';
+import type { CommandSpec, ReservedChord } from '@/core/robot';
 import type { Direction } from '@/tiling';
 
 import {

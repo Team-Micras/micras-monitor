@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { LayoutPreset, PresetNode } from '@/robot-kit';
+import type { LayoutPreset, PresetNode } from '@/core/robot';
 import {
   createDesktop,
   createWorkspace,

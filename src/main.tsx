@@ -11,14 +11,14 @@ import { startStorageWorker } from '@/app/sessions/storage-worker';
 import { PRELOAD_ERROR_EVENT } from '@/app/shell/update-notice';
 import '@/app/styles.css';
 import { Monitor } from '@/core/monitor';
+import { RobotRegistry } from '@/core/robot';
 import type { Source } from '@/core/source';
 import { HistoryStore, type Scheduler } from '@/history';
 import { importWhenIdle } from '@/lazy/idle';
-import { RobotRegistry } from '@/robot-kit';
+import { micras } from '@/robots/micras';
 import type { BluetoothLike } from '@/sources/micras-comm/link';
 import { MicrasCommSource } from '@/sources/micras-comm/micras-comm-source';
 import { StoredSchemaCache } from '@/sources/micras-comm/schema-storage';
-import { micras } from '@robots/micras';
 import { registerSW } from 'virtual:pwa-register';
 
 const root = document.getElementById('root');

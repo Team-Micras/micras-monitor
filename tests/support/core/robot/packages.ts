@@ -1,11 +1,11 @@
 /**
- * Robot packages shared by the robot-kit tests.
+ * Robot packages shared by the tests of the robot contract.
  *
  * @module
  */
 
 import type { ValueType, Variable } from '@/core/variables';
-import type { RobotPackage, SerializableType } from '@/robot-kit/types';
+import type { RobotPackage, SerializableType } from '@/core/robot/types';
 
 /** A grid decoded from its bytes, drawn as a string. */
 export const GRID: SerializableType<readonly number[], string> = {

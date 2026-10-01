@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { GRID, mouse, variable } from '@tests/support/robot-kit/packages';
+import { GRID, mouse, variable } from '@tests/support/core/robot/packages';
 import {
   acceptedIn,
   activeFlags,
@@ -12,7 +12,7 @@ import {
   roleVariable,
   type BitmaskType,
   type EnumType,
-} from '@/robot-kit';
+} from '@/core/robot';
 
 const pkg = mouse();
 

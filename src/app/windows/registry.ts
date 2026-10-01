@@ -21,8 +21,8 @@ import {
 import { type ComponentType } from 'react';
 
 import type { VariableDemand } from '@/core/monitor';
+import { roleVariable, type RobotPackage, type Role } from '@/core/robot';
 import { lazyWithRetry } from '@/lazy/lazy-with-retry';
-import { roleVariable, type RobotPackage, type Role } from '@/robot-kit';
 
 import { CommandsWindow } from './commands/commands-window';
 import { ViewPlaceholder } from './placeholder-window';

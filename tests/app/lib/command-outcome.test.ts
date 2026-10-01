@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import { commandAnswered, commandSent, noRobotFor } from '@/app/lib/command-outcome';
-import type { CommandSpec } from '@/robot-kit';
-import { mouse } from '@tests/support/robot-kit/packages';
+import type { CommandSpec } from '@/core/robot';
+import { mouse } from '@tests/support/core/robot/packages';
 
 const PKG = mouse({ id: 'micras', displayName: 'Micras' });
 const GO: CommandSpec = { code: 0, name: 'GO', label: 'Go', acceptedIn: [0] };

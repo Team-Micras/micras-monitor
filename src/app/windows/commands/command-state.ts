@@ -12,7 +12,7 @@ import {
   type CommandSpec,
   type EnumType,
   type RobotPackage,
-} from '@/robot-kit';
+} from '@/core/robot';
 
 import type { CommandOutcome } from '@/core/source';
 

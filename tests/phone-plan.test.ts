@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
 import type { ValueType, Variable } from '@/core/variables';
-import { mouse } from '@tests/support/robot-kit/packages';
+import { mouse } from '@tests/support/core/robot/packages';
 import { phonePlan, planWindows } from '@/app/phone/phone-plan';
 
-import { micras } from '@robots/micras';
+import { micras } from '@/robots/micras';
 
 let nextId = 0;
 

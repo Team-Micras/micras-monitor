@@ -5,7 +5,7 @@
  * @module
  */
 
-import { isInteger, typeLabel, type Variable } from '@/core/variables';
+import { isInteger, typeLabel, type Variable } from '../variables';
 
 import type {
   BitFlag,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { BitmaskType, EnumType } from '@/robot-kit';
+import type { BitmaskType, EnumType } from '@/core/robot';
 
 import {
   formatReading,

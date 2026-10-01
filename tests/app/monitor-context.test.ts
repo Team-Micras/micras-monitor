@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { PackageChooser, subscribeThrottled } from '@/app/monitor-context';
 import type { Variable } from '@/core/variables';
-import { RobotRegistry } from '@/robot-kit';
+import { RobotRegistry } from '@/core/robot';
 import { ManualScheduler, HistoryStore } from '@/history';
-import { mouse } from '@tests/support/robot-kit/packages';
+import { mouse } from '@tests/support/core/robot/packages';
 
 const ACCESS = { stream: true, write: false, writeNeedsIdle: false, persists: false };
 const VARIABLES: readonly Variable[] = [

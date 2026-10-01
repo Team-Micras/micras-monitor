@@ -7,8 +7,8 @@
 
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry } from '@/robot-kit';
-import { mouse } from '@tests/support/robot-kit/packages';
+import { RobotRegistry } from '@/core/robot';
+import { mouse } from '@tests/support/core/robot/packages';
 import { activeWorkspace, createDesktop, leafIds, type Workspace } from '@/tiling';
 
 import { App } from '@/app/app';

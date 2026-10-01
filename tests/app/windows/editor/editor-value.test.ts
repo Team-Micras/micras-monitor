@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { ValueType } from '@/core/variables';
-import type { BitmaskType, EnumType } from '@/robot-kit';
+import type { BitmaskType, EnumType } from '@/core/robot';
 
 import {
   editorControl,

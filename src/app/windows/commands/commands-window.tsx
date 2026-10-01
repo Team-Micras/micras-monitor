@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 import { createElement, useState } from 'react';
 
+import { roleVariable, type CommandSpec } from '@/core/robot';
 import type { CommandOutcome } from '@/core/source';
-import { roleVariable, type CommandSpec } from '@/robot-kit';
 
 import { Button } from '../../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';

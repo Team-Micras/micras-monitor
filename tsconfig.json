@@ -3,8 +3,7 @@
   "files": [],
   "compilerOptions": {
     "paths": {
-      "@/*": ["./src/*"],
-      "@robots/*": ["./robots/*"]
+      "@/*": ["./src/*"]
     }
   },
   "references": [

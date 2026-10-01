@@ -8,7 +8,7 @@
 import { useEffect } from 'react';
 
 import type { VariableDemand } from '@/core/monitor';
-import type { Role, RobotPackage } from '@/robot-kit';
+import type { Role, RobotPackage } from '@/core/robot';
 import { activeWorkspace, windowIds, type Desktop } from '@/tiling';
 
 import { useLiveMonitor, useRobotPackage } from './monitor-context';

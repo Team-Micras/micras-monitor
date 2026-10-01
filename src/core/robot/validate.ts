@@ -5,7 +5,7 @@
  * @module
  */
 
-import { chordId, parseChord, type Chord } from '@/core/chords';
+import { chordId, parseChord, type Chord } from '../chords';
 
 import { PackageError } from './package-error';
 import type { BitmaskType, EnumType, PresetNode, RobotPackage } from './types';

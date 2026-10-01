@@ -7,8 +7,8 @@
  * @module
  */
 
+import { roleVariable, type LayoutPreset, type PresetNode, type RobotPackage } from '@/core/robot';
 import type { Variable } from '@/core/variables';
-import { roleVariable, type LayoutPreset, type PresetNode, type RobotPackage } from '@/robot-kit';
 
 import type { ShellWindow } from '../windows/types';
 

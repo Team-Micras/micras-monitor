@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { afterEach, expect, inject, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry, type RobotPackage } from '@/robot-kit';
-import { mouse } from '@tests/support/robot-kit/packages';
+import { RobotRegistry, type RobotPackage } from '@/core/robot';
+import { mouse } from '@tests/support/core/robot/packages';
 
 import { App } from '@/app/app';
 import type { AppMonitor } from '@/app/monitor-context';

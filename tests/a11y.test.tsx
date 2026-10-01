@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { cdp, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry } from '@/robot-kit';
+import { RobotRegistry } from '@/core/robot';
 import {
   createDesktop,
   createWorkspace,
@@ -15,7 +15,7 @@ import {
   type TileNode,
 } from '@/tiling';
 
-import { micras } from '@robots/micras';
+import { micras } from '@/robots/micras';
 
 import { App } from '@/app/app';
 import type { AppMonitor } from '@/app/monitor-context';

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import { chordId } from '@/core/chords';
-import { GRID, mouse } from '@tests/support/robot-kit/packages';
-import { validatePackage, type CommandSpec, type RobotPackage } from '@/robot-kit';
+import { GRID, mouse } from '@tests/support/core/robot/packages';
+import { validatePackage, type CommandSpec, type RobotPackage } from '@/core/robot';
 
 function problemOf(pkg: RobotPackage<string>): string {
   try {

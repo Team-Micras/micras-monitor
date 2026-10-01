@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
 
-import { roleVariable, enumLabel } from '@/robot-kit';
+import { roleVariable, enumLabel } from '@/core/robot';
 
 import type { SourceStatus } from '@/core/source';
 

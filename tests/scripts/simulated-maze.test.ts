@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { EXPLORED_16, FRESH_16, SMALL_3 } from '@tests/support/robots/micras/maze-vectors';
-import { decodeMaze, Side, WallState } from '@robots/micras/maze';
+import { decodeMaze, Side, WallState } from '@/robots/micras/maze';
 import { encodeMaze, simulatedMaze, type MazeWalls } from '@scripts/simulated-robot/maze';
 import { createVariables } from '@scripts/simulated-robot/variables';
 

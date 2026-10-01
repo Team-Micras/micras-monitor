@@ -7,8 +7,8 @@
 
 import type { ReactNode } from 'react';
 
+import { presentVariable, type VariablePresentation } from '@/core/robot';
 import type { Variable } from '@/core/variables';
-import { presentVariable, type VariablePresentation } from '@/robot-kit';
 
 import { useRobotPackage, useVariables, type AppMonitor } from '../../monitor-context';
 

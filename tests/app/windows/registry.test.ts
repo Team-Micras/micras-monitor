@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { GRID, mouse } from '@tests/support/robot-kit/packages';
+import { GRID, mouse } from '@tests/support/core/robot/packages';
 
 import {
   BATTERY_RATE_HZ,

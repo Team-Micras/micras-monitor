@@ -8,7 +8,7 @@
 import { expect } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry } from '@/robot-kit';
+import { RobotRegistry } from '@/core/robot';
 import type { Scheduler } from '@/history';
 import { createDesktop, createWorkspace, leaf, split, type TileNode } from '@/tiling';
 

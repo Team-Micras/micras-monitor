@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
-import type { LayoutPreset } from '@/robot-kit';
+import type { LayoutPreset } from '@/core/robot';
 import { activeWorkspace } from '@/tiling';
 
 import { Button } from '../components/ui/button';

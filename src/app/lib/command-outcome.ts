@@ -5,8 +5,8 @@
  * @module
  */
 
+import { refusalReason, type CommandSpec, type RobotPackage } from '@/core/robot';
 import type { CommandOutcome } from '@/core/source';
-import { refusalReason, type CommandSpec, type RobotPackage } from '@/robot-kit';
 
 /** How a notice about a command reads: fine, a warning, or an error. */
 export type CommandTone = 'pending' | 'ok' | 'warning' | 'error';

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { presentVariable } from '@/core/robot';
 import type { Variable } from '@/core/variables';
-import { presentVariable } from '@/robot-kit';
 
 import { formatValue } from '../lib/format';
 import { useLiveValue, useRobotPackage, useShownMonitor, useVariables } from '../monitor-context';

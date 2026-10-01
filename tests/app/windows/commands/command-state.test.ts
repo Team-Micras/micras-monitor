@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import type { CommandSpec, EnumType } from '@/robot-kit';
-import { mouse } from '@tests/support/robot-kit/packages';
+import type { CommandSpec, EnumType } from '@/core/robot';
+import { mouse } from '@tests/support/core/robot/packages';
 
 import {
   acceptedStatesText,

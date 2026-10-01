@@ -1,6 +1,6 @@
 import { createElement, useEffect } from 'react';
 
-import type { CommandSpec } from '@/robot-kit';
+import type { CommandSpec } from '@/core/robot';
 
 import { Kbd } from '../components/ui/kbd';
 import { formatChord } from '@/core/chords';

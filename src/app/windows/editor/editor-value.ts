@@ -5,8 +5,8 @@
  * @module
  */
 
+import type { BitmaskType, EnumType } from '@/core/robot';
 import { isFloat, isWide, VALUE_TYPES, type ValueType } from '@/core/variables';
-import type { BitmaskType, EnumType } from '@/robot-kit';
 
 import type { WriteRefusal, WriteValue } from '@/core/source';
 

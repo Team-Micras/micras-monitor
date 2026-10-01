@@ -9,10 +9,10 @@
 import { createContext, use, useSyncExternalStore, type ReactNode } from 'react';
 
 import type { Monitor, MonitorState } from '@/core/monitor';
+import type { PackageSelection, RobotPackage, RobotRegistry } from '@/core/robot';
 import type { SourceStatus, WriteValue } from '@/core/source';
 import type { Variable } from '@/core/variables';
 import type { LatestValue, HistoryStore } from '@/history';
-import type { PackageSelection, RobotPackage, RobotRegistry } from '@/robot-kit';
 
 /** A monitor as the app holds it, over a history store. */
 export type AppMonitor = Monitor<HistoryStore>;

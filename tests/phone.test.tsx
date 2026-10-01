@@ -6,10 +6,10 @@ import { App } from '@/app/app';
 import type { AppMonitor } from '@/app/monitor-context';
 import { createShellStore } from '@/app/state/shell-store';
 import '@/app/styles.css';
-import { RobotRegistry } from '@/robot-kit';
+import { RobotRegistry } from '@/core/robot';
 import type { AppUpdates } from '@/app/pwa/app-updates';
 
-import { micras } from '@robots/micras';
+import { micras } from '@/robots/micras';
 import { DEMO_VARIABLES } from '@/sources/demo/demo-robot';
 import { DEMO_TARGET, demoMonitor, recordCommands } from '@tests/support/sources/demo-monitor';
 

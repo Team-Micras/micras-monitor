@@ -18,8 +18,7 @@
     "noUncheckedSideEffectImports": true,
 
     "paths": {
-      "@/*": ["./src/*"],
-      "@robots/*": ["./robots/*"]
+      "@/*": ["./src/*"]
     }
   }
 }

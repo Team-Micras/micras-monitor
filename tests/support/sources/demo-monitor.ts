@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 
 import { PackageChooser, type AppMonitor, type MonitorScope } from '@/app/monitor-context';
 import { Monitor } from '@/core/monitor';
-import { RobotRegistry, type RobotPackage } from '@/robot-kit';
+import { RobotRegistry, type RobotPackage } from '@/core/robot';
 import { DEMO_ROBOT } from '@/sources/demo/demo-robot';
 import { DemoSource, type DemoOptions, type DemoRobot } from '@/sources/demo/demo-source';
 import { HistoryStore, type Scheduler } from '@/history';

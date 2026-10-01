@@ -6,5 +6,5 @@
     "types": ["vite/client", "vite-plugin-pwa/client"],
     "jsx": "react-jsx"
   },
-  "include": ["src", "robots"]
+  "include": ["src"]
 }

@@ -8,7 +8,6 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"],
-      "@robots/*": ["./robots/*"],
       "@tests/*": ["./tests/*"],
       "@scripts/*": ["./scripts/*"]
     }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { LayoutPreset } from '@/robot-kit';
+import type { LayoutPreset } from '@/core/robot';
 import { createDesktop, leafIds, activeWorkspace } from '@/tiling';
 
 import {

@@ -1,7 +1,7 @@
 import { MoonIcon, SunIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { roleVariable } from '@/robot-kit';
+import { roleVariable } from '@/core/robot';
 
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';

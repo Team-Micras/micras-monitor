@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { EXPLORED_16, FRESH_16, SMALL_3 } from '@tests/support/robots/micras/maze-vectors';
-import { decodeMaze, goalCells, Side, WallState, type Maze } from '@robots/micras/maze';
+import { decodeMaze, goalCells, Side, WallState, type Maze } from '@/robots/micras/maze';
 
 const { UNKNOWN, NO_WALL, WALL } = WallState;
 

@@ -6,9 +6,9 @@
  */
 
 import { bitSet } from '@/core/integers';
+import { enumLabel, type BitmaskType, type EnumType } from '@/core/robot';
 import type { Value, ValueType } from '@/core/variables';
 import type { LatestValue } from '@/history';
-import { enumLabel, type BitmaskType, type EnumType } from '@/robot-kit';
 
 import { formatValue } from '../../lib/format';
 

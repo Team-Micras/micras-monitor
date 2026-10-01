@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { EXPLORED_16, FRESH_16 } from '@tests/support/robots/micras/maze-vectors';
-import { decodeMaze } from '@robots/micras/maze';
-import { MazeView } from '@robots/micras/maze-view';
+import { decodeMaze } from '@/robots/micras/maze';
+import { MazeView } from '@/robots/micras/maze-view';
 
 function svg(): SVGSVGElement {
   const element = document.querySelector<SVGSVGElement>('[data-maze]');

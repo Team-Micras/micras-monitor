@@ -3,8 +3,8 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
-import { RobotRegistry, type LayoutPreset, type RobotPackage } from '@/robot-kit';
-import { mouse } from '@tests/support/robot-kit/packages';
+import { RobotRegistry, type LayoutPreset, type RobotPackage } from '@/core/robot';
+import { mouse } from '@tests/support/core/robot/packages';
 import { activeWorkspace, leafIds } from '@/tiling';
 
 import { App } from '@/app/app';

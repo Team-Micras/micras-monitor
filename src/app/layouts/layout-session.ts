@@ -5,8 +5,8 @@
  * @module
  */
 
+import type { LayoutPreset } from '@/core/robot';
 import type { Variable } from '@/core/variables';
-import type { LayoutPreset } from '@/robot-kit';
 
 import type { ShellState, ShellStore } from '../state/shell-store';
 import { autoLayout } from './auto-layout';

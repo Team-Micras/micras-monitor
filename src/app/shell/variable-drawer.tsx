@@ -17,8 +17,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 
+import { presentVariable } from '@/core/robot';
 import type { Variable } from '@/core/variables';
-import { presentVariable } from '@/robot-kit';
 import { activeWorkspace, focusedWindow } from '@/tiling';
 
 import { Button } from '../components/ui/button';

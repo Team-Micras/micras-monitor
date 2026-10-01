@@ -1,4 +1,4 @@
-import type { CommandSpec } from '@/robot-kit';
+import type { CommandSpec } from '@/core/robot';
 
 import { Button } from '../../components/ui/button';
 import {

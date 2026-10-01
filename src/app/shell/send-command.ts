@@ -8,7 +8,7 @@
 
 import { createContext, use } from 'react';
 
-import type { CommandSpec } from '@/robot-kit';
+import type { CommandSpec } from '@/core/robot';
 
 /**
  * Sends a command, after asking when it has a confirmation. By default it goes to the live robot

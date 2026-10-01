@@ -1,7 +1,7 @@
 import { RefreshCwIcon } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { roleVariable, type Role, type SerializableType } from '@/robot-kit';
+import { roleVariable, type Role, type SerializableType } from '@/core/robot';
 
 import { Button } from '../../components/ui/button';
 import {

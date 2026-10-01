@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { isIdleState, roleVariable } from '@/robot-kit';
+import { isIdleState, roleVariable } from '@/core/robot';
 
 import type { SourceStatus } from '@/core/source';
 
