@@ -60,7 +60,7 @@ The monitor does not know the wire: the source does the sequence arithmetic.
 
 ### 1.2 A window asks for variables, and GROUP_DEFINE goes out
 
-1. Each window kind in `src/ui/windows/registry.ts` has a `demand` function: the Plot asks for its
+1. Each window kind in `src/ui/windows/registry.ts` may have a `demand` function: the Plot asks for its
    variables at `PLOT_RATE_HZ`, Readouts at `READOUT_RATE_HZ` (`src/ui/windows/stream-rates.ts`). A kind with no `demand`
    streams each of its variables at `DEFAULT_STREAM_RATE_HZ`; a kind that wants none says `nothing`.
 2. `useStreamDemand` (`src/ui/stream-demand.ts`) gathers the demands of the visible windows and of the
@@ -329,7 +329,7 @@ The tiling window engine: workspaces of split trees, a floating layer, placement
 
 ### `src/ui/`
 
-The React interface. It reads the monitor and never imports a source or a robot package; `main.tsx` hands those in. The subfolders are shell (bars, dialogs), tiling (the React side of the engine), windows (one folder per kind), state, layouts, keyboard, recordings, phone, pwa, lazy, lib (formatting) and primitives (shadcn).
+The React interface. It reads the monitor and never imports a source or a robot package; `src/main.tsx` hands those in. The subfolders are shell (bars, dialogs), tiling (the React side of the engine), windows (one folder per kind), state, layouts, keyboard, recordings, phone, pwa, lazy, lib (formatting) and primitives (shadcn).
 
 - `app.tsx`: `App`: wires the monitors, the shell store, keyboard, command sending and confirmation, and lays out the top bar, tiling, status bar, drawer and launcher.
 - `monitor-context.ts`: `MonitorContext` and its hooks: `useLiveMonitor()` (bars, STOP, connection) and `useShownMonitor()` (windows), plus the per-variable hooks and the `PackageChooser`.
@@ -497,7 +497,7 @@ The React side of the tiling engine: it draws the layout and the handles, and ru
 
 ### `src/ui/windows/`
 
-One folder per window kind. `registry.ts` lists the kinds and what each asks the link to stream.
+One folder per window kind. `src/ui/windows/registry.ts` lists the kinds and what each asks the link to stream.
 
 - `registry.ts`: The window kinds: title, icon, component (lazy for heavy ones) and `demand`.
 - `types.ts`: `ShellWindow`, its payload and the props of a window.
@@ -602,10 +602,10 @@ React is allowed only in `src/ui/`, the robot packages and `src/main.tsx`. The `
 
 How a source is fenced from other sources without naming them: the generic rule for
 `src/sources/*/**` forbids every `@/sources/...` alias, so a source reaches its own files only by
-relative path; and a rule per depth (`src/sources/*/*.ts`, `src/sources/*/*/*.ts`, and so on to five
-levels, for `.ts` and `.tsx`) forbids a relative path that climbs out of the source's own folder. A
-new source folder is fenced from `demo`, from `micras-comm` and from every future source as soon as
-it exists, and they are fenced from it.
+relative path; and a rule per depth (`src/sources/*/*.ts`, `src/sources/*/*/*.ts`, and so on) forbids
+a relative path that climbs out of the source's own folder. That covers normalized relative paths in
+`.ts` and `.tsx` files up to five levels below the source's folder; a new source folder is fenced
+this way without a rule of its own.
 
 `tests/config/import-fences.test.ts` checks the fences themselves: it writes probe files into a temporary directory with the same config, runs oxlint on them and expects each import to be refused or accepted as the table says. If
 you change a rule in `.oxlintrc.json`, that test is where to say what it should now do.
@@ -697,9 +697,9 @@ Scripts (`bun run <name>`; sources in `scripts/`):
 | `simulate`        | the simulated robot on a WebSocket (`scripts/simulated-robot/`)                 |
 | `size`            | gzipped size of the bundle against its target                                   |
 
-Other files in `scripts/`: `bench-compare.ts`, `bench-diff.ts`, `bench-result.ts` and
-`bench-baseline.json` (judging bench runs), and `simulated-robot/` (`server.ts`, `robot.ts`,
-`variables.ts`, `commands.ts`, `maze.ts`, `faults.ts`, `wire.ts`: a robot that speaks `micras_comm`,
+Other files in `scripts/`: `scripts/bench-compare.ts`, `scripts/bench-diff.ts`, `scripts/bench-result.ts` and
+`scripts/bench-baseline.json` (judging bench runs), and `scripts/simulated-robot/` (`server.ts`, `robot.ts`,
+`variables.ts`, `commands.ts`, `maze.ts`, `faults.ts` and `wire.ts` in it: a robot that speaks `micras_comm`,
 sharing `src/sources/micras-comm/wire/` with the app). The README has the options of each.
 
 **Machine rule: run one browser suite at a time.** Chromium starts in `bun run test` (its browser
