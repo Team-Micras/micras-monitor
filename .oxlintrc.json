@@ -52,7 +52,7 @@
       }
     },
     {
-      "files": ["src/**", "robots/**", "tests/**"],
+      "files": ["src/**", "tests/**"],
       "env": {
         "browser": true
       }
@@ -70,71 +70,7 @@
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
-              },
-              {
-                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
-                "message": "Nothing in src/ imports a robot package; robots register through the app."
-              },
-              {
-                "regex": "^(@/app(/|$)|(\\.\\./)+app(/|$))",
-                "message": "Layers below the app must not depend on it."
-              },
-              {
-                "regex": "^(@/sources(/|$)|(\\.\\./)+sources(/|$))",
-                "message": "Only src/main.tsx, the composition root, wires sources in."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/app/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
-                "message": "Shipped code never imports tests or scripts."
-              },
-              {
-                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
-                "message": "Nothing in src/ imports a robot package; robots register through the app."
-              },
-              {
-                "regex": "^(@/(sources|protocol|link)|(\\.\\./)+(sources|protocol|link))(/|$)",
-                "message": "The app reads the monitor of src/core; only src/main.tsx wires sources, and only sources speak micras_comm."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/lazy/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
-                "message": "Shipped code never imports tests or scripts."
-              },
-              {
-                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
-                "message": "Nothing in src/ imports a robot package; robots register through the app."
-              },
-              {
-                "regex": "^(@/app(/|$)|(\\.\\./)+app(/|$))",
-                "message": "Layers below the app must not depend on it."
-              },
-              {
-                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
-                "message": "Only src/main.tsx, the composition root, wires sources in."
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
               }
             ]
           }
@@ -154,10 +90,14 @@
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
               },
               {
-                "regex": "^(@/|@robots(/|$)|(\\.\\./)+)",
+                "regex": "^@/",
+                "message": "src/core imports nothing else in the monitor; import other core modules by relative path."
+              },
+              {
+                "regex": "^(@/(history|recording|tiling|sources|robots|ui|main)|(\\.\\./)+(history|recording|tiling|sources|robots|ui|main))(/|$)",
                 "message": "src/core imports nothing else in the monitor; import other core modules by relative path."
               }
             ]
@@ -166,7 +106,7 @@
       }
     },
     {
-      "files": ["src/sources/micras-comm/**"],
+      "files": ["src/history/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -177,16 +117,89 @@
                 "message": "Shipped code never imports tests or scripts."
               },
               {
-                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
-                "message": "Nothing in src/ imports a robot package; robots register through the app."
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
+              },
+              {
+                "regex": "^(@/(recording|tiling|sources|robots|ui|main)|(\\.\\./)+(recording|tiling|sources|robots|ui|main))(/|$)",
+                "message": "src/history depends only on src/core."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/recording/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
               },
               {
-                "regex": "^(@/(app|telemetry|tiling|robot-kit|lazy)|(\\.\\./)+(app|telemetry|tiling|robot-kit|lazy))(/|$)",
-                "message": "A source depends only on src/core and on what speaks its protocol; it never reaches the app or the history."
+                "regex": "^(@/(tiling|sources|robots|ui|main)|(\\.\\./)+(tiling|sources|robots|ui|main))(/|$)",
+                "message": "src/recording depends only on src/core and src/history."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/tiling/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
+              },
+              {
+                "regex": "^@/",
+                "message": "src/tiling is a pure engine and imports nothing else in the monitor."
+              },
+              {
+                "regex": "^(@/(core|history|recording|sources|robots|ui|main)|(\\.\\./)+(core|history|recording|sources|robots|ui|main))(/|$)",
+                "message": "src/tiling is a pure engine and imports nothing else in the monitor."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/sources/micras-comm/**"],
+      "rules": {
+        "no-await-in-loop": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
+                "message": "Shipped code never imports tests or scripts."
+              },
+              {
+                "regex": "^react(-dom)?(/.*)?$",
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
+              },
+              {
+                "regex": "^(@/(history|recording|tiling|robots|ui|main)|(\\.\\./)+(history|recording|tiling|robots|ui|main))(/|$)",
+                "message": "A source depends only on src/core and its own folder; it never reaches the UI, the history, the recordings, the tiling engine or a robot package."
               },
               {
                 "regex": "^(@/sources/demo|(\\.\\./)+(sources/)?demo)(/|$)",
@@ -209,16 +222,12 @@
                 "message": "Shipped code never imports tests or scripts."
               },
               {
-                "regex": "^(@robots(/|$)|(\\.{1,2}/)+(.+/)?robots(/|$))",
-                "message": "Nothing in src/ imports a robot package; robots register through the app."
-              },
-              {
                 "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
+                "message": "Only src/ui and the robot packages draw with React; keep this folder framework free."
               },
               {
-                "regex": "^(@/(app|telemetry|tiling|robot-kit|lazy|protocol|link)|(\\.\\./)+(app|telemetry|tiling|robot-kit|lazy|protocol|link))(/|$)",
-                "message": "The demo source depends only on src/core."
+                "regex": "^(@/(history|recording|tiling|robots|ui|main)|(\\.\\./)+(history|recording|tiling|robots|ui|main))(/|$)",
+                "message": "A source depends only on src/core and its own folder; it never reaches the UI, the history, the recordings, the tiling engine or a robot package."
               },
               {
                 "regex": "^(@/sources/micras-comm|(\\.\\./)+(sources/)?micras-comm)(/|$)",
@@ -230,7 +239,7 @@
       }
     },
     {
-      "files": ["src/protocol/**"],
+      "files": ["src/robots/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -241,16 +250,20 @@
                 "message": "Shipped code never imports tests or scripts."
               },
               {
-                "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
+                "regex": "^(@/(history|recording|tiling|sources|main)|(\\.\\./)+(history|recording|tiling|sources|main))(/|$)",
+                "message": "A robot package depends only on src/core, with src/core/robot as its contract, and React."
               },
               {
-                "regex": "^(@/(core|link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(core|link|telemetry|tiling|robot-kit|app|robots))(/|$)",
-                "message": "src/protocol depends on nothing else in the monitor."
+                "group": ["@/ui/*", "!@/ui/lazy", "!@/ui/lazy/*"],
+                "message": "Of the UI, a robot package may only use src/ui/lazy to load its views on demand."
               },
               {
-                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
-                "message": "Only src/main.tsx, the composition root, wires sources in."
+                "regex": "^(\\.\\./)+ui(/|$)",
+                "message": "Of the UI, a robot package may only use src/ui/lazy, and through @/ui/lazy."
+              },
+              {
+                "regex": "^(@/robots/|(\\.\\./)+robots/)",
+                "message": "A robot package never imports another one."
               }
             ]
           }
@@ -258,36 +271,7 @@
       }
     },
     {
-      "files": ["src/link/**"],
-      "rules": {
-        "no-await-in-loop": "off",
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
-                "message": "Shipped code never imports tests or scripts."
-              },
-              {
-                "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
-              },
-              {
-                "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(telemetry|tiling|robot-kit|app|robots|scripts))(/|$)",
-                "message": "src/link depends only on src/protocol and src/core."
-              },
-              {
-                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
-                "message": "Only src/main.tsx, the composition root, wires sources in."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/telemetry/**"],
+      "files": ["src/ui/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -298,92 +282,8 @@
                 "message": "Shipped code never imports tests or scripts."
               },
               {
-                "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
-              },
-              {
-                "regex": "^(@/(protocol|link|tiling|robot-kit|app)|@robots|(\\.\\./)+(protocol|link|tiling|robot-kit|app|robots))(/|$)",
-                "message": "src/telemetry depends only on src/core."
-              },
-              {
-                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
-                "message": "Only src/main.tsx, the composition root, wires sources in."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/tiling/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
-                "message": "Shipped code never imports tests or scripts."
-              },
-              {
-                "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
-              },
-              {
-                "regex": "^(@/(core|protocol|link|telemetry|robot-kit|app)|@robots|(\\.\\./)+(core|protocol|link|telemetry|robot-kit|app|robots))(/|$)",
-                "message": "src/tiling depends on nothing else in the monitor."
-              },
-              {
-                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
-                "message": "Only src/main.tsx, the composition root, wires sources in."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["src/robot-kit/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
-                "message": "Shipped code never imports tests or scripts."
-              },
-              {
-                "regex": "^react(-dom)?(/.*)?$",
-                "message": "Only src/app may use React; keep this layer framework free."
-              },
-              {
-                "regex": "^(@/(protocol|link|telemetry|tiling|app)|@robots|(\\.\\./)+(protocol|link|telemetry|tiling|app|robots))(/|$)",
-                "message": "src/robot-kit depends only on src/core."
-              },
-              {
-                "regex": "^(@/sources|(\\.\\./)+sources)(/|$)",
-                "message": "Only src/main.tsx, the composition root, wires sources in."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["robots/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^((@tests|@scripts)|(\\.\\./)+(tests|scripts))(/|$)",
-                "message": "Shipped code never imports tests or scripts."
-              },
-              {
-                "regex": "^(@/(protocol|link|telemetry|tiling|app|sources)|(\\.\\./)+(src/(protocol|link|telemetry|tiling|app|sources)))(/|$)",
-                "message": "Robot packages depend only on src/robot-kit, src/core and React."
+                "regex": "^(@/(sources|robots|main)|(\\.\\./)+(sources|robots|main))(/|$)",
+                "message": "The UI reads the monitor of src/core; only src/main.tsx wires sources and robot packages in."
               }
             ]
           }
@@ -413,11 +313,11 @@
         "tests/e2e/**",
         "tests/scripts/**",
         "tests/config/**",
-        "tests/link/session-simulated.test.ts",
-        "tests/link/session-faults.test.ts",
+        "tests/sources/micras-comm/link/robot-link-simulated.test.ts",
+        "tests/sources/micras-comm/link/robot-link-faults.test.ts",
         "tests/support/browser-*.ts",
-        "tests/support/in-memory-robot.ts",
-        "tests/support/session-harness.ts",
+        "tests/support/sources/micras-comm/in-memory-robot.ts",
+        "tests/support/sources/micras-comm/link-harness.ts",
         "tests/support/virtual-time.ts"
       ],
       "env": {
@@ -428,8 +328,8 @@
       "files": [
         "tests/support/**",
         "tests/scripts/**",
-        "tests/link/session-simulated.test.ts",
-        "tests/link/session-faults.test.ts"
+        "tests/sources/micras-comm/link/robot-link-simulated.test.ts",
+        "tests/sources/micras-comm/link/robot-link-faults.test.ts"
       ],
       "rules": {
         "no-await-in-loop": "off"
@@ -448,8 +348,8 @@
                 "message": "Scripts never import tests."
               },
               {
-                "regex": "^(@/(telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(telemetry|tiling|robot-kit|app)|robots))(/|$)",
-                "message": "Tools may only depend on src/protocol and src/link."
+                "regex": "^(@/(history|recording|tiling|core/robot|robots|ui)|(\\.\\./)+src/(history|recording|tiling|core/robot|robots|ui))(/|$)",
+                "message": "Scripts may only depend on src/core and the sources."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
@@ -472,8 +372,8 @@
                 "message": "Scripts never import tests."
               },
               {
-                "regex": "^(@/(link|telemetry|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(link|telemetry|tiling|robot-kit|app)|robots))(/|$)",
-                "message": "The simulated robot stands in for the firmware and speaks only src/protocol."
+                "regex": "^(@/(history|recording|tiling|core/robot|robots|ui|sources/demo|sources/micras-comm/(link|streaming|transports))|(\\.\\./)+src/(history|recording|tiling|core/robot|robots|ui|sources/demo|sources/micras-comm/(link|streaming|transports)))(/|$)",
+                "message": "The simulated robot stands in for the firmware and speaks only the micras_comm wire format of src/sources/micras-comm/wire."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
@@ -492,8 +392,8 @@
           {
             "patterns": [
               {
-                "regex": "^(@/(app|tiling|robot-kit)|@robots|(\\.\\./)+(src/(app|tiling|robot-kit)|robots))(/|$)",
-                "message": "The micras-comm source's test drives the source and the monitor against the simulated robot, and nothing of the app."
+                "regex": "^(@/(ui|tiling|core/robot|robots)|(\\.\\./)+src/(ui|tiling|core/robot|robots))(/|$)",
+                "message": "The micras-comm source's test drives the source and the monitor against the simulated robot, and nothing of the UI."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
@@ -512,7 +412,7 @@
           {
             "patterns": [
               {
-                "regex": "^(@/(telemetry|tiling|robot-kit|app)|(\\.\\./)+src/(telemetry|tiling|robot-kit|app))(/|$)",
+                "regex": "^(@/(history|recording|tiling|core/robot|ui)|(\\.\\./)+src/(history|recording|tiling|core/robot|ui))(/|$)",
                 "message": "The simulated maze's test checks the record against the Micras package, and nothing else of the monitor."
               },
               {
@@ -536,8 +436,8 @@
                 "message": "Scripts never import tests."
               },
               {
-                "regex": "^(@/(protocol|link|tiling|robot-kit|app)|@robots|(\\.\\./)+(src/(protocol|link|tiling|robot-kit|app)|robots))(/|$)",
-                "message": "The telemetry benchmark may only depend on src/core and src/telemetry."
+                "regex": "^(@/(recording|tiling|core/robot|robots|ui|sources)|(\\.\\./)+src/(recording|tiling|core/robot|robots|ui|sources))(/|$)",
+                "message": "The history benchmark may only depend on src/core and src/history."
               },
               {
                 "regex": "^react(-dom)?(/.*)?$",
