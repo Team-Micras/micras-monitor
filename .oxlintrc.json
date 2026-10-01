@@ -101,7 +101,7 @@
                 "message": "Nothing in src/ imports a robot package; robots register through the app."
               },
               {
-                "regex": "^(@/(protocol|link)|(\\.\\./)+(protocol|link))(/|$)",
+                "regex": "^@/(protocol|link)(/|$)",
                 "message": "Only src/app/live speaks micras_comm; the rest of the app uses the model of src/core."
               }
             ]
@@ -170,7 +170,7 @@
               },
               {
                 "regex": "^(@/|@robots(/|$)|(\\.\\./)+)",
-                "message": "src/core imports nothing else in the monitor."
+                "message": "src/core imports nothing else in the monitor; import other core modules by relative path."
               }
             ]
           }
