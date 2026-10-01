@@ -40,6 +40,10 @@ const STALL_DEMAND = 5956;
 const RECOVERY_S = 30;
 /** What the planner settles on over a clean HM-19 that carries 3 KB/s, with the default timing. */
 const HM19_CLEAN_BUDGET = 2830;
+/** How long, after a stall that left the round trip at 120 ms, the budget may take to rise. */
+const RELAYED_RECOVERY_S = 150;
+/** The budget it has to reach by then, well above where the stall left it. */
+const RELAYED_LEAST = 1000;
 /** How long the budget over a corrupting HM-19 is watched for. */
 const CORRUPT_WATCH_S = 60;
 /** How long the default probe cycle is watched for. */
@@ -171,6 +175,24 @@ describe('a planner over a saturated link', { timeout: 120_000 }, () => {
       expect(planner.plan?.overBudget).toBe(false);
     }
   );
+
+  test('probes back up after a stall that leaves the round trip longer for good', async () => {
+    harness = await connect({ latencyMs: 10 }, { timing: {} });
+    const { link, robot } = harness;
+    planner = new StreamPlanner(link, { debounceMs: 20 });
+    planner.request(demanding(link, STALL_DEMAND));
+
+    await delay(20_000);
+    robot.faults.stallMs = 600;
+    await delay(30_000);
+    const stalled = planner.budget.bytesPerSecond;
+    robot.faults.stallMs = 0;
+    robot.faults.latencyMs = 60;
+    await delay(RELAYED_RECOVERY_S * 1000);
+
+    expect(stalled).toBeLessThan(RELAYED_LEAST);
+    expect(planner.budget.bytesPerSecond).toBeGreaterThanOrEqual(RELAYED_LEAST);
+  });
 
   test('keeps what was asked on a fast link that corrupts frames', async () => {
     harness = await connect(

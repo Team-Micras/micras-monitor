@@ -111,17 +111,16 @@ interface Sample {
  * never kept in the ceiling, so a round trip a stall inflated is forgotten with the stall.
  *
  * A ceiling that ran a hold period without drops is safe. While the plan wants more, it is then
- * raised: halfway to the target while there is one, so a link back from a stall carries what it
- * did within a few holds, though not while the credit at the round trip of the moment could not
- * carry the step, as during the stall, since such a step tells nothing; and otherwise by one probe
- * over the most that arrived. A raise that
- * makes samples drop puts the ceiling back to the last safe one. The target is given up once it
- * is within a probe, or after a few steps toward it dropped; a probe that drops stops probing for
- * a quiet period that doubles with every failed probe, so on a stable link the estimate settles
- * and drops all but stop. A hold that passes with nothing more wanted forgets the failed probes.
- * A cut below the last safe ceiling, as when the link got worse, lets probing start again from
- * there, so the link is found again when it recovers. Traffic the credit does not meter is taken
- * off what samples may use.
+ * raised: halfway to the target while there is one and the credit at the round trip of the
+ * moment could carry the step, so a link back from a stall carries what it did within a few
+ * holds; otherwise, as while the stall lasts or once the round trip stays longer, by one probe
+ * over the most that arrived. A raise that makes samples drop puts the ceiling back to the last
+ * safe one. The target is given up once it is within a probe, or after a few steps toward it
+ * dropped; a probe that drops stops probing for a quiet period that doubles with every failed
+ * probe, so on a stable link the estimate settles and drops all but stop. A hold that passes with
+ * nothing more wanted forgets the failed probes. A cut below the last safe ceiling, as when the
+ * link got worse, lets probing start again from there, so the link is found again when it
+ * recovers. Traffic the credit does not meter is taken off what samples may use.
  */
 export class BandwidthEstimator {
   readonly #options: BandwidthEstimatorOptions;
@@ -136,6 +135,7 @@ export class BandwidthEstimator {
   #probing = true;
   #failedProbes = 0;
   #target: number | undefined;
+  #stepping = false;
   #failedSteps = 0;
   #cleanSince: number | undefined;
   #recoverUntil = Number.NEGATIVE_INFINITY;
@@ -219,7 +219,7 @@ export class BandwidthEstimator {
     const { capBytesPerSecond, floorBytesPerSecond, backoff } = this.#options;
 
     if (this.#probeFrom !== undefined) {
-      if (this.#target === undefined) {
+      if (!this.#stepping) {
         this.#probing = false;
         this.#failedProbes++;
       } else if (++this.#failedSteps === MAX_FAILED_STEPS) {
@@ -278,21 +278,20 @@ export class BandwidthEstimator {
       this.#target = undefined;
     }
 
-    if (this.#target !== undefined) {
-      const step = (this.#ceiling + this.#target) / 2;
+    const step = this.#target === undefined ? undefined : (this.#ceiling + this.#target) / 2;
 
-      if (step <= creditBound) {
-        this.#probeFrom = this.#ceiling;
-        this.#setCeiling(step, now);
-      }
-
-      return;
+    if (step !== undefined && step <= creditBound) {
+      this.#raise(step, true, now);
+    } else if (this.#probing) {
+      this.#raise(Math.max(this.#ceiling, this.#arrivedMax) * probeGrowth, false, now);
     }
+  }
 
-    if (this.#probing) {
-      this.#probeFrom = this.#ceiling;
-      this.#setCeiling(Math.max(this.#ceiling, this.#arrivedMax) * probeGrowth, now);
-    }
+  /** Raise the ceiling, keeping the one it had to go back to if samples drop. */
+  #raise(ceiling: number, stepping: boolean, now: number): void {
+    this.#probeFrom = this.#ceiling;
+    this.#stepping = stepping;
+    this.#setCeiling(ceiling, now);
   }
 
   /** Whether the link ran a hold period without samples dropping, until now. */
