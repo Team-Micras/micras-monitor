@@ -629,6 +629,11 @@ export class Session {
    * sends the GROUP_ACK of the enable ahead of the first sample, so a sample of an epoch not yet
    * announced announces it: its acknowledgement came first on the wire, even when the configurator
    * waiting for it has not run yet.
+   *
+   * A sample is checked against its epoch before anything is taken from it. One the epoch cannot
+   * have sent, of another size or with a sequence behind the expected one, means the robot streams
+   * something else in the group, as when another monitor redefined it: it is reported and left
+   * out, its time and sequence count for nothing, and the group is defined again.
    */
   private onSample(sample: Sample): void {
     if (this.current.kind !== 'configuring' && this.current.kind !== 'streaming') {
@@ -636,7 +641,6 @@ export class Session {
     }
 
     const at = now();
-    const timeUs = this.unwrapTimestamp(sample.timestampUs, at);
     const open = this.epochs.current(sample.group);
 
     if (!open) {
@@ -644,32 +648,50 @@ export class Session {
       return;
     }
 
-    this.epochs.activate(sample.group);
-
-    const missing = open.advance(sample.seq);
     const values = open.decode(sample.values);
 
-    if (missing > 0) {
-      this.counters.add('droppedSamples', missing);
-      this.events.emit('dropped', { epoch: open.epoch.id, count: missing });
-    }
-
     if (!values) {
-      this.reportProtocolError(
+      this.outOfStep(
+        sample.group,
         `A sample of group ${sample.group} has ${sample.values.length} bytes; ${open.epoch.sampleSize} were acknowledged`
       );
       return;
     }
 
+    const expected = open.nextSeq;
+    const missing = open.accept(sample.seq);
+
+    if (missing === null) {
+      this.outOfStep(
+        sample.group,
+        `A sample of group ${sample.group} came with sequence ${sample.seq}; ${expected} was expected`
+      );
+      return;
+    }
+
+    const timeUs = this.unwrapTimestamp(sample.timestampUs, at);
+    this.epochs.activate(sample.group);
+    const epoch = this.epochs.current(sample.group)?.epoch ?? open.epoch;
+
+    if (missing > 0) {
+      this.counters.add('droppedSamples', missing);
+      this.events.emit('dropped', { epoch: epoch.id, count: missing });
+    }
+
     this.counters.add('samples');
     this.watchdog.sampled(at);
     this.events.emit('sample', {
-      epoch: open.epoch.id,
+      epoch: epoch.id,
       seq: sample.seq,
       timeUs,
       values,
       missingBefore: missing,
     });
+  }
+
+  private outOfStep(group: number, message: string): void {
+    this.reportProtocolError(message);
+    this.groups.noteOutOfStep(group);
   }
 
   /**

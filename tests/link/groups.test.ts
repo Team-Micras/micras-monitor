@@ -98,12 +98,12 @@ describe('epochs', () => {
     const before = define(registry, 1);
 
     registry.activate(0);
-    before.advance(0);
+    before.accept(0);
     registry.moveToTimeline(2);
 
     const after = registry.current(0);
     expect(after?.epoch).toMatchObject({ id: 102, timeline: 2, variableIds: [0, 2, 3] });
-    expect(after?.advance(1)).toBe(0);
+    expect(after?.accept(1)).toBe(0);
     expect(events).toEqual(['opened 101', 'ended 101 clock-reset', 'opened 102']);
   });
 
@@ -124,33 +124,53 @@ describe('epochs', () => {
   test('a sequence gap inside an epoch counts the samples dropped', () => {
     const open = define(recordingRegistry().registry);
 
-    expect(open.advance(0)).toBe(0);
-    expect(open.advance(1)).toBe(0);
-    expect(open.advance(5)).toBe(3);
-    expect(open.advance(6)).toBe(0);
+    expect(open.accept(0)).toBe(0);
+    expect(open.accept(1)).toBe(0);
+    expect(open.accept(5)).toBe(3);
+    expect(open.accept(6)).toBe(0);
   });
 
   test('samples dropped before the first one arrived are counted too', () => {
     const open = define(recordingRegistry().registry);
 
-    expect(open.advance(2)).toBe(2);
+    expect(open.accept(2)).toBe(2);
   });
 
   test('the u16 sequence wraps without a gap', () => {
     const open = define(recordingRegistry().registry);
 
-    open.advance(0);
-    open.advance(0xfffe);
+    open.accept(0);
+    open.accept(0x7ffe);
+    open.accept(0xfffe);
 
-    expect(open.advance(0xffff)).toBe(0);
-    expect(open.advance(0)).toBe(0);
+    expect(open.accept(0xffff)).toBe(0);
+    expect(open.accept(0)).toBe(0);
+  });
+
+  test('a sequence behind the expected one is no gap and moves nothing', () => {
+    const open = define(recordingRegistry().registry);
+
+    open.accept(0);
+    open.accept(40);
+
+    expect(open.accept(0)).toBeNull();
+    expect(open.accept(40)).toBeNull();
+    expect(open.nextSeq).toBe(41);
+    expect(open.accept(41)).toBe(0);
+  });
+
+  test('a sequence half the range ahead or more is taken as behind, not as a gap of that size', () => {
+    const open = define(recordingRegistry().registry);
+
+    expect(open.accept(0x8000)).toBeNull();
+    expect(open.accept(0x7fff)).toBe(0x7fff);
   });
 
   test('a new epoch starts its sequence from zero', () => {
     const { registry } = recordingRegistry();
-    define(registry).advance(40);
+    define(registry).accept(40);
 
-    expect(define(registry).advance(0)).toBe(0);
+    expect(define(registry).accept(0)).toBe(0);
   });
 
   test('decodes values by type and refuses the wrong size', () => {

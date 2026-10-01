@@ -11,6 +11,8 @@ import type { SchemaEntry } from './schema';
 /** The group, sequence number and timestamp in front of the values of a sample. */
 export const SAMPLE_HEADER_SIZE = 7;
 
+const SEQUENCE_HALF_RANGE = 0x8000;
+
 /** A set of variables to stream together, sampled in the same loop iteration. */
 export interface GroupRequest {
   /** The variables, in the order their values are packed. */
@@ -60,6 +62,8 @@ export type EpochEndReason =
   | 'restarted'
   /** The transport dropped. */
   | 'disconnected'
+  /** Samples arrived that the definition cannot have sent, so the robot streams something else. */
+  | 'out-of-step'
   /** Configuring the group failed, so what the robot does with it is not known. */
   | 'failed'
   /** The robot's clock started over while the group streamed, which opens a new timeline. */
@@ -190,14 +194,26 @@ export class OpenEpoch {
     return next;
   }
 
+  /** The sequence number the next sample should carry. */
+  get nextSeq(): number {
+    return this.expectedSeq;
+  }
+
   /**
-   * Account for the sequence number of a sample.
+   * Account for the sequence number of a sample. A number up to half the u16 range ahead of the
+   * expected one follows samples that went missing; one behind it is a sample this epoch already
+   * had or never sent, and moves nothing.
    *
    * @param seq The u16 sequence number the sample carries.
-   * @returns How many samples went missing just before it.
+   * @returns How many samples went missing just before it, or null when it is behind.
    */
-  advance(seq: number): number {
+  accept(seq: number): number | null {
     const missing = (seq - this.expectedSeq) & 0xffff;
+
+    if (missing >= SEQUENCE_HALF_RANGE) {
+      return null;
+    }
+
     this.expectedSeq = (seq + 1) & 0xffff;
     return missing;
   }

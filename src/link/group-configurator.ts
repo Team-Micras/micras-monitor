@@ -128,6 +128,16 @@ export class GroupConfigurator {
     this.configure();
   }
 
+  /**
+   * Samples arrived for a group that its epoch cannot have sent: end the epoch and define the
+   * group again, since what the robot streams in it is not known.
+   */
+  noteOutOfStep(group: number): void {
+    this.epochs.end(group, 'out-of-step');
+    this.unknown.add(group);
+    this.configure();
+  }
+
   /** Drop the layout, because the schema it names variables of changed. */
   dropLayout(error: Error): void {
     this.desired = [];
