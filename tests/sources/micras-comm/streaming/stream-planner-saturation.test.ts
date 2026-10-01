@@ -38,6 +38,8 @@ const SETTLE_S = 90;
 const STALL_DEMAND = 5956;
 /** How long, after a long stall, the plan may take to give back all that was asked. */
 const RECOVERY_S = 30;
+/** What the planner settles on over a clean HM-19 that carries 3 KB/s. */
+const HM19_CLEAN_BUDGET = 2640;
 /** How long the default probe cycle is watched for. */
 const CYCLE_MINUTES = 3;
 const WATCH_S = 30;
@@ -144,10 +146,7 @@ describe('a planner over a saturated link', { timeout: 120_000 }, () => {
   );
 
   test('gets back to what was asked within a few holds once a long stall is over', async () => {
-    harness = await connect(
-      { latencyMs: 10 },
-      { timing: { ...TEST_TIMING, statsIntervalMs: 1000 } }
-    );
+    harness = await connect({ latencyMs: 10 }, { timing: {} });
     const { link, robot } = harness;
     planner = new StreamPlanner(link, { debounceMs: 20 });
     planner.request(demanding(link, STALL_DEMAND));
@@ -178,6 +177,21 @@ describe('a planner over a saturated link', { timeout: 120_000 }, () => {
     expect(link.stats.framesDiscarded).toBeGreaterThan(100);
     expect(planner.budget.bytesPerSecond).toBeGreaterThan(3000);
     expect(planner.plan?.overBudget).toBe(false);
+  });
+
+  test('keeps its budget on an HM-19 that corrupts frames while the robot counts drops', async () => {
+    harness = await connect(
+      { throughputBytesPerSecond: 3000, latencyMs: 20, corruptRate: 0.02, seed: 5 },
+      { timing: { ...TEST_TIMING, statsIntervalMs: 1000 } }
+    );
+    const { link } = harness;
+    planner = new StreamPlanner(link, { debounceMs: 20 });
+    planner.request(demanding(link, 3000 * OVER_CAPACITY));
+
+    await delay(SETTLE_S * 1000);
+
+    expect(link.stats.framesDiscarded).toBeGreaterThan(50);
+    expect(planner.budget.bytesPerSecond).toBeGreaterThan(HM19_CLEAN_BUDGET * 0.85);
   });
 
   test('with the default probe cycle, drops and plans stay rare once settled', async () => {

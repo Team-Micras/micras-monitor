@@ -34,8 +34,9 @@ export interface BandwidthEstimatorOptions {
    */
   dropShare: number;
   /**
-   * How many samples one frame discarded as corrupt may account for when only gaps in the
-   * sequence tell what was lost, since a corrupted delimiter can take two frames with it.
+   * How many lost samples one frame discarded as corrupt may account for, since a corrupted
+   * delimiter can take two frames with it, and the credit of a corrupted frame is missing from
+   * the robot's window until the next PONG.
    */
   lossPerDiscard: number;
   /** The lowest the budget goes, in bytes per second. */
@@ -59,8 +60,8 @@ export const DEFAULT_BANDWIDTH_ESTIMATOR: BandwidthEstimatorOptions = {
   smoothing: 0.5,
 };
 
-/** How many steps back toward the target may fail before it is given up for slow probes. */
-const MAX_FAILED_STEPS = 4;
+/** How many steps back toward the target may make samples drop before it is given up. */
+const MAX_FAILED_STEPS = 3;
 
 /** What a {@link BandwidthEstimator} made of the link's counters. */
 export interface BudgetEstimate {
@@ -99,33 +100,32 @@ interface Sample {
  * count of dropped samples says so when it is known; otherwise gaps in the sequence beyond what
  * corrupted frames explain do.
  *
- * Samples count as dropped for want of room only past a small share of those taken, and, from
- * gaps alone, past what corrupted frames explain. The first drops put a ceiling at what arrived,
- * below what the UART and the ceiling before let the link carry, and the capacity before them,
- * when the link had held it clean for a hold period, is kept as a target. Drops that outlast the cut, once the robot had time to get the plan made for
- * it and to report its count again, cut it again by the backoff, so a link that drops for a
- * reason the counters do not show, such as a monitor that stalls, is backed off from until it
- * stops. A saturated link never raises the ceiling. The credit's own bound is taken again with
- * every update, from the round trip of the moment, and never kept in the ceiling, so a round
- * trip a stall inflated is forgotten with the stall.
+ * Samples count as dropped for want of room only past what corrupted frames explain, and past a
+ * small share of those taken. The first drops put a ceiling at what arrived, below what the UART
+ * and the ceiling before let the link carry. When the link had run a hold period clean before
+ * them, that ceiling before is kept as a target. Drops that outlast the cut, once the robot had
+ * time to get the plan made for it and to report its count again, cut it again by the backoff,
+ * so a link that drops for a reason the counters do not show, such as a monitor or a relay that
+ * stalls, is backed off from until it stops. A saturated link never raises the ceiling. The
+ * credit's own bound is taken again with every update, from the round trip of the moment, and
+ * never kept in the ceiling, so a round trip a stall inflated is forgotten with the stall.
  *
  * A ceiling that ran a hold period without drops is safe. While the plan wants more, it is then
- * raised: halfway back to the target while there is one, so a link that recovers from a stall
- * gets back to what it carried within a few holds, and otherwise by one probe over the most that
- * arrived. A raise that makes samples drop puts the ceiling back to the last safe one. A step
- * toward the target is then tried again after twice the wait, until one holds, and the target is
- * given up after a few; a probe stops probing for a quiet period that doubles with every failed probe, so on a
- * stable link the estimate settles and drops all but stop. A hold that passes with nothing more
- * wanted forgets the failed probes. A cut below the last safe ceiling, as when the link got
- * worse, lets probing start again from there, so the link is found again when it recovers.
- * Traffic the credit does not meter is taken off what samples may use.
+ * raised: halfway to the target while there is one, so a link back from a stall carries what it
+ * did within a few holds, and otherwise by one probe over the most that arrived. A raise that
+ * makes samples drop puts the ceiling back to the last safe one. The target is given up once it
+ * is within a probe, or after a few steps toward it dropped; a probe that drops stops probing for
+ * a quiet period that doubles with every failed probe, so on a stable link the estimate settles
+ * and drops all but stop. A hold that passes with nothing more wanted forgets the failed probes.
+ * A cut below the last safe ceiling, as when the link got worse, lets probing start again from
+ * there, so the link is found again when it recovers. Traffic the credit does not meter is taken
+ * off what samples may use.
  */
 export class BandwidthEstimator {
   readonly #options: BandwidthEstimatorOptions;
   #last: Sample | undefined;
   #bytesIn = 0;
   #arrivedMax = 0;
-  #cleanSince: number | undefined;
   #unmetered = 0;
   #ceiling = Number.POSITIVE_INFINITY;
   #ceilingAt = Number.NEGATIVE_INFINITY;
@@ -135,6 +135,7 @@ export class BandwidthEstimator {
   #failedProbes = 0;
   #target: number | undefined;
   #failedSteps = 0;
+  #cleanSince: number | undefined;
   #recoverUntil = Number.NEGATIVE_INFINITY;
   #revision = 0;
   #current: BudgetEstimate;
@@ -201,12 +202,12 @@ export class BandwidthEstimator {
 
   #saturatedSince(previous: Sample, stats: LinkCounters, dropped: number | undefined): boolean {
     const { dropShare, lossPerDiscard } = this.#options;
-    const lost =
+    const counted =
       dropped !== undefined && previous.dropped !== undefined
         ? dropped - previous.dropped
-        : stats.droppedSamples -
-          previous.stats.droppedSamples -
-          lossPerDiscard * (stats.framesDiscarded - previous.stats.framesDiscarded);
+        : stats.droppedSamples - previous.stats.droppedSamples;
+    const discarded = stats.framesDiscarded - previous.stats.framesDiscarded;
+    const lost = counted - lossPerDiscard * discarded;
     const taken = stats.samples - previous.stats.samples + Math.max(0, lost);
 
     return lost > 0 && lost > dropShare * taken;
@@ -216,16 +217,15 @@ export class BandwidthEstimator {
     const { capBytesPerSecond, floorBytesPerSecond, backoff } = this.#options;
 
     if (this.#probeFrom !== undefined) {
-      this.#cut(this.#probeFrom, now, lateMs);
-      this.#probeFrom = undefined;
-
       if (this.#target === undefined) {
         this.#probing = false;
         this.#failedProbes++;
-      } else if (++this.#failedSteps >= MAX_FAILED_STEPS) {
+      } else if (++this.#failedSteps === MAX_FAILED_STEPS) {
         this.#target = undefined;
       }
 
+      this.#cut(this.#probeFrom, now, lateMs);
+      this.#probeFrom = undefined;
       return;
     }
 
@@ -236,11 +236,10 @@ export class BandwidthEstimator {
 
     const carried = Math.min(capBytesPerSecond, this.#ceiling);
     const ceiling = Math.max(floorBytesPerSecond, Math.min(arrived, carried * backoff));
-    if (this.#target === undefined) {
+    if (this.#target === undefined && this.#heldClean(now)) {
+      this.#target = carried;
       this.#failedSteps = 0;
     }
-
-    this.#target ??= this.#heldClean(now) ? this.#current.capacityBytesPerSecond : undefined;
 
     if (this.#safe !== undefined && ceiling < this.#safe) {
       this.#safe = ceiling;
@@ -263,10 +262,6 @@ export class BandwidthEstimator {
       this.#probing = true;
     }
 
-    if (this.#probeFrom !== undefined) {
-      this.#failedSteps = 0;
-    }
-
     if (this.#probeFrom !== undefined || this.#safe === undefined) {
       this.#safe = this.#ceiling;
       this.#probeFrom = undefined;
@@ -277,35 +272,22 @@ export class BandwidthEstimator {
       return;
     }
 
-    if (this.#target !== undefined && this.#target > this.#ceiling) {
-      if (now - this.#ceilingAt >= holdMs * 2 ** this.#failedSteps) {
-        this.#probeFrom = this.#ceiling;
-        this.#setCeiling(this.#towardTarget(this.#target), now);
-      }
-    } else if (this.#probing) {
+    if (this.#target !== undefined && this.#target <= this.#ceiling * probeGrowth) {
       this.#target = undefined;
+    }
+
+    if (this.#target !== undefined) {
+      this.#probeFrom = this.#ceiling;
+      this.#setCeiling((this.#ceiling + this.#target) / 2, now);
+    } else if (this.#probing) {
       this.#probeFrom = this.#ceiling;
       this.#setCeiling(Math.max(this.#ceiling, this.#arrivedMax) * probeGrowth, now);
     }
   }
 
-  /** Whether the link ran a hold period without drops until now. */
+  /** Whether the link ran a hold period without samples dropping, until now. */
   #heldClean(now: number): boolean {
     return this.#cleanSince !== undefined && now - this.#cleanSince >= this.#options.holdMs;
-  }
-
-  /** Halfway from the ceiling to the target, or the target itself once that is close. */
-  #towardTarget(target: number): number {
-    const halfway = (this.#ceiling + target) / 2;
-
-    if (target - halfway > target * (this.#options.probeGrowth - 1)) {
-      return halfway;
-    }
-
-    this.#target = undefined;
-    this.#failedProbes = 0;
-    this.#failedSteps = 0;
-    return target;
   }
 
   #setCeiling(ceiling: number, now: number): void {
