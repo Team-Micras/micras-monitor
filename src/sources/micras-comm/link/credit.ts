@@ -49,7 +49,7 @@ export interface CreditPolicy {
    * @param sentTotal The robot's cumulative total, wrapping at 2³².
    * @param now The current time, in milliseconds.
    * @returns The bytes lost on the way that it gives back, or null when the total is not one the
-   * robot could have sent in this session, which only a robot that started over sends.
+   * robot could have sent since the handshake, which only a robot that started over sends.
    */
   resync(sentTotal: number, now: number): number | null;
 
@@ -74,7 +74,7 @@ export interface CreditPolicy {
 }
 
 /** When `CreditLedger` gives credit back. */
-export interface CumulativeCreditOptions {
+export interface CreditLedgerOptions {
   /** Give back as soon as this many bytes are owed. */
   minBytes: number;
 
@@ -83,7 +83,7 @@ export interface CumulativeCreditOptions {
 }
 
 /** A CREDIT is 9 bytes on the wire, so one per 64 bytes received costs about a seventh of the uplink. */
-export const DEFAULT_CUMULATIVE: CumulativeCreditOptions = { minBytes: 64, maxDelayMs: 10 };
+export const DEFAULT_CREDIT_LEDGER: CreditLedgerOptions = { minBytes: 64, maxDelayMs: 10 };
 
 const U32_RANGE = 2 ** 32;
 
@@ -111,7 +111,7 @@ export class CreditLedger implements CreditPolicy {
    * gives the one the robot announced.
    */
   constructor(
-    private readonly options: CumulativeCreditOptions = DEFAULT_CUMULATIVE,
+    private readonly options: CreditLedgerOptions = DEFAULT_CREDIT_LEDGER,
     private window: number = CREDIT_WINDOW
   ) {}
 

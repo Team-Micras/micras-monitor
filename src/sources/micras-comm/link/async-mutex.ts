@@ -3,7 +3,7 @@
  * given while none runs starts at once, in the same call, so a request it sends goes out before
  * the caller does anything else.
  *
- * The session uses it for requests whose ERROR could be taken for another's, which only waiting
+ * The link uses it for requests whose ERROR could be taken for another's, which only waiting
  * can tell apart.
  */
 export class AsyncMutex {

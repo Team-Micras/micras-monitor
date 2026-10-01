@@ -27,18 +27,18 @@ export class TimeoutError extends Error {
 
 /** Why a request ended without an answer from the robot. */
 export type LinkErrorReason =
-  /** The session is not in a state that allows the request. */
+  /** The link is not in a state that allows the request. */
   | 'not-ready'
   /** The transport dropped. */
   | 'disconnected'
-  /** The session restarted its handshake, which resets what the request depended on. */
+  /** The link restarted its handshake, which resets what the request depended on. */
   | 'restarted'
   /** A later call replaced this one. */
   | 'superseded'
-  /** The session was closed. */
+  /** The link was closed. */
   | 'closed';
 
-/** A request ended because of what happened to the session, not because of the robot. */
+/** A request ended because of what happened to the link, not because of the robot. */
 export class LinkError extends Error {
   override readonly name = 'LinkError';
 

@@ -1,13 +1,12 @@
 /**
- * The sessions of the app as React reads them.
+ * The recordings of the app as React reads them.
  *
  * @module
  */
 
 import { createContext, use, useSyncExternalStore } from 'react';
 
-import type { StoreStatus, HistoryStore } from '@/history';
-
+import type { HistoryStore, StoreStatus } from '@/history';
 import type { RecordingManager, RecordingsState } from '@/recording/library/recording-manager';
 
 /** Carries the app's {@link RecordingManager}, or null where sessions are not kept. */

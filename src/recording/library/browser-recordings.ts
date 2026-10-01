@@ -1,5 +1,5 @@
 /**
- * The sessions of the app in a browser: the Origin Private File System through its worker where
+ * The recordings of the app in a browser: the Origin Private File System through its worker where
  * the browser has one, memory otherwise, and Web Locks between tabs.
  *
  * @module

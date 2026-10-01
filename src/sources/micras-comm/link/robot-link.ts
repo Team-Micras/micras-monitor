@@ -63,9 +63,9 @@ import { MemorySchemaCache, type SchemaCache, type SchemaEntry } from './schema'
 import { SchemaLoader, type SchemaProgress } from './schema-loader';
 import { WriteQueue } from './write-queue';
 
-/** What a session is built from; everything has a default. */
+/** What a link is built from; everything has a default. */
 export interface RobotLinkOptions {
-  /** Where schemas are kept between sessions; in memory by default. */
+  /** Where schemas are kept between connections; in memory by default. */
   schemaCache?: SchemaCache;
 
   /** When to give credit back; protocol version 2's coalesced total by default. */
@@ -74,7 +74,7 @@ export interface RobotLinkOptions {
   /** Timeouts and periods, over the defaults for a radio link. */
   timing?: Partial<LinkTiming>;
 
-  /** Where epoch ids come from; a counter shared by every session on the page by default. */
+  /** Where epoch ids come from; a counter shared by every link on the page by default. */
   epochIds?: EpochIdSource;
 }
 
@@ -124,9 +124,9 @@ export class RobotLink {
   private statsTimer: ReturnType<typeof setInterval> | undefined;
 
   /**
-   * @param transport The byte pipe to the robot. The session starts its handshake as soon as the
-   * transport is open, and closes it when the session is closed.
-   * @param options What the session is built from.
+   * @param transport The byte pipe to the robot. The link starts its handshake as soon as the
+   * transport is open, and closes it when the link is closed.
+   * @param options What the link is built from.
    */
   constructor(
     private readonly transport: Transport,
@@ -165,7 +165,7 @@ export class RobotLink {
     this.onTransportState();
   }
 
-  /** Where the session is now. */
+  /** Where the link is now. */
   get state(): LinkState {
     return this.current;
   }
@@ -220,7 +220,7 @@ export class RobotLink {
     }
   }
 
-  /** End the session and close the transport. Every pending request fails. */
+  /** End the link and close the transport. Every pending request fails. */
   close(): void {
     if (this.current.kind === 'closed') {
       return;

@@ -83,7 +83,7 @@ variables by name, so adding a variable to the firmware does not lose them.
 
 ## REC and sessions
 
-The live session is the telemetry store of the running app, always in memory; the link feeds it for
+The live session is the history store of the running app, always in memory; the link feeds it for
 the life of the tab, across reconnections. REC writes it to a session file in the browser's Origin
 Private File System: the whole session so far first, then every block as it seals, and the block
 being filled every 5 s, so a tab that dies loses at most the last 5 s. Stopping ends the file; Reset

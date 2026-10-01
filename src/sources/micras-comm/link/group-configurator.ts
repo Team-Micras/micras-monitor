@@ -14,7 +14,7 @@ import { encodeGroupDefine, encodeGroupEnable, type GroupAck } from './messages'
 import type { ErrorMatcher, PendingRequests } from './requests';
 import type { SchemaEntry } from './schema';
 
-/** What the group configurator needs from the session. */
+/** What the group configurator needs from the link. */
 export interface GroupConfiguratorHost {
   /** Send a frame to the robot. */
   send(frame: Uint8Array): void;
@@ -43,7 +43,7 @@ export interface GroupConfiguratorHost {
   /** Every pass is done and nothing more is waiting to be applied. */
   settled(): void;
 
-  /** Report something that went wrong without stopping the session. */
+  /** Report something that went wrong without stopping the link. */
   report(message: string): void;
 }
 
@@ -70,7 +70,7 @@ export class GroupConfigurator {
   private pending = false;
 
   /**
-   * @param host What the configurator needs from the session.
+   * @param host What the configurator needs from the link.
    * @param epochs Where the epochs of the groups begin and end.
    */
   constructor(

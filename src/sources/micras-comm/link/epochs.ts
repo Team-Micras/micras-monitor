@@ -38,11 +38,11 @@ export interface GroupLayout extends GroupRequest {
 
 /**
  * One definition of a group, from the robot enabling it until the group is defined again, turned
- * off or lost with the session. The robot restarts the sequence of a group every time it is
+ * off or lost with the link. The robot restarts the sequence of a group every time it is
  * defined, so a sequence number only means something inside its epoch.
  */
 export interface Epoch {
-  /** Unique across sessions sharing an id source, never reused. */
+  /** Unique across links sharing an id source, never reused. */
   readonly id: number;
   readonly group: number;
   readonly variableIds: readonly number[];
@@ -77,8 +77,8 @@ export type EpochIdSource = () => number;
 let lastSharedEpochId = 0;
 
 /**
- * The id source sessions use unless given one: a counter shared by every session on the page, so
- * that a store holding epochs of several sessions never sees two with the same id.
+ * The id source links use unless given one: a counter shared by every link on the page, so
+ * that a store holding epochs of several links never sees two with the same id.
  */
 export const sharedEpochIds: EpochIdSource = () => ++lastSharedEpochId;
 

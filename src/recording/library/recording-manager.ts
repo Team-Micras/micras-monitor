@@ -1,10 +1,10 @@
 /**
- * The sessions of the app: recording the live one, the saved ones, recovering a recording a
+ * The recordings of the app: recording the live history, the saved recordings, recovering one a
  * dead tab left behind, and opening a saved one to look at.
  *
- * The live session is the live store, always in memory, fed by the link. REC writes it to a
- * session file, the whole of it first and then as it grows, every 5 s at least; stopping ends
- * the file, and reset forgets the live history. A saved session opens read only, into a store of
+ * The live history is the live store, always in memory, fed by the source. REC writes it to a
+ * recording file, the whole of it first and then as it grows, every 5 s at least; stopping ends
+ * the file, and reset forgets the live history. A saved recording opens read only, into a store of
  * its own that loads its blocks back from the file; the link and the live store carry on
  * underneath, and REC keeps recording, until the app goes back to live.
  *

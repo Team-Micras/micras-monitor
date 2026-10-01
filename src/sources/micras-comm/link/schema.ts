@@ -13,7 +13,7 @@ export interface SchemaEntry {
 }
 
 /**
- * Keeps schemas between sessions, keyed by their hash, so that a robot running the same build is
+ * Keeps schemas between connections, keyed by their hash, so that a robot running the same build is
  * learned once. The link keeps no storage of its own; the application injects one, such as a
  * `localStorage` adapter.
  */

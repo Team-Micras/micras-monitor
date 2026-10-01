@@ -18,12 +18,12 @@ export type SchemaProgress =
   /** The page changed nothing. */
   | { readonly kind: 'ignored' };
 
-/** What the schema loader needs from the session. */
+/** What the schema loader needs from the link. */
 export interface SchemaLoaderHost {
   /** Send a frame to the robot. */
   send(frame: Uint8Array): void;
 
-  /** Report something that went wrong without stopping the session. */
+  /** Report something that went wrong without stopping the link. */
   report(message: string): void;
 }
 
@@ -39,8 +39,8 @@ export class SchemaLoader {
   private gapRequestedFrom = -1;
 
   /**
-   * @param cache Where schemas are kept between sessions.
-   * @param host What the loader needs from the session.
+   * @param cache Where schemas are kept between connections.
+   * @param host What the loader needs from the link.
    */
   constructor(
     private readonly cache: SchemaCache,

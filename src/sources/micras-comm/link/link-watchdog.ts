@@ -2,7 +2,7 @@ import type { LinkTiming } from './link-events';
 import { encodePing } from './messages';
 import type { PendingRequests } from './requests';
 
-/** What the watchdog needs from the session. */
+/** What the watchdog needs from the link. */
 export interface LinkWatchdogHost {
   /** Send a frame to the robot. */
   send(frame: Uint8Array): void;

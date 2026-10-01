@@ -1,5 +1,5 @@
 /**
- * The source that reaches a robot over `micras_comm`: a session over WebSocket or Bluetooth and
+ * The source that reaches a robot over `micras_comm`: a link over WebSocket or Bluetooth and
  * the stream planner that owns its groups, mapped onto the monitor's model.
  *
  * @module
@@ -52,7 +52,7 @@ import { CommandResult, Severity, WriteStatus } from './wire';
 
 /** What the source is built from; everything has a default. */
 export interface MicrasCommOptions {
-  /** The session's timeouts and periods, over the defaults for a radio link. */
+  /** The link's timeouts and periods, over the defaults for a radio link. */
   readonly timing?: Partial<LinkTiming>;
   /** How the stream planner plans. */
   readonly planner?: StreamPlannerOptions;
@@ -60,11 +60,11 @@ export interface MicrasCommOptions {
   readonly bluetooth?: BluetoothLike;
   /** Opens WebSockets; the runtime's own by default. */
   readonly createSocket?: WebSocketFactory;
-  /** Where schemas are kept between sessions; in memory, for the life of the source, by default. */
+  /** Where schemas are kept between connections; in memory, for the life of the source, by default. */
   readonly schemaCache?: SchemaCache;
 }
 
-/** A session with the transport under it and the planner over it. */
+/** A robot link with the transport under it and the planner over it. */
 interface Link {
   readonly transport: Transport;
   readonly session: RobotLink;
@@ -175,7 +175,7 @@ class SequenceGaps {
 }
 
 /**
- * Reaches robots over `micras_comm`. Each connection gets a session and a stream planner of its
+ * Reaches robots over `micras_comm`. Each connection gets a link and a stream planner of its
  * own; a Bluetooth link that waits for a click is kept, so that connecting to Bluetooth again
  * reaches the same device instead of asking for another.
  */
@@ -196,7 +196,7 @@ export class MicrasCommSource implements Source {
     this.targets = options.bluetooth === undefined ? ['websocket'] : ['websocket', 'bluetooth'];
   }
 
-  /** The session of the latest connection, if it has one, for diagnostics. */
+  /** The link of the latest connection, if it has one, for diagnostics. */
   get session(): RobotLink | undefined {
     return this.#current?.link?.session;
   }
@@ -267,7 +267,7 @@ export class MicrasCommSource implements Source {
   }
 }
 
-/** One connection: the protocol work between a session and the monitor's sink. */
+/** One connection: the protocol work between a link and the monitor's sink. */
 class MicrasCommConnection implements SourceConnection {
   readonly #target: Target;
   readonly #sink: SourceSink;
@@ -299,7 +299,7 @@ class MicrasCommConnection implements SourceConnection {
   }
 
   /**
-   * Runs over a link: listens to it and opens its session, or reaches its Bluetooth device again
+   * Runs over a link: listens to it and opens its robot link, or reaches its Bluetooth device again
    * if it waits for a click, unless the connection was closed meanwhile.
    */
   start(link: Link): void {
@@ -497,9 +497,9 @@ class MicrasCommConnection implements SourceConnection {
   }
 
   /**
-   * Tells the monitor the robot's variables when the session learns a schema. While the same robot
+   * Tells the monitor the robot's variables when the link learns a schema. While the same robot
    * loads a different one, as after a new build, the variables known stay, so the robot package
-   * on screen does not flicker; the session refuses requests until the new schema is in, and
+   * on screen does not flicker; the link refuses requests until the new schema is in, and
    * another robot, by name, drops them at once.
    */
   #refreshVariables(): void {

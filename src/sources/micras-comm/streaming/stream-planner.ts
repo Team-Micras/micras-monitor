@@ -91,12 +91,12 @@ function sameGroups(a: readonly GroupRequest[], b: readonly GroupRequest[]): boo
 }
 
 /**
- * Decides what a session streams: the variables asked for, grouped by rate and fitted into the
+ * Decides what a link streams: the variables asked for, grouped by rate and fitted into the
  * budget the link measurably carries, applied with `setGroups`.
  *
  * Requests are planned once they have been left alone for a moment, so a burst of layout changes
  * reconfigures the robot once, and requests equal to the last ones change nothing. The budget is
- * estimated again with every stats event of the session, from the robot's own count of dropped
+ * estimated again with every stats event of the link, from the robot's own count of dropped
  * samples when a request says which variable holds it. A plan that no longer fits, or that
  * samples drop under, is made again; one that was cut is made again when the ceiling of the
  * link moved or the budget grew enough to be worth a reconfiguration. Samples dropping and a
@@ -129,7 +129,7 @@ export class StreamPlanner {
   private closed = false;
 
   /**
-   * @param session The session whose groups the planner owns.
+   * @param session The link whose groups the planner owns.
    * @param options How to plan.
    */
   constructor(
@@ -200,7 +200,7 @@ export class StreamPlanner {
     this.replan();
   }
 
-  /** Stop planning. The session keeps the groups it has. */
+  /** Stop planning. The link keeps the groups it has. */
   close(): void {
     this.closed = true;
     clearTimeout(this.timer);

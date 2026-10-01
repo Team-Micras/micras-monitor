@@ -1,5 +1,5 @@
 /**
- * How the state of a transport and of the session over it read as a source's status.
+ * How the state of a transport and of the link over it read as a source's status.
  *
  * @module
  */
@@ -24,7 +24,7 @@ const UP_STATES: ReadonlySet<LinkState['kind']> = new Set([
   'streaming',
 ]);
 
-/** Whether a session's link is up: the robot said who it is and takes commands. */
+/** Whether a link is up: the robot said who it is and takes commands. */
 export function isLinkUp(state: LinkState): boolean {
   return UP_STATES.has(state.kind);
 }
@@ -64,8 +64,8 @@ function transportStatus(target: Target, state: TransportState): SourceStatus {
 }
 
 /**
- * The status of a live link. A session that is up is `linked`; one that lost its transport is
- * `connecting` while the transport retries and `failed` once it gave up; a session in error is
+ * The status of a live link. A link that is up is `linked`; one that lost its transport is
+ * `connecting` while the transport retries and `failed` once it gave up; a link in error is
  * `failed` with the error's message.
  */
 export function connectionStatus(link: LinkSnapshot): SourceStatus {

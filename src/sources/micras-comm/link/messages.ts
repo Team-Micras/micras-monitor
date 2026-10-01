@@ -28,7 +28,7 @@ export interface CommandReply {
   readonly reason?: number;
 }
 
-/** The answer to HELLO: what the robot is and how the session with it works. */
+/** The answer to HELLO: what the robot is and how the link with it works. */
 export interface HelloAck {
   type: MessageType.HELLO_ACK;
   version: typeof PROTOCOL_VERSION;
@@ -287,7 +287,7 @@ function decodeError(reader: PayloadReader): RobotErrorMessage {
 
 const EMPTY = new Uint8Array(0);
 
-/** HELLO: start a session, which resets the robot's groups and credit window. */
+/** HELLO: start a handshake, which resets the robot's groups and credit window. */
 export function encodeHello(): Uint8Array {
   return encodeFrame(MessageType.HELLO, EMPTY);
 }

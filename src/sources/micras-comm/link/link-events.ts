@@ -2,7 +2,7 @@ import type { ErrorCode, WireValue, Severity, WriteStatus } from '../wire';
 import type { Epoch, EpochEndReason, SampleValue } from './epochs';
 import type { SchemaEntry } from './schema';
 
-/** Why the session is starting a handshake. */
+/** Why the link is starting a handshake. */
 export type HandshakeReason =
   /** The transport just opened. */
   | 'connected'
@@ -21,7 +21,7 @@ export type HandshakeReason =
   | 'credit-resync';
 
 /**
- * Where the session is. It goes `disconnected → handshaking → loadingSchema → configuring →
+ * Where the link is. It goes `disconnected → handshaking → loadingSchema → configuring →
  * streaming`, skipping the schema when it is already known and the configuration when no group
  * is asked for, and goes back to `handshaking` to recover from a stall or a silent robot. It keeps
  * sending HELLO for as long as the transport is open; `error` is only for what retrying cannot
@@ -43,7 +43,7 @@ export interface RobotInfo {
   readonly variableCount: number;
   /** The period of the control loop, which is the unit of a group period. */
   readonly loopTimeUs: number;
-  /** The credit window the robot starts every session with. */
+  /** The credit window the robot starts every handshake with. */
   readonly creditWindow: number;
   /** The same for every handshake with one boot of the robot, and different after a reboot. */
   readonly bootId: number;
@@ -51,7 +51,7 @@ export interface RobotInfo {
   readonly robotName: string;
 }
 
-/** A schema the session can use. */
+/** A schema the link can use. */
 export interface SchemaReady {
   readonly hash: number;
   readonly entries: readonly SchemaEntry[];
@@ -146,7 +146,7 @@ export interface ProtocolErrorEvent {
   readonly context?: number;
 }
 
-/** Counters of the link since the session was created. */
+/** Counters of the link since it was created. */
 export interface LinkCounters {
   readonly bytesIn: number;
   readonly bytesOut: number;
@@ -171,7 +171,7 @@ export interface LinkCounters {
   readonly clockResets: number;
 }
 
-/** Every event a session emits, by name. */
+/** Every event a link emits, by name. */
 export interface LinkEvents {
   state: LinkState;
   schema: SchemaReady;
@@ -187,7 +187,7 @@ export interface LinkEvents {
   stats: LinkCounters;
 }
 
-/** Every timeout and period of a session, in milliseconds unless named otherwise. */
+/** Every timeout and period of a link, in milliseconds unless named otherwise. */
 export interface LinkTiming {
   /** How long to wait for the first HELLO_ACK before sending HELLO again. */
   helloTimeoutMs: number;

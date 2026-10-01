@@ -4,8 +4,8 @@ import type { LinkTiming, WriteEvent, WriteResult } from './link-events';
 import { encodeWrite } from './messages';
 import type { PendingRequests } from './requests';
 
-/** What the writes need from the session. */
-export interface VariableWritesHost {
+/** What the writes need from the link. */
+export interface WriteQueueHost {
   /** Send a frame to the robot. */
   send(frame: Uint8Array): void;
 
@@ -37,7 +37,7 @@ export class WriteQueue {
   private readonly inFlight = new Map<number, Write>();
   private readonly held = new Map<number, Write>();
 
-  constructor(private readonly host: VariableWritesHost) {}
+  constructor(private readonly host: WriteQueueHost) {}
 
   /**
    * Write a variable, now or once the write in flight for it is answered.

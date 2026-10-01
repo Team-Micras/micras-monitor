@@ -64,7 +64,7 @@ interface Sample {
 }
 
 /**
- * Estimates the bytes per second a link carries from the session's counters.
+ * Estimates the bytes per second a link carries from its counters.
  *
  * The credit bounds the link at one window per round trip, and the robot's UART bounds it
  * again. Neither says what the radio carries: that only shows when samples drop because the
@@ -113,7 +113,7 @@ export class BandwidthEstimator {
   /**
    * Take the counters of the link.
    *
-   * @param stats The session's counters.
+   * @param stats The link's counters.
    * @param creditWindow The robot's credit window, in bytes.
    * @param now The current time, in milliseconds.
    * @param wantsMore Whether the plan was cut to fit, which lets a safe ceiling be probed.
