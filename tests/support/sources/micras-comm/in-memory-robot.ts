@@ -35,6 +35,9 @@ export interface InMemoryRobot {
   /** What it did, over every connection. */
   readonly stats: RobotStats;
 
+  /** The link's faults, which a test may change while the robot runs. */
+  readonly faults: SimulatedRobotOptions;
+
   /** The robot on the latest connection, if one is open. */
   readonly robot: Robot | undefined;
 
@@ -76,6 +79,7 @@ export function startInMemoryRobot(
 
   return {
     stats,
+    faults: settings,
     get robot() {
       return latest;
     },
