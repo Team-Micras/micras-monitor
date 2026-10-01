@@ -57,6 +57,12 @@ export type EpochEndReason =
   /** The robot's clock started over while the group streamed, which opens a new timeline. */
   | 'clock-reset';
 
+/** An epoch that went out of step, and the samples it lost when it did. */
+interface OutOfStep {
+  readonly epoch: Epoch;
+  readonly lost: number;
+}
+
 /** A decoded value: booleans as 0 or 1, 64 bit integers as `bigint`. */
 export type SampleValue = number | bigint;
 
@@ -245,7 +251,8 @@ export class OpenEpoch {
 export class EpochRegistry {
   readonly #context: LinkContext;
   readonly #groups = new Map<number, OpenEpoch>();
-  readonly #outOfStep = new Map<number, { readonly epoch: Epoch; readonly lost: number }>();
+  readonly #outOfStep = new Map<number, OutOfStep>();
+  readonly #continuing = new Map<number, OutOfStep>();
   readonly #clock = new TimestampUnwrapper();
   #timeline = 0;
   #active: readonly Epoch[] | null = null;
@@ -285,7 +292,8 @@ export class EpochRegistry {
   /**
    * Start the epoch a definition opens, ending the one the group was in. A group defined again
    * with the variables it had when it went out of step, on the same timeline, continues that
-   * epoch's stream.
+   * epoch's stream, and still does when samples of what the robot streamed meanwhile put it out
+   * of step again before it is enabled.
    *
    * @param layout What was defined.
    * @param ack What the robot acknowledged for it.
@@ -311,6 +319,10 @@ export class EpochRegistry {
       ...(continued && { continues: continued.epoch.id }),
     };
     const open = new OpenEpoch(epoch, layout.types, continued?.lost ?? 0);
+
+    if (continued) {
+      this.#continuing.set(layout.group, continued);
+    }
 
     this.#groups.set(layout.group, open);
     return open;
@@ -340,6 +352,7 @@ export class EpochRegistry {
   /** End the epoch of a group, if it has one. */
   end(group: number, reason: EpochEndReason): void {
     this.#outOfStep.delete(group);
+    this.#continuing.delete(group);
     const open = this.#groups.get(group);
 
     if (!open) {
@@ -361,6 +374,7 @@ export class EpochRegistry {
     }
 
     this.#outOfStep.clear();
+    this.#continuing.clear();
   }
 
   /** Every announced epoch, by group; the same array until one begins or ends. */
@@ -449,12 +463,14 @@ export class EpochRegistry {
   ): SampleOutcome {
     const lost = open.active ? open.takenSince(sample.timestampUs, spacingUs, nowMs) : 0;
 
+    const record = open.active ? { epoch: open.epoch, lost } : this.#continuing.get(sample.group);
+
     this.#dropped(open.epoch, lost);
     this.#context.report(message);
     this.end(sample.group, 'out-of-step');
 
-    if (open.active) {
-      this.#outOfStep.set(sample.group, { epoch: open.epoch, lost });
+    if (record) {
+      this.#outOfStep.set(sample.group, record);
     }
 
     return 'out-of-step';
@@ -497,6 +513,7 @@ export class EpochRegistry {
    */
   #moveToTimeline(): void {
     this.#outOfStep.clear();
+    this.#continuing.clear();
 
     for (const [group, open] of this.#groups) {
       const next = open.continueAs({ ...open.epoch, id: nextEpochId(), timeline: this.#timeline });

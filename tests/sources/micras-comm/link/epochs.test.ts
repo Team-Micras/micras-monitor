@@ -279,6 +279,24 @@ describe('samples', () => {
     expect(samples.at(-1)).toMatchObject({ epoch: again.id, missingBefore: 1 + 4 });
   });
 
+  test('a stale sample before the group is enabled again keeps the stream to continue', () => {
+    const { registry, samples } = recordingRegistry();
+    const first = define(registry).epoch;
+    registry.receive(...sampleAt(0), LOOP_TIME_US);
+    registry.receive(sampleAt(1, 4, VALUES.subarray(1))[0], sampleAt(4)[1], LOOP_TIME_US);
+    define(registry);
+
+    expect(
+      registry.receive(sampleAt(2, 5, VALUES.subarray(1))[0], sampleAt(5)[1], LOOP_TIME_US)
+    ).toBe('out-of-step');
+
+    const again = define(registry).epoch;
+    registry.receive(...sampleAt(0, 7), LOOP_TIME_US);
+
+    expect(again.continues).toBe(first.id);
+    expect(samples.at(-1)).toMatchObject({ epoch: again.id, missingBefore: 4 });
+  });
+
   test('a group defined again with other variables, or after it was turned off, starts afresh', () => {
     const { registry } = recordingRegistry();
     define(registry);
