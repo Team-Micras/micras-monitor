@@ -112,7 +112,9 @@ interface Sample {
  *
  * A ceiling that ran a hold period without drops is safe. While the plan wants more, it is then
  * raised: halfway to the target while there is one, so a link back from a stall carries what it
- * did within a few holds, and otherwise by one probe over the most that arrived. A raise that
+ * did within a few holds, though not while the credit at the round trip of the moment could not
+ * carry the step, as during the stall, since such a step tells nothing; and otherwise by one probe
+ * over the most that arrived. A raise that
  * makes samples drop puts the ceiling back to the last safe one. The target is given up once it
  * is within a probe, or after a few steps toward it dropped; a probe that drops stops probing for
  * a quiet period that doubles with every failed probe, so on a stable link the estimate settles
@@ -192,7 +194,7 @@ export class BandwidthEstimator {
       const lateMs = now - previous.at + (dropCounter?.periodMs ?? 0) + 2 * rtt;
       this.#onSaturated(arrived, now, lateMs);
     } else if (now - this.#ceilingAt >= this.#options.holdMs && Number.isFinite(this.#ceiling)) {
-      this.#onHeld(wantsMore, now);
+      this.#onHeld(wantsMore, this.#creditBound(stats.rttMs, creditWindow), now);
     }
 
     this.#cleanSince = saturated ? undefined : (this.#cleanSince ?? previous.at);
@@ -254,7 +256,7 @@ export class BandwidthEstimator {
     this.#setCeiling(Math.min(this.#ceiling, ceiling), now);
   }
 
-  #onHeld(wantsMore: boolean, now: number): void {
+  #onHeld(wantsMore: boolean, creditBound: number, now: number): void {
     const { holdMs, quietHolds, probeGrowth } = this.#options;
     const quietMs = holdMs * quietHolds * 2 ** Math.max(0, this.#failedProbes - 1);
 
@@ -277,9 +279,17 @@ export class BandwidthEstimator {
     }
 
     if (this.#target !== undefined) {
-      this.#probeFrom = this.#ceiling;
-      this.#setCeiling((this.#ceiling + this.#target) / 2, now);
-    } else if (this.#probing) {
+      const step = (this.#ceiling + this.#target) / 2;
+
+      if (step <= creditBound) {
+        this.#probeFrom = this.#ceiling;
+        this.#setCeiling(step, now);
+      }
+
+      return;
+    }
+
+    if (this.#probing) {
       this.#probeFrom = this.#ceiling;
       this.#setCeiling(Math.max(this.#ceiling, this.#arrivedMax) * probeGrowth, now);
     }
@@ -304,11 +314,16 @@ export class BandwidthEstimator {
     return previous + this.#options.smoothing * (next - previous);
   }
 
-  #capacity(rttMs: number | null, creditWindow: number): number {
+  /** What one credit window per round trip carries, or the UART when the window is unknown. */
+  #creditBound(rttMs: number | null, creditWindow: number): number {
     const { capBytesPerSecond, assumedRttMs } = this.#options;
     const rtt = rttMs !== null && rttMs > 0 ? rttMs : assumedRttMs;
-    const credit = creditWindow > 0 ? (creditWindow * 1000) / rtt : capBytesPerSecond;
-    return Math.min(capBytesPerSecond, credit, this.#ceiling);
+    return creditWindow > 0 ? (creditWindow * 1000) / rtt : capBytesPerSecond;
+  }
+
+  #capacity(rttMs: number | null, creditWindow: number): number {
+    const { capBytesPerSecond } = this.#options;
+    return Math.min(capBytesPerSecond, this.#creditBound(rttMs, creditWindow), this.#ceiling);
   }
 
   #estimate(rttMs: number | null, creditWindow: number, saturated: boolean): BudgetEstimate {
