@@ -251,6 +251,7 @@ export class LinkTally {
     clockResets: 0,
   };
   #frozen: LinkCounters | null = null;
+  #reportTimer: ReturnType<typeof setInterval> | undefined;
 
   /** The counters as they are now. */
   get snapshot(): LinkCounters {
@@ -264,6 +265,23 @@ export class LinkTally {
       this.#values[counter] += amount;
       this.#frozen = null;
     }
+  }
+
+  /**
+   * Hand the counters to a listener every interval, instead of any listener before.
+   *
+   * @param intervalMs How often, in milliseconds.
+   * @param listener What to call with them.
+   */
+  report(intervalMs: number, listener: (counters: LinkCounters) => void): void {
+    this.stopReporting();
+    this.#reportTimer = setInterval(() => listener(this.snapshot), intervalMs);
+  }
+
+  /** Stop handing the counters over. */
+  stopReporting(): void {
+    clearInterval(this.#reportTimer);
+    this.#reportTimer = undefined;
   }
 
   /** Set a value that is measured rather than counted. */

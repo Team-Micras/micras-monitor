@@ -5,11 +5,9 @@ import {
   ErrorCode,
   FrameReader,
   MessageType,
-  PROTOCOL_VERSION,
   TypeCode,
   validateValue,
   writeValue,
-  type Frame,
   type WireValue,
 } from '../wire';
 import { CreditFlow } from './credit';
@@ -37,10 +35,10 @@ import {
   encodeHello,
   encodeRead,
   isSupported,
+  unsupportedVersion,
   type CommandReply,
   type ForeignHelloAck,
   type HelloAck,
-  type Pong,
   type RobotMessage,
   type Sample,
 } from './messages';
@@ -102,7 +100,6 @@ export class RobotLink {
   #generation = 0;
   #discardedSeen = 0;
   #stateTimer: ReturnType<typeof setTimeout> | undefined;
-  #statsTimer: ReturnType<typeof setInterval> | undefined;
 
   /**
    * @param transport The byte pipe to the robot. The link starts its handshake as soon as the
@@ -138,12 +135,15 @@ export class RobotLink {
     );
     this.#watchdog = new LinkWatchdog(
       this.#context,
-      () => this.#streamingPeriodMs(),
+      () =>
+        this.#state.kind === 'streaming'
+          ? this.#epochs.fastestPeriodMs(this.#info?.loopTimeUs ?? 0)
+          : null,
       (reason) => this.#startHandshake(reason)
     );
     this.#writes = new WriteQueue(this.#context);
     this.#detach = [
-      this.#events.on('epoch', () => this.#watchdog.sampled(now())),
+      this.#events.on('epoch', () => this.#watchdog.sampled(performance.now())),
       transport.onBytes((bytes) => this.#onBytes(bytes)),
       transport.onState(() => this.#onTransportState()),
     ];
@@ -200,7 +200,7 @@ export class RobotLink {
     const closed = new LinkError('closed', 'The link was closed');
 
     this.#stopActivity(closed, 'disconnected');
-    this.#stopStats();
+    this.#counters.stopReporting();
     this.#groups.rejectWaiters(closed);
     this.#detach.forEach((unsubscribe) => unsubscribe());
     this.#transport.close();
@@ -285,7 +285,13 @@ export class RobotLink {
     const entry = this.#requireEntry(variableId);
     const bytes =
       entry.type === TypeCode.BLOB
-        ? await this.#sizeRefusals.run(() => this.#requestBlob(variableId, entry))
+        ? await this.#sizeRefusals.run(() => {
+            if (this.#requireEntry(variableId) !== entry) {
+              throw this.#notReady();
+            }
+
+            return this.#requestValue(variableId, true);
+          })
         : await this.#requestValue(variableId, false);
     const value = decodeReadValue(entry, bytes);
 
@@ -324,14 +330,6 @@ export class RobotLink {
     return answer;
   }
 
-  #requestBlob(variableId: number, entry: SchemaEntry): Promise<Uint8Array> {
-    if (this.#requireEntry(variableId) !== entry) {
-      throw this.#notReady();
-    }
-
-    return this.#requestValue(variableId, true);
-  }
-
   #requestValue(variableId: number, mayBeTooLarge: boolean): Promise<Uint8Array> {
     const answer = this.#requests.add(
       'read',
@@ -354,11 +352,13 @@ export class RobotLink {
 
     if (this.#transport.state.kind === 'open') {
       this.#reader.clear();
-      this.#startStats();
+      this.#counters.report(this.#timing.statsIntervalMs, (stats) =>
+        this.#events.emit('stats', stats)
+      );
       this.#startHandshake('connected');
     } else if (this.#state.kind !== 'disconnected') {
       this.#stopActivity(new LinkError('disconnected', 'The transport closed'), 'disconnected');
-      this.#stopStats();
+      this.#counters.stopReporting();
       this.#reader.clear();
       this.#setState({ kind: 'disconnected' });
     }
@@ -396,21 +396,14 @@ export class RobotLink {
     clearTimeout(this.#stateTimer);
 
     if (!isSupported(ack)) {
-      this.#fail(new Error(versionMismatch(ack.version)));
+      this.#fail(new Error(unsupportedVersion(ack.version)));
       return;
     }
 
     const previousBoot = this.#info?.bootId;
 
-    this.#info = {
-      protocolVersion: ack.version,
-      schemaHash: ack.schemaHash,
-      variableCount: ack.variableCount,
-      loopTimeUs: ack.loopTimeUs,
-      creditWindow: ack.creditWindow,
-      bootId: ack.bootId,
-      robotName: ack.robotName,
-    };
+    const { type: _type, version, ...announced } = ack;
+    this.#info = { protocolVersion: version, ...announced };
 
     if (previousBoot === undefined) {
       this.#epochs.beginTimeline('connected');
@@ -420,7 +413,7 @@ export class RobotLink {
 
     this.#credit.start(ack.creditWindow);
     this.#groups.forgetRobotGroups();
-    this.#watchdog.start(now());
+    this.#watchdog.start(performance.now());
     this.#applySchemaProgress(this.#schemaLoader.begin(ack.schemaHash, ack.variableCount));
   }
 
@@ -442,8 +435,6 @@ export class RobotLink {
           this.#startHandshake('schema-retry')
         );
         break;
-      case 'ignored':
-        break;
     }
   }
 
@@ -454,17 +445,14 @@ export class RobotLink {
       this.#groups.dropLayout(new LinkError('restarted', 'The robot has a different schema now'));
     }
 
+    const { kind: _kind, ...schema } = ready;
     this.#adoptedHash = ready.hash;
-    this.#events.emit('schema', {
-      hash: ready.hash,
-      entries: ready.entries,
-      fromCache: ready.fromCache,
-    });
+    this.#events.emit('schema', schema);
     this.#groups.configure();
   }
 
   #onBytes(bytes: Uint8Array): void {
-    const at = now();
+    const at = performance.now();
     const frames = this.#reader.push(bytes);
 
     this.#counters.add('bytesIn', bytes.length);
@@ -476,26 +464,21 @@ export class RobotLink {
     }
 
     for (const frame of frames) {
+      const message = decodeMessage(frame);
       this.#counters.add('framesIn');
       this.#credit.received(frame, at);
-      this.#dispatch(frame);
+
+      if (message) {
+        this.#handle(message);
+      } else {
+        this.#counters.add('framesUndecodable');
+        this.#context.report(
+          `Unreadable ${MessageType[frame.type] ?? `0x${frame.type.toString(16)}`} frame of ${frame.payload.length} bytes`
+        );
+      }
     }
 
-    this.#credit.giveBack();
-  }
-
-  #dispatch(frame: Frame): void {
-    const message = decodeMessage(frame);
-
-    if (!message) {
-      this.#counters.add('framesUndecodable');
-      this.#context.report(
-        `Unreadable ${MessageType[frame.type] ?? `0x${frame.type.toString(16)}`} frame of ${frame.payload.length} bytes`
-      );
-      return;
-    }
-
-    this.#handle(message);
+    this.#credit.giveBack(at);
   }
 
   #handle(message: RobotMessage): void {
@@ -512,7 +495,12 @@ export class RobotLink {
         this.#onSample(message);
         break;
       case MessageType.PONG:
-        this.#onPong(message);
+        if (
+          this.#requests.answer(message) &&
+          !this.#credit.resync(message.sentTotal, performance.now())
+        ) {
+          this.#startHandshake('credit-resync');
+        }
         break;
       case MessageType.LOG:
         this.#events.emit('log', {
@@ -535,12 +523,6 @@ export class RobotLink {
     }
   }
 
-  #onPong(pong: Pong): void {
-    if (this.#requests.answer(pong) && !this.#credit.resync(pong.sentTotal)) {
-      this.#startHandshake('credit-resync');
-    }
-  }
-
   /**
    * Take a sample into its epoch while groups stream, and have its group defined again or turned
    * off when it belongs to none.
@@ -550,7 +532,7 @@ export class RobotLink {
       return;
     }
 
-    const at = now();
+    const at = performance.now();
     const outcome = this.#epochs.receive(sample, at, this.#info?.loopTimeUs ?? 0);
 
     if (outcome === 'accepted') {
@@ -558,30 +540,6 @@ export class RobotLink {
     } else {
       this.#groups.noteUnknown(sample.group);
     }
-  }
-
-  #streamingPeriodMs(): number | null {
-    const epochs = this.openEpochs;
-
-    if (this.#state.kind !== 'streaming' || epochs.length === 0) {
-      return null;
-    }
-
-    const fastest = Math.min(...epochs.map((epoch) => epoch.periodTicks));
-    return (fastest * (this.#info?.loopTimeUs ?? 0)) / 1000;
-  }
-
-  #startStats(): void {
-    this.#stopStats();
-    this.#statsTimer = setInterval(
-      () => this.#events.emit('stats', this.stats),
-      this.#timing.statsIntervalMs
-    );
-  }
-
-  #stopStats(): void {
-    clearInterval(this.#statsTimer);
-    this.#statsTimer = undefined;
   }
 
   #fail(error: Error): void {
@@ -650,14 +608,4 @@ export class RobotLink {
     this.#state = state;
     this.#events.emit('state', state);
   }
-}
-
-function versionMismatch(version: number): string {
-  const update = version < PROTOCOL_VERSION ? "the robot's firmware" : 'this monitor';
-
-  return `The robot speaks version ${version} of the link protocol and this monitor speaks version ${PROTOCOL_VERSION}; update ${update} to connect`;
-}
-
-function now(): number {
-  return performance.now();
 }

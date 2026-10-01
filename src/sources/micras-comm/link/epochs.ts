@@ -389,6 +389,22 @@ export class EpochRegistry {
   }
 
   /**
+   * How long a period of the fastest group streaming is.
+   *
+   * @param loopTimeUs The period of the robot's control loop.
+   * @returns The period in milliseconds, or null when no epoch is announced.
+   */
+  fastestPeriodMs(loopTimeUs: number): number | null {
+    const epochs = this.active();
+
+    if (epochs.length === 0) {
+      return null;
+    }
+
+    return (Math.min(...epochs.map((epoch) => epoch.periodTicks)) * loopTimeUs) / 1000;
+  }
+
+  /**
    * Take a sample into its epoch. A defined group only streams once enabled, and the robot sends
    * the GROUP_ACK of the enable ahead of the first sample, so a sample of an epoch not yet
    * announced announces it: its acknowledgement came first on the wire, even when the configurator

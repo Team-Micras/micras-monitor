@@ -189,14 +189,15 @@ export class CreditFlow {
    * a new handshake sets it straight.
    *
    * @param sentTotal The total the PONG carries.
+   * @param now When it arrived, in milliseconds.
    * @returns Whether the count could be brought in line with it.
    */
-  resync(sentTotal: number): boolean {
+  resync(sentTotal: number, now: number): boolean {
     if (!this.#flowing) {
       return true;
     }
 
-    const recovered = this.#ledger.resync(sentTotal, performance.now());
+    const recovered = this.#ledger.resync(sentTotal, now);
 
     if (recovered === null) {
       return false;
@@ -206,15 +207,18 @@ export class CreditFlow {
     return true;
   }
 
-  /** Give back the credit due now, and come back when more will be due. */
-  giveBack(): void {
+  /**
+   * Give back the credit due now, and come back when more will be due.
+   *
+   * @param now The current time, in milliseconds.
+   */
+  giveBack(now: number): void {
     clearTimeout(this.#timer);
 
     if (!this.#flowing) {
       return;
     }
 
-    const now = performance.now();
     const grant = this.#ledger.take(now);
 
     if (grant) {
@@ -225,7 +229,7 @@ export class CreditFlow {
     const dueAt = this.#ledger.dueAt();
 
     if (dueAt !== null) {
-      this.#timer = setTimeout(() => this.giveBack(), Math.max(0, dueAt - now));
+      this.#timer = setTimeout(() => this.giveBack(performance.now()), Math.max(0, dueAt - now));
     }
   }
 }

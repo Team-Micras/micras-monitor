@@ -229,6 +229,17 @@ function decodeHelloAck(reader: PayloadReader): HelloAck | ForeignHelloAck {
   };
 }
 
+/**
+ * What to tell when the robot speaks another protocol version: which one, and which side to update.
+ *
+ * @param version The version the robot's HELLO_ACK named.
+ */
+export function unsupportedVersion(version: number): string {
+  const update = version < PROTOCOL_VERSION ? "the robot's firmware" : 'this monitor';
+
+  return `The robot speaks version ${version} of the link protocol and this monitor speaks version ${PROTOCOL_VERSION}; update ${update} to connect`;
+}
+
 /** Whether a HELLO_ACK is of the protocol version this monitor speaks. */
 export function isSupported(ack: HelloAck | ForeignHelloAck): ack is HelloAck {
   return ack.version === PROTOCOL_VERSION;
