@@ -32,8 +32,6 @@ export class StreamFeed {
   readonly #streams = new Map<number, Stream>();
   readonly #waiting = new Map<number, Stream>();
   #clock = 0;
-  #creditVariable: number | undefined;
-  #creditLeft: number | undefined;
 
   /**
    * @param sink Where the streams go.
@@ -45,20 +43,6 @@ export class StreamFeed {
   /** The run of the robot's clock the link is on, as the sink numbers clocks. */
   get clock(): number {
     return this.#clock;
-  }
-
-  /** The credit the robot last said it had left, once a stream carries it. */
-  get creditLeft(): number | undefined {
-    return this.#creditLeft;
-  }
-
-  /**
-   * Read the robot's credit left from the samples of a variable.
-   *
-   * @param variableId The variable, or undefined to stop.
-   */
-  watchCredit(variableId: number | undefined): void {
-    this.#creditVariable = variableId;
   }
 
   /**
@@ -149,13 +133,6 @@ export class StreamFeed {
 
     if (stream === undefined) {
       return;
-    }
-
-    const creditAt =
-      this.#creditVariable === undefined ? -1 : stream.variableIds.indexOf(this.#creditVariable);
-
-    if (creditAt >= 0) {
-      this.#creditLeft = Number(values[creditAt]);
     }
 
     this.#sink.sample(stream.id, timeUs, values, missingBefore);

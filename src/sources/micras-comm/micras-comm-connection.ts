@@ -22,9 +22,15 @@ import {
 } from '@/core/source';
 import type { Variable } from '@/core/variables';
 
-import { connectionStats, connectionStatus, phaseOf, type LinkPhase } from './connection-status';
+import {
+  connectionStats,
+  connectionStatus,
+  phaseOf,
+  sameTransportStatus,
+  type LinkPhase,
+} from './connection-status';
 import { asError } from './link/errors';
-import type { LinkState } from './link/link-events';
+import type { LinkState, SampleEvent } from './link/link-events';
 import type { RobotLink } from './link/robot-link';
 import type { SchemaEntry } from './link/schema';
 import { StreamFeed } from './stream-feed';
@@ -101,6 +107,8 @@ export class MicrasCommConnection implements SourceConnection {
   #status: SourceStatus | null = null;
   #phase: LinkPhase | null = null;
   #transportState: TransportState | null = null;
+  #creditVariable: number | undefined;
+  #creditLeft: number | undefined;
   #since = 0;
   #schema: readonly SchemaEntry[] | undefined;
   #variables: readonly Variable[] = [];
@@ -153,6 +161,7 @@ export class MicrasCommConnection implements SourceConnection {
       ),
       robotLink.on('protocolError', ({ message }) => this.#note('warning', message)),
       robotLink.on('stats', () => this.#onStats()),
+      robotLink.on('sample', (sample) => this.#readCredit(sample)),
       ...this.#feed.listen(robotLink),
       planner.on('plan', () => this.#refreshStats()),
       planner.on('error', (error) => this.#note('warning', `stream plan: ${error.message}`)),
@@ -185,7 +194,7 @@ export class MicrasCommConnection implements SourceConnection {
 
   request(demands: readonly StreamDemand[]): void {
     this.#demands = demands;
-    this.#feed.watchCredit(demands.find((demand) => demand.role === 'link.credit')?.variableId);
+    this.#creditVariable = demands.find((demand) => demand.role === 'link.credit')?.variableId;
     this.#link?.planner.request(this.#rateRequests());
   }
 
@@ -341,6 +350,20 @@ export class MicrasCommConnection implements SourceConnection {
     this.#sink.variables(variables);
   }
 
+  /** Keeps the credit the robot says it has left, from the samples of the variable that holds it. */
+  #readCredit({ epoch, values }: SampleEvent): void {
+    if (this.#creditVariable === undefined || this.#link === null) {
+      return;
+    }
+
+    const variableIds = this.#link.link.openEpochs.find((open) => open.id === epoch)?.variableIds;
+    const at = variableIds?.indexOf(this.#creditVariable) ?? -1;
+
+    if (at >= 0) {
+      this.#creditLeft = Number(values[at]);
+    }
+  }
+
   #onStats(): void {
     if (this.#droppedSinceStats > 0) {
       this.#note('warning', `${this.#droppedSinceStats} samples dropped`);
@@ -362,7 +385,7 @@ export class MicrasCommConnection implements SourceConnection {
         budget: planner.budget,
         plan: planner.plan,
         creditWindow: link.robot?.creditWindow ?? 0,
-        creditLeft: this.#feed.creditLeft,
+        creditLeft: this.#creditLeft,
         variables: this.#variables,
       })
     );
@@ -370,7 +393,7 @@ export class MicrasCommConnection implements SourceConnection {
 
   /**
    * Tells the status when it changed: the link moved to another phase, or it is down and its
-   * transport moved.
+   * transport moved in a way the status shows, which a retry that only counts on does not.
    */
   #refreshStatus(): void {
     if (this.#link === null || this.#closed) {
@@ -381,7 +404,7 @@ export class MicrasCommConnection implements SourceConnection {
     const phase = phaseOf(link.state);
     const transportState = phase === 'down' ? transport.state : null;
 
-    if (phase === this.#phase && transportState === this.#transportState) {
+    if (phase === this.#phase && sameTransportStatus(transportState, this.#transportState)) {
       return;
     }
 

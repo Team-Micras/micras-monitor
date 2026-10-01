@@ -99,14 +99,4 @@ describe('StreamFeed', () => {
     expect(told).toEqual(['boundary reconnect', 'boundary reboot', 'the robot rebooted']);
     expect(streams.clock).toBe(2);
   });
-
-  test('reads the credit left from the variable it watches', () => {
-    const { link, streams } = feed();
-    streams.watchCredit(2);
-
-    link.emit('epoch', FIRST);
-    link.emit('sample', sample(7, 100));
-
-    expect(streams.creditLeft).toBe(5);
-  });
 });

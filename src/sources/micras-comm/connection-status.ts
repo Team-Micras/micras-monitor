@@ -134,6 +134,25 @@ export function connectionStats(snapshot: StatsSnapshot): SourceStats {
   };
 }
 
+/**
+ * Whether two states of a transport read as the same status: what {@link connectionStatus} takes
+ * from them is the same, whatever attempt they count or how long the next retry waits.
+ */
+export function sameTransportStatus(a: TransportState | null, b: TransportState | null): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+
+  return (
+    a.kind === b.kind &&
+    (a.kind !== 'closed' ||
+      (b.kind === 'closed' &&
+        a.reason === b.reason &&
+        (a.retryInMs === undefined) === (b.retryInMs === undefined) &&
+        a.error?.message === b.error?.message))
+  );
+}
+
 function transportStatus(target: Target, state: TransportState): SourceStatus {
   if (state.kind !== 'closed' || state.retryInMs !== undefined) {
     return { kind: 'connecting', target };
