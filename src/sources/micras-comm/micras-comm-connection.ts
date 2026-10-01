@@ -67,7 +67,7 @@ const SEVERITIES: Readonly<Record<Severity, LogSeverity>> = {
 };
 
 /** Whether a link waits for a click to reach its Bluetooth device again. */
-export function waitsForGesture(link: Link): link is ParkedLink {
+function waitsForGesture(link: Link): link is ParkedLink {
   const { transport } = link;
   return (
     transport instanceof BluetoothTransport &&

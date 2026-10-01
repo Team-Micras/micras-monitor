@@ -67,7 +67,7 @@ export function phaseOf(state: LinkState): LinkPhase {
 }
 
 /** The identity of a robot as HELLO_ACK gave it, with its schema hash in hex. */
-export function identityOf(robot: RobotInfo): SourceIdentity {
+function identityOf(robot: RobotInfo): SourceIdentity {
   return {
     name: robot.robotName,
     schema: (robot.schemaHash >>> 0).toString(16).padStart(8, '0'),
