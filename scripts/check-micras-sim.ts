@@ -48,6 +48,8 @@ interface Snapshot {
   readonly poseX: number | null;
   readonly poseY: number | null;
   readonly speed: number | null;
+  /** When the robot sampled the speed shown, in microseconds of its clock. */
+  readonly speedTimeUs: number | null;
   readonly logStates: readonly string[];
   readonly timeline: readonly string[];
   readonly answers: number;
@@ -90,6 +92,7 @@ const SNAPSHOT_SCRIPT = `(() => {
     poseX: number(maze?.dataset.poseX),
     poseY: number(maze?.dataset.poseY),
     speed: number(visible('[data-series="pose/linear_speed"]')?.dataset.value),
+    speedTimeUs: number(visible('[data-series="pose/linear_speed"]')?.dataset.time),
     logStates: [...document.querySelectorAll('ol[aria-label="Log"] li')].flatMap((item) => {
       const match = /state ([A-Z_]+)$/.exec(item.textContent.trim());
       return match === null ? [] : [match[1]];
@@ -343,10 +346,21 @@ async function main(): Promise<void> {
       rest.poseX === null || rest.poseY === null || later.poseX === null || later.poseY === null
         ? Number.POSITIVE_INFINITY
         : Math.hypot(later.poseX - rest.poseX, later.poseY - rest.poseY);
+    const fresh =
+      later.speedTimeUs !== null &&
+      beforeStop.speedTimeUs !== null &&
+      later.speedTimeUs > beforeStop.speedTimeUs;
+    const sampledAfter =
+      later.speedTimeUs === null || beforeStop.speedTimeUs === null
+        ? 'never sampled'
+        : `sampled ${((later.speedTimeUs - beforeStop.speedTimeUs) / 1e6).toFixed(2)} s after Space`;
     check(
       'STOP stops the robot',
-      moved < REST_DISPLACEMENT_M && later.speed !== null && Math.abs(later.speed) < REST_SPEED_M_S,
-      `moved ${(moved * 1000).toFixed(2)} mm in 2 s at rest, speed ${later.speed} m/s`
+      moved < REST_DISPLACEMENT_M &&
+        fresh &&
+        later.speed !== null &&
+        Math.abs(later.speed) < REST_SPEED_M_S,
+      `moved ${(moved * 1000).toFixed(2)} mm in 2 s at rest, speed ${later.speed} m/s ${sampledAfter}`
     );
     const stopCell = cellOf(beforeStop.robotCell);
     const restCell = cellOf(later.robotCell);

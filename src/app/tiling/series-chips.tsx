@@ -26,9 +26,10 @@ interface SeriesChipsProps {
 }
 
 /**
- * The variables of a window in its title bar, each with its latest value and a button that takes
- * it out of the window, shown on hover and on focus; Delete or Backspace on that button does the
- * same. Past the first few, the rest sit behind a "+N" button that lists them, removable too.
+ * The variables of a window in its title bar, each with its latest value, when the robot sampled
+ * it in `data-time`, and a button that takes it out of the window, shown on hover and on focus;
+ * Delete or Backspace on that button does the same. Past the first few, the rest sit behind a
+ * "+N" button that lists them, removable too.
  */
 export function SeriesChips({ window, title, variables }: SeriesChipsProps) {
   const store = useShellStore();
@@ -90,7 +91,8 @@ interface SeriesChipProps {
 
 function SeriesChip({ name, title, color, onRemove, listed = false }: SeriesChipProps) {
   const monitor = useShownMonitor();
-  const value = useLiveValue(monitor, name)?.value;
+  const latest = useLiveValue(monitor, name);
+  const value = latest?.value;
   const linked = useLinkUp(monitor);
 
   const onKeyDown = (event: ReactKeyboardEvent) => {
@@ -104,6 +106,7 @@ function SeriesChip({ name, title, color, onRemove, listed = false }: SeriesChip
     <span
       data-series={name}
       data-value={typeof value === 'number' ? value : undefined}
+      data-time={latest?.timeUs}
       className={cn(
         'group/chip relative flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-xs',
         listed ? 'justify-between py-1 pr-1 hover:bg-muted' : 'bg-muted'
