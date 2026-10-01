@@ -7,18 +7,19 @@
  */
 
 import type { LogSeverity } from '@/core/log';
-import type {
-  CommandOutcome,
-  ReadOutcome,
-  Source,
-  SourceConnection,
-  SourceSink,
-  SourceStats,
-  StreamDemand,
-  Target,
-  TargetKind,
-  WriteOutcome,
-  WriteValue,
+import {
+  NOT_CONNECTED,
+  type CommandOutcome,
+  type ReadOutcome,
+  type Source,
+  type SourceConnection,
+  type SourceSink,
+  type SourceStats,
+  type StreamDemand,
+  type Target,
+  type TargetKind,
+  type WriteOutcome,
+  type WriteValue,
 } from '@/core/source';
 import { isFloat, VALUE_TYPES, type Value, type Variable } from '@/core/variables';
 
@@ -129,7 +130,7 @@ class DemoConnection implements SourceConnection {
   readonly #held = new Map<string, number>();
   readonly #pending = new Map<number, WriteValue>();
   readonly #unanswered = new Set<() => void>();
-  #timers: ReturnType<typeof setTimeout>[] = [];
+  readonly #timers = new Set<ReturnType<typeof setTimeout>>();
   #ticker: ReturnType<typeof setInterval> | null = null;
   #linked = false;
   #closed = false;
@@ -154,7 +155,7 @@ class DemoConnection implements SourceConnection {
 
   command(code: number, argument = 0): Promise<CommandOutcome> {
     if (!this.#linked) {
-      return Promise.resolve({ status: 'failed', message: 'Not connected to a robot.' });
+      return Promise.resolve({ status: 'failed', message: NOT_CONNECTED });
     }
 
     this.#note('debug', `command ${code} sent`);
@@ -172,7 +173,7 @@ class DemoConnection implements SourceConnection {
       return Promise.resolve(
         this.#linked
           ? { status: 'refused', reason: 'no-such-variable' }
-          : { status: 'failed', message: 'Not connected to a robot.' }
+          : { status: 'failed', message: NOT_CONNECTED }
       );
     }
 
@@ -210,9 +211,7 @@ class DemoConnection implements SourceConnection {
     if (!this.#linked || this.#variables[variableId] === undefined) {
       return Promise.resolve({
         status: 'failed',
-        message: this.#linked
-          ? `The robot has no variable ${variableId}.`
-          : 'Not connected to a robot.',
+        message: this.#linked ? `The robot has no variable ${variableId}.` : NOT_CONNECTED,
       });
     }
 
@@ -230,7 +229,7 @@ class DemoConnection implements SourceConnection {
   close(): void {
     this.#closed = true;
     this.#timers.forEach(clearTimeout);
-    this.#timers = [];
+    this.#timers.clear();
     this.#unanswered.forEach((abandon) => abandon());
     this.#unanswered.clear();
     this.#pending.clear();
@@ -269,6 +268,7 @@ class DemoConnection implements SourceConnection {
       variableIds: this.#streamed.map((variable) => variable.id),
       clock: 0,
     });
+    this.#sink.stats(this.#stats());
     this.#nextSampleMs = this.#startedAt;
     this.#ticker = setInterval(() => this.#tick(), this.#tickMs());
     this.#tick();
@@ -294,7 +294,6 @@ class DemoConnection implements SourceConnection {
     }
 
     this.#nextSampleMs = atMs;
-    this.#sink.stats(this.#stats());
   }
 
   #stats(): SourceStats {
@@ -382,8 +381,14 @@ class DemoConnection implements SourceConnection {
   }
 
   #later(ms: number, run: () => void): void {
-    if (!this.#closed) {
-      this.#timers.push(setTimeout(run, ms));
+    if (this.#closed) {
+      return;
     }
+
+    const timer = setTimeout(() => {
+      this.#timers.delete(timer);
+      run();
+    }, ms);
+    this.#timers.add(timer);
   }
 }

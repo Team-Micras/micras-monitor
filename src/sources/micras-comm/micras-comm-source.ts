@@ -7,20 +7,21 @@
 
 import type { Unsubscribe } from '@/core/emitter';
 import type { LogSeverity } from '@/core/log';
-import type {
-  CommandOutcome,
-  ReadOutcome,
-  Source,
-  SourceConnection,
-  SourceSink,
-  SourceStats,
-  SourceStatus,
-  StreamDemand,
-  Target,
-  TargetKind,
-  WriteOutcome,
-  WriteRefusal,
-  WriteValue,
+import {
+  NOT_CONNECTED,
+  type CommandOutcome,
+  type ReadOutcome,
+  type Source,
+  type SourceConnection,
+  type SourceSink,
+  type SourceStats,
+  type SourceStatus,
+  type StreamDemand,
+  type Target,
+  type TargetKind,
+  type WriteOutcome,
+  type WriteRefusal,
+  type WriteValue,
 } from '@/core/source';
 import type { Variable } from '@/core/variables';
 import {
@@ -78,7 +79,6 @@ interface StreamState {
   readonly variableIds: readonly number[];
 }
 
-const NOT_CONNECTED = 'Not connected to a robot.';
 const WEBSOCKET_URL = /^wss?:\/\/\S+$/;
 const SEQUENCE_MODULUS = 2 ** 16;
 
@@ -364,7 +364,6 @@ class MicrasCommConnection implements SourceConnection {
 
   request(demands: readonly StreamDemand[]): void {
     this.#demands = demands;
-    this.#credit = undefined;
     this.#link?.planner.request(this.#rateRequests());
   }
 
@@ -656,19 +655,21 @@ class MicrasCommConnection implements SourceConnection {
     );
   }
 
-  /** Reports a new status; one that ends the link also drops the variables, as the monitor does. */
+  /** Reports a new status; one that ends the link also tells the sink the variables are gone. */
   #setStatus(status: SourceStatus): void {
     if (this.#status !== null && sameStatus(this.#status, status)) {
       return;
     }
 
     this.#status = status;
+    this.#sink.status(status);
 
     if (status.kind === 'failed' || status.kind === 'disconnected') {
       this.#schema = undefined;
-      this.#variables = [];
-    }
 
-    this.#sink.status(status);
+      if (this.#variables.length > 0) {
+        this.#setVariables([]);
+      }
+    }
   }
 }

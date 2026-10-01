@@ -68,7 +68,7 @@ export function parseChord(text: string): Chord {
 }
 
 function normalizeKey(key: string): string {
-  if (key === ' ') {
+  if (key === ' ' || key.toLowerCase() === 'space') {
     return 'Space';
   }
 
@@ -131,6 +131,16 @@ export function matchesChordHeld(chord: Chord, event: KeyInput): boolean {
     (!chord.shift || event.shiftKey) &&
     (!chord.meta || event.metaKey)
   );
+}
+
+/**
+ * A text that is the same for chords that match the same events: `Alt+Shift+E` and
+ * `Shift+Alt+E` share it, and so do `/` and `Shift+/`, since a symbol matches with or without Shift.
+ */
+export function chordId(chord: Chord): string {
+  const keep = (modifier: (typeof MODIFIERS)[number]) =>
+    chord[modifierField(modifier)] && !(modifier === 'Shift' && isSymbol(chord.key));
+  return [...MODIFIERS.filter(keep), chord.key].join('+');
 }
 
 /** The keys of a chord as they are shown, one label per key cap, such as `['Alt', '←']`. */

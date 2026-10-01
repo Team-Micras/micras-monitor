@@ -162,9 +162,16 @@ export type ReadOutcome =
   | { readonly status: 'ok'; readonly value: Value }
   | { readonly status: 'failed'; readonly message: string };
 
+/** What a command, write or read answers when there is no connection to send it over. */
+export const NOT_CONNECTED = 'Not connected to a robot.';
+
 /**
  * Where a connection pushes what it learns. Calls made after the connection was closed are
  * ignored.
+ *
+ * The monitor keeps what the sink says and infers nothing from the status: a source that ends,
+ * fails or loses its robot says `variables([])` itself, so the interface stops showing variables
+ * that no longer exist.
  */
 export interface SourceSink {
   /** The connection's status changed. */

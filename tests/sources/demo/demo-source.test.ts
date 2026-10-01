@@ -39,6 +39,17 @@ describe('DemoSource', () => {
     expect(monitor.state.variables).toHaveLength(DEMO_ROBOT.variables.length);
   });
 
+  test('reports its counters once instead of with every sample', () => {
+    const { monitor } = demo();
+    monitor.connect(URL);
+    vi.advanceTimersByTime(50);
+    const first = monitor.state.stats;
+    vi.advanceTimersByTime(1000);
+
+    expect(first.streams.length).toBeGreaterThan(0);
+    expect(monitor.state.stats).toBe(first);
+  });
+
   test('feeds the history the windows read, by name or id', () => {
     const { monitor, scheduler } = demo();
     const heard = vi.fn<() => void>();

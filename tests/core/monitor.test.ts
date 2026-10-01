@@ -75,6 +75,27 @@ describe('Monitor fed by a source', () => {
     expect(monitor.history.latest('state')).toBeUndefined();
   });
 
+  test('logs a warning for a stream that names variables the robot does not have', () => {
+    const { monitor, link } = setup();
+    link.sink.streamOpened({ id: 1, slot: 0, variableIds: [0, 9], clock: 0 });
+
+    expect(monitor.state.log.at(-1)).toMatchObject({
+      severity: 'warning',
+      source: 'link',
+      text: expect.stringContaining('(9)'),
+    });
+  });
+
+  test('stops mapping a stream the history closed to open another over the same variable', () => {
+    const { monitor, link } = setup();
+    link.sink.streamOpened({ id: 1, slot: 0, variableIds: [0, 1], clock: 0 });
+    link.sink.streamOpened({ id: 2, slot: 1, variableIds: [1], clock: 0 });
+
+    expect(() => link.sink.sample(1, 1_000, [1, 0.5], 0)).not.toThrow();
+    link.sink.sample(2, 2_000, [0.7], 0);
+    expect(monitor.history.latest('speed')?.value).toBe(0.7);
+  });
+
   test('takes values that come outside a stream, such as read answers', () => {
     const { monitor, link } = setup();
     link.sink.value(2, new Uint8Array([1, 2]));
@@ -191,6 +212,8 @@ describe('Monitor driving a source', () => {
   test('drops the robot when its connection fails', () => {
     const { monitor, link } = setup();
     link.sink.status({ kind: 'failed', target: URL, message: 'gone' });
+    expect(monitor.state.variables).toBe(VARIABLES);
+    link.sink.variables([]);
 
     expect(monitor.state.identity).toBeNull();
     expect(monitor.state.variables).toEqual([]);
@@ -221,6 +244,9 @@ describe('Monitor over a recording', () => {
       identity: IDENTITY,
       variables: VARIABLES,
     });
-    await expect(monitor.command(5)).resolves.toMatchObject({ status: 'failed' });
+    await expect(monitor.command(5)).resolves.toEqual({
+      status: 'failed',
+      message: 'A saved session is on screen: go back to live to send commands.',
+    });
   });
 });

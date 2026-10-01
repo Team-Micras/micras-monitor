@@ -10,6 +10,7 @@ import { Emitter, type Unsubscribe } from './emitter';
 import { BoundedLog, type LogEntry } from './log';
 import {
   NO_STATS,
+  NOT_CONNECTED,
   type BoundaryKind,
   type CommandOutcome,
   type ReadOutcome,
@@ -37,12 +38,15 @@ import type { Value, ValueType, Variable } from './variables';
 export interface HistoryWriter {
   /** Takes the robot's variables, which map its ids to names. */
   setSchema(variables: readonly Variable[]): void;
-  /** Starts a run of a stream, which the history calls an epoch. */
+  /**
+   * Starts a run of a stream, which the history calls an epoch. Returns the ids of the runs it
+   * had to close because the new one replaces them.
+   */
   openEpoch(spec: {
     readonly epochId: number;
     readonly groupId: number;
     readonly variables: readonly { readonly id: number; readonly type: ValueType }[];
-  }): void;
+  }): readonly number[];
   /** Ends a run of a stream. */
   closeEpoch(epochId: number): void;
   /** Adds a sample of an open run, after the samples lost just before it. */
@@ -96,7 +100,7 @@ interface OpenStream {
   readonly clock: number;
 }
 
-const NOT_CONNECTED = 'Not connected to a robot.';
+const RECORDING_ONLY = 'A saved session is on screen: go back to live to send commands.';
 const DISCONNECTED: SourceStatus = { kind: 'disconnected' };
 const NO_VARIABLES: readonly Variable[] = [];
 
@@ -216,7 +220,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
 
   /** Sends a command and waits for the robot's answer. */
   command(code: number, argument = 0): Promise<CommandOutcome> {
-    return this.#connection?.command(code, argument) ?? Promise.resolve(notConnected());
+    return this.#connection?.command(code, argument) ?? Promise.resolve(this.#notConnected());
   }
 
   /** Writes a variable, by name, and waits for the robot's answer. */
@@ -224,7 +228,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     const connection = this.#connection;
 
     if (connection === null) {
-      return Promise.resolve(notConnected());
+      return Promise.resolve(this.#notConnected());
     }
 
     const id = this.#ids.get(name);
@@ -238,7 +242,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     const connection = this.#connection;
 
     if (connection === null) {
-      return Promise.resolve(notConnected());
+      return Promise.resolve(this.#notConnected());
     }
 
     const id = this.#ids.get(name);
@@ -251,6 +255,10 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
   pendingWrite(name: string): WriteValue | undefined {
     const id = this.#ids.get(name);
     return id === undefined ? undefined : this.#connection?.pendingWrite(id);
+  }
+
+  #notConnected(): { readonly status: 'failed'; readonly message: string } {
+    return { status: 'failed', message: this.#source === null ? RECORDING_ONLY : NOT_CONNECTED };
   }
 
   #sinkFor(generation: number): SourceSink {
@@ -287,7 +295,7 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     if (status.kind === 'linked') {
       this.#update({ status, identity: status.identity });
     } else if (status.kind === 'disconnected' || status.kind === 'failed') {
-      this.#update({ status, identity: null, variables: NO_VARIABLES });
+      this.#update({ status, identity: null });
     } else {
       this.#update({ status });
     }
@@ -307,12 +315,25 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     const variables = variableIds.flatMap((variableId) => known.get(variableId) ?? []);
 
     if (variables.length !== variableIds.length) {
+      const unknown = variableIds.filter((variableId) => !known.has(variableId));
+      this.#addLog({
+        severity: 'warning',
+        source: 'link',
+        text: `stream ${id} names variables the robot does not have (${unknown.join(', ')}) and is ignored`,
+      });
       return;
     }
 
     this.#closeStream(id);
     const epochId = this.#nextEpoch++;
-    this.history.openEpoch({ epochId, groupId: slot, variables });
+    const replaced = this.history.openEpoch({ epochId, groupId: slot, variables });
+
+    for (const [streamId, open] of this.#streams) {
+      if (replaced.includes(open.epochId)) {
+        this.#streams.delete(streamId);
+      }
+    }
+
     this.#streams.set(id, { epochId, clock });
   }
 
@@ -402,8 +423,4 @@ export class Monitor<H extends HistoryWriter = HistoryWriter> {
     this.#state = next;
     this.#changes.emit('change', undefined);
   }
-}
-
-function notConnected(): { readonly status: 'failed'; readonly message: string } {
-  return { status: 'failed', message: NOT_CONNECTED };
 }

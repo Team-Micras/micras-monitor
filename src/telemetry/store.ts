@@ -246,9 +246,10 @@ export class TelemetryStore {
    * the same group or sharing a variable, closes first, so the order acknowledgements arrive in
    * does not matter.
    *
+   * @returns The ids of the epochs it closed that way.
    * @throws If the epoch id was used before or a variable appears twice.
    */
-  openEpoch(spec: EpochSpec): void {
+  openEpoch(spec: EpochSpec): readonly number[] {
     if (this.epochs.has(spec.epochId)) {
       throw new Error(`Epoch ${spec.epochId} was already opened`);
     }
@@ -275,6 +276,8 @@ export class TelemetryStore {
       this.addBoundary('schema', this.clockUs);
     }
 
+    const closed: number[] = [];
+
     for (const open of this.epochs.values()) {
       const conflicts =
         open.epoch.groupId === spec.groupId ||
@@ -282,6 +285,7 @@ export class TelemetryStore {
 
       if (!open.epoch.closed && conflicts) {
         this.closeEpoch(open.epoch.id);
+        closed.push(open.epoch.id);
       }
     }
 
@@ -301,6 +305,7 @@ export class TelemetryStore {
     this.openByGroup.set(spec.groupId, epoch);
     this.ingest({ type: 'epoch-opened', epoch: epoch.recorded });
     this.notifier.touch(this.statusChannel);
+    return closed;
   }
 
   /**
