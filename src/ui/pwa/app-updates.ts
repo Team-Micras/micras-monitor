@@ -7,6 +7,8 @@
  * @module
  */
 
+import { Emitter } from '@/core/emitter';
+
 /** A source of app updates, such as the service worker. */
 export interface AppUpdates {
   /** Whether a new build is waiting, or already active and waiting for this tab to reload. */
@@ -40,13 +42,13 @@ export function serviceWorkerUpdates(
   register: RegisterServiceWorker,
   reload: () => void = () => location.reload()
 ): AppUpdates {
-  const listeners = new Set<() => void>();
+  const changes = new Emitter<{ change: undefined }>();
   let waiting = false;
   let applying = false;
   let active = false;
   const announce = () => {
     waiting = true;
-    listeners.forEach((listener) => listener());
+    changes.emit('change', undefined);
   };
   const activate = register({
     onNeedRefresh: announce,
@@ -63,10 +65,7 @@ export function serviceWorkerUpdates(
 
   return {
     waiting: () => waiting,
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
+    subscribe: (listener) => changes.on('change', listener),
     apply: () => {
       if (active) {
         reload();

@@ -41,10 +41,10 @@ export class WindowErrorBoundary extends Component<
   static override contextType = AnnounceContext;
   declare context: ContextType<typeof AnnounceContext>;
   override state: WindowErrorBoundaryState = { failed: false, again: false };
-  private retried = false;
+  #retried = false;
 
-  private readonly loaded = () => {
-    this.retried = false;
+  readonly #loaded = () => {
+    this.#retried = false;
   };
 
   static getDerivedStateFromError(): Partial<WindowErrorBoundaryState> {
@@ -55,14 +55,14 @@ export class WindowErrorBoundary extends Component<
     console.error('A window failed', error, info.componentStack);
     this.context(`Couldn't load ${this.props.title ?? 'this window'}`);
 
-    if (this.retried) {
+    if (this.#retried) {
       this.setState({ again: true });
     }
   }
 
-  private readonly retry = () => {
+  readonly #retry = () => {
     retryFailedLoads();
-    this.retried = true;
+    this.#retried = true;
     this.setState({ failed: false, again: false });
   };
 
@@ -71,7 +71,7 @@ export class WindowErrorBoundary extends Component<
       return (
         <Suspense fallback={null}>
           {this.props.children}
-          <Loaded onLoaded={this.loaded} />
+          <Loaded onLoaded={this.#loaded} />
         </Suspense>
       );
     }
@@ -88,7 +88,7 @@ export class WindowErrorBoundary extends Component<
           </p>
         ) : null}
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={this.retry}>
+          <Button variant="outline" size="sm" onClick={this.#retry}>
             Retry
           </Button>
           {this.state.again ? (

@@ -56,11 +56,11 @@ class LoadGuard extends Component<LazyPartProps, LoadGuardState> {
   override componentDidUpdate(previous: LazyPartProps): void {
     if (this.state.failed && previous.resetKey !== this.props.resetKey) {
       retryFailedLoads();
-      this.recover();
+      this.#recover();
     }
   }
 
-  private recover(): void {
+  #recover(): void {
     this.setState({ failed: false });
   }
 
